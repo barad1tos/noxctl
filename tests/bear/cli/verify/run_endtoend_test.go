@@ -22,15 +22,20 @@ import (
 )
 
 // runVerify drives verify.Run with the supplied options + ctx and
-// returns the rendered stdout + the sentinel-shaped error. Stderr
-// is captured into a discard buffer (no test pins on it; the
-// rendered text lives in stdout). Used by every test in this file.
+// returns the rendered stdout + the sentinel-shaped error. Stderr is
+// captured into a buffer and reported via t.Logf when non-empty so a
+// future warning emitted there is visible under `go test -v` instead
+// of being silently absorbed. Used by every test in this file.
 func runVerify(t *testing.T, opts verify.Options) (stdout string, err error) {
 	t.Helper()
 	var outBuf, errBuf bytes.Buffer
 	opts.Stdout = &outBuf
 	opts.Stderr = &errBuf
 	err = verify.Run(ctxWithBenignBackend(t), opts)
+	if errBuf.Len() > 0 {
+		t.Logf("verify.Run wrote %d bytes to stderr:\n%s",
+			errBuf.Len(), errBuf.String())
+	}
 	return outBuf.String(), err
 }
 
@@ -137,7 +142,8 @@ func TestRun_OperatorRequestsBadOutputFormat_ReturnsValidationError(t *testing.T
 
 // TestRun_OperatorRunsDirtyLog_OverallVerdictReflectsFail — full
 // pipeline: dirty daemon log → FAIL surfaces in overall verdict +
-// sentinel.
+// sentinel. The other checks (plan-parity, apply-idempotency) are
+// PASS under the benign backend; daemon-log is the sole driver.
 func TestRun_OperatorRunsDirtyLog_OverallVerdictReflectsFail(t *testing.T) {
 	logPath := writeDaemonLog(t, []string{
 		"2026/05/18 10:00:00 regen-watchd starting",
@@ -149,16 +155,11 @@ func TestRun_OperatorRunsDirtyLog_OverallVerdictReflectsFail(t *testing.T) {
 		LogPath:    logPath,
 		Output:     "text",
 	})
-	// daemon-log FAIL drives the overall verdict to FAIL OR ERROR
-	// (plan-parity might surface ERROR with the benign backend's
-	// empty responses — currentMaster=="" triggers "create" diff).
-	// Either is acceptable; verify the FAIL/ERROR sentinel reached
-	// the caller rather than the no-op PASS path.
-	if errors.Is(err, nil) || err == nil {
-		t.Fatalf("err = nil, want a verdict sentinel")
+	if !errors.Is(err, verify.ErrVerifyFailed) {
+		t.Fatalf("err = %v, want ErrVerifyFailed", err)
 	}
-	if !strings.Contains(stdout, "verify:") {
-		t.Errorf("verdict summary line missing; rendered:\n%s", stdout)
+	if !strings.Contains(stdout, "verify: FAIL") {
+		t.Errorf("expected 'verify: FAIL' verdict; rendered:\n%s", stdout)
 	}
 }
 

@@ -64,12 +64,15 @@ func TestRun_CtxCanceledMidPlan_PlanParitySurfacesInterrupted(t *testing.T) {
 	}
 }
 
-// TestRun_StrictModeWithCleanCatalog_PlanParityStillPasses — Strict
-// mode escalates untracked-tag-families to FAIL. With benign backend
-// returning empty list responses, residue scan finds 0 untracked
-// families and the gate stays PASS. Covers the strict-mode branch
-// that doesn't fire the upgrade.
-func TestRun_StrictModeWithCleanCatalog_PlanParityStillPasses(t *testing.T) {
+// TestRun_StrictModeWithCleanCatalog_StrictUpgradeDoesNotFire — with
+// the benign backend's empty corpus, residue scan finds 0 untracked
+// tag families, so strict mode's UntrackedFamilies-based FAIL upgrade
+// must NOT fire. plan-parity may still FAIL on drift (the empty
+// corpus vs a non-empty desired master), but the FAIL message must
+// describe drift — never "untracked". Pins the strict no-fire branch
+// so a regression that surfaces a spurious "0 untracked families"
+// FAIL gets caught.
+func TestRun_StrictModeWithCleanCatalog_StrictUpgradeDoesNotFire(t *testing.T) {
 	cfg := writeMinimalCatalog(t)
 	logPath := writeDaemonLog(t, []string{
 		"2026/05/18 10:00:00 regen-watchd starting",
@@ -81,15 +84,7 @@ func TestRun_StrictModeWithCleanCatalog_PlanParityStillPasses(t *testing.T) {
 		Output:     "text",
 	})
 	line := findCheckLine(t, stdout, "plan-parity")
-	// PASS or FAIL — both are valid behaviors with the benign backend
-	// (depends on how engine.Plan classifies an empty corpus + empty
-	// catalog). The point is that the Strict-mode code path runs and
-	// the per-check line surfaces. The glyph indicates the path was
-	// reached (no panic, no missing line).
-	for _, glyph := range []string{"✓", "✗", "⚠"} {
-		if strings.Contains(line, glyph) {
-			return
-		}
+	if strings.Contains(line, "untracked") {
+		t.Errorf("strict mode must not fire on a 0-untracked-family corpus; got: %q", line)
 	}
-	t.Errorf("plan-parity line missing any verdict glyph; got: %q", line)
 }

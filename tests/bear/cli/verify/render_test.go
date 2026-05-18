@@ -1,46 +1,27 @@
-// Package verify_test — render coverage.
+// Package verify_test — render JSON shape coverage via RenderForTest.
 //
-// User-scenario framing: every assertion here mirrors what an operator
-// or CI script would actually look for after running `noxctl verify`.
-// Text-output checks pin the visible signals (glyphs, summary line,
-// indented Details) the operator scans for at a glance. JSON-output
-// checks pin the fields a CI consumer parses with jq or unmarshal —
-// `schema_version`, `checks[].status`, `summary.fail`, etc.
-//
-// Scope: bear/cli/verify/render.go (`render`, `renderText`,
-// `renderJSON`, `statusGlyph`, `overallVerdict`).
+// User-scenario framing: each test pins a field a CI consumer parses
+// with jq / unmarshal — `schema_version`, `checks[].status`,
+// `summary.fail`, etc. Routes through `verify.RenderForTest` so a
+// rename or signature change in the production renderer trips the
+// test (the earlier shape tests used a private json.Encoder and
+// therefore tested encoding/json — not the renderer).
 package verify_test
 
 import (
 	"bytes"
 	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/barad1tos/noxctl/bear/cli/verify"
 )
 
-// runTextRender invokes verify.Run's render via the public surface by
-// constructing a Result and calling json/text. We can't call render()
-// directly (unexported), so we call verify.Run with a doomed config
-// to force the catalog-load StatusError path AND emit text/json — but
-// that ALSO renders side-effects we don't want here. Cleaner: build
-// the Result, encode to JSON ourselves and compare; for text, run
-// verify.Run with a synthetic check shape via ContextWithBackend in
-// run_endtoend_test.go.
-//
-// The shape-pinning tests in this file therefore exercise the JSON
-// surface (operator-visible structure) and the public glyph contract
-// indirectly via JSON `status` strings. The text-output assertions
-// live in run_endtoend_test.go where Run() naturally drives render().
-
-// TestRenderJSON_SchemaVersionPinned is the CI-consumer contract: any
+// TestRenderJSON_SchemaVersionPinned — CI-consumer contract: any
 // scripted parser pinning `.schema_version == 1` MUST keep working
 // across patches. Bumping the version is an opt-in breaking change.
 func TestRenderJSON_SchemaVersionPinned(t *testing.T) {
-	r := buildSampleResult(verify.StatusPass)
-	out := encodeResult(t, r)
+	out := renderJSONBytes(t, buildSampleResult(verify.StatusPass))
 	var decoded map[string]any
 	if err := json.Unmarshal(out, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -54,12 +35,11 @@ func TestRenderJSON_SchemaVersionPinned(t *testing.T) {
 	}
 }
 
-// TestRenderJSON_ChecksArrayShape pins the fields a CI script picks
+// TestRenderJSON_ChecksArrayShape — pins the fields a CI script picks
 // out with `jq '.checks[]'`. Operators iterate this array to surface
 // per-check status on dashboards / PR comments / Slack.
 func TestRenderJSON_ChecksArrayShape(t *testing.T) {
-	r := buildSampleResult(verify.StatusFail)
-	out := encodeResult(t, r)
+	out := renderJSONBytes(t, buildSampleResult(verify.StatusFail))
 	var decoded struct {
 		Checks []struct {
 			Name    string   `json:"name"`
@@ -80,10 +60,10 @@ func TestRenderJSON_ChecksArrayShape(t *testing.T) {
 	}
 }
 
-// TestRenderJSON_SummaryCounters pins the per-status aggregate that
+// TestRenderJSON_SummaryCounters — pins the per-status aggregate that
 // alerting rules key off (e.g., "alert when summary.fail > 0").
 func TestRenderJSON_SummaryCounters(t *testing.T) {
-	out := encodeResult(t, buildAllFourStatusesResult())
+	out := renderJSONBytes(t, buildAllFourStatusesResult())
 	var decoded struct {
 		Summary struct {
 			Pass    int `json:"pass"`
@@ -101,7 +81,7 @@ func TestRenderJSON_SummaryCounters(t *testing.T) {
 	}
 }
 
-// TestRenderJSON_StatusStringsAreStable locks the four status-string
+// TestRenderJSON_StatusStringsAreStable — locks the four status-string
 // literals that JSON consumers branch on. Renaming `"pass"` →
 // `"passed"` would silently break every dashboard query in the wild.
 func TestRenderJSON_StatusStringsAreStable(t *testing.T) {
@@ -122,6 +102,19 @@ func TestRenderJSON_StatusStringsAreStable(t *testing.T) {
 			}
 		})
 	}
+}
+
+// renderJSONBytes drives the production JSON renderer over a Result
+// fixture and returns the emitted bytes. Routing through
+// `RenderForTest` (not a private json.NewEncoder) means a regression
+// in production rendering shows up here, not just in end-to-end tests.
+func renderJSONBytes(t *testing.T, r *verify.Result) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := verify.RenderForTest(verify.Options{Output: "json", Stdout: &buf}, r); err != nil {
+		t.Fatalf("RenderForTest: %v", err)
+	}
+	return buf.Bytes()
 }
 
 // buildSampleResult constructs a single-check Result for shape tests.
@@ -147,22 +140,4 @@ func buildSampleResult(status verify.Status) *verify.Result {
 		}
 	}
 	return r
-}
-
-// encodeResult marshals a Result to JSON using the same encoder
-// settings the production render path does — pretty-printed,
-// stable field order via json struct tags.
-func encodeResult(t *testing.T, r *verify.Result) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(r); err != nil {
-		t.Fatalf("encode: %v", err)
-	}
-	out := buf.Bytes()
-	if !strings.Contains(string(out), `"schema_version"`) {
-		t.Fatalf("schema_version not in output; got:\n%s", out)
-	}
-	return out
 }

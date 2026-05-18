@@ -11,6 +11,7 @@ package verify_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,15 +48,9 @@ func writeMinimalCatalog(t *testing.T) string {
 
 // benignBearcliBackend is a `bear.BearcliBackend` impl that returns
 // shape-valid empty responses for every bearcli command the verify
-// checks issue. With this stamped on the context, plan-parity sees
-// an empty corpus + no master → "no drift" trivially; apply-
-// idempotency sees nothing to write. Tests that want to isolate the
-// daemon-log check use this so the other two checks become a no-op
-// background.
-//
-// Records nothing — the per-check tests don't need to inspect call
-// shape; they assert on the rendered output instead. If a later test
-// needs call recording, swap in `fakeAutoTagBackend`-shaped recording.
+// checks issue. Unknown verbs error out so a future engine call site
+// (new "tag" / "replace" / "delete" command) surfaces in tests
+// instead of being silently absorbed.
 type benignBearcliBackend struct{}
 
 func (benignBearcliBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
@@ -74,7 +69,10 @@ func (benignBearcliBackend) Run(_ context.Context, args []string, _ string) ([]b
 	case "create", "overwrite":
 		return []byte(`{"ok":true}`), nil
 	}
-	return []byte("{}"), nil
+	// Fail loud on unknown verbs so a future engine call site
+	// (e.g. new "tag" / "replace" / "delete" command) surfaces in
+	// tests instead of being silently swallowed as "{}".
+	return nil, fmt.Errorf("benignBearcliBackend: unhandled bearcli args %v", args)
 }
 
 // ctxWithBenignBackend stamps the benign backend onto t.Context()

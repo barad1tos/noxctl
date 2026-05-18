@@ -1,17 +1,6 @@
 // Package verify_test — pure-helper coverage for the apply-idempotency
-// arithmetic that runs after engine.Apply returns.
-//
-// User-scenario framing: when verify's twin-apply gate fires and the
-// second pass produces writes, the operator stares at the Details
-// list to figure out which domain leaked drift. These tests pin the
-// alphabetical-sort contract (so the list doesn't jitter across
-// otherwise-identical runs) and the four-field stat aggregation that
-// the PASS message shows even on a clean cycle ("0 created / 0
-// changed / 12 unchanged / 0 failed across 12 domains").
-//
-// Driven through `verify.NonIdempotentDomainsForTest` and
-// `verify.SumApplyFieldForTest` exports (mirrors the existing
-// `ScanDaemonLogForTest` test-seam pattern).
+// arithmetic (nonIdempotentDomains alphabetical-sort contract +
+// sumApplyField aggregation) driven through the ForTest exports.
 package verify_test
 
 import (

@@ -77,7 +77,7 @@ func TestRunApplyOnce_BenignBackend_Returns(t *testing.T) {
 }
 
 // TestCheckApplyIdempotency_OperatorOmitsApplyOptsLock_FirstApplyFails
-// — Sourcery iter-#3 regression: with `--with-apply` set but
+// — regression-pin: with `--with-apply` set but
 // `Options.ApplyOpts.LockPath` empty, engine.Apply fails at
 // AcquireApply. Check surfaces StatusError + a "first apply failed"
 // hint so the operator knows the issue is infrastructure, not drift.
@@ -95,51 +95,53 @@ func TestCheckApplyIdempotency_OperatorOmitsApplyOptsLock_FirstApplyFails(t *tes
 	}
 }
 
-// TestCheckApplyIdempotency_OperatorRunsWithBenignBackend_OutcomeRecorded
-// — drive the full twin-apply path with the benign backend and a
-// populated ApplyOpts. The outcome (PASS / FAIL / ERROR) depends on
-// engine.Apply's behavior with empty bearcli responses; what matters
-// is that the check completes and produces a status + non-empty
-// message. Pins that the twin-apply orchestration runs end-to-end
-// without panic when given a hermetic backend.
-func TestCheckApplyIdempotency_OperatorRunsWithBenignBackend_OutcomeRecorded(t *testing.T) {
+// TestCheckApplyIdempotency_OperatorOnCleanVault_PassesWithSecondPassClean
+// — drive the full twin-apply path with the benign backend (which
+// returns shape-valid empty list/show responses) and a populated
+// ApplyOpts. Expected: pass-1 creates the master from the empty-
+// corpus render, pass-2 sees an unchanged vault → 0 writes → check
+// surfaces PASS with "second pass clean" message and the pass-1
+// stat block. Pins the happy-path operator outcome (gate accepted)
+// the way ship-gate.sh asserts it against the real vault.
+func TestCheckApplyIdempotency_OperatorOnCleanVault_PassesWithSecondPassClean(t *testing.T) {
 	domains := loadFixtureDomains(t)
 	ctx := ctxWithBenignBackend(t)
 	got := verify.CheckApplyIdempotencyForTest(ctx, verify.Options{
 		ApplyOpts: applyOpts(t),
 	}, domains)
-	// Status must be one of the four — never empty.
-	switch got.Status {
-	case verify.StatusPass, verify.StatusFail, verify.StatusError:
-		// expected
-	case verify.StatusSkipped:
-		t.Errorf("twin-apply must never report Skipped from within "+
-			"checkApplyIdempotency — Skipped is the WithApply=false "+
-			"caller-level branch; got: %+v", got)
-	default:
-		t.Errorf("unexpected status: %+v", got)
-	}
-	if got.Message == "" {
-		t.Errorf("status %v but empty message — operator gets no signal", got.Status)
+	if got.Status != verify.StatusPass {
+		t.Fatalf("status = %v, want StatusPass; message=%q", got.Status, got.Message)
 	}
 	if got.Name != "apply-idempotency" {
 		t.Errorf("check name = %q, want 'apply-idempotency'", got.Name)
 	}
+	for _, want := range []string{
+		"second pass clean",
+		"pass-1 stats:",
+		"created",
+		"changed",
+		"unchanged",
+		"failed",
+		"across",
+	} {
+		if !strings.Contains(got.Message, want) {
+			t.Errorf("expected %q in PASS message; got: %q", want, got.Message)
+		}
+	}
 }
 
-// failingBearcliBackend returns an error on every bearcli call. From
-// the operator's POV: bearcli outage / Bear not running. engine.Apply
-// surfaces the failures via DomainCounts.Failed > 0; checkApplyIdempotency
+// failingBearcliBackend returns the supplied error on every bearcli
+// call — used to simulate bearcli outage / Bear not running.
+// engine.Apply completes (no orchestrator-level error) but per-domain
+// RunRegen failures push DomainCounts.Failed > 0; checkApplyIdempotency
 // then routes through the `first.AnyFailed()` StatusError branch.
-type failingBearcliBackend struct{}
-
-func (failingBearcliBackend) Run(_ context.Context, _ []string, _ string) ([]byte, error) {
-	return nil, errSimulatedBearcliOutage
+type failingBearcliBackend struct {
+	err error
 }
 
-// errSimulatedBearcliOutage is a sentinel for the failing-backend
-// path — gives test-output a recognizable string when it bubbles up.
-var errSimulatedBearcliOutage = simulatedErr("bearcli simulated outage")
+func (b failingBearcliBackend) Run(_ context.Context, _ []string, _ string) ([]byte, error) {
+	return nil, b.err
+}
 
 type simulatedErr string
 
@@ -147,45 +149,36 @@ func (e simulatedErr) Error() string { return string(e) }
 
 // TestCheckApplyIdempotency_OperatorWithFailingBackend_FirstPassReportsFailures
 // — bearcli outage during the first apply pass. engine.Apply
-// completes (no orchestrator-level error) but per-domain RunRegen
-// failures push DomainCounts.Failed > 0; checkApplyIdempotency
-// surfaces StatusError + the "first apply pass reported per-domain
-// failures" message so the operator routes to the daemon log.
+// completes (the orchestrator catches per-domain failures and
+// continues) but DomainCounts.Failed > 0 trips `first.AnyFailed()`;
+// the check surfaces StatusError with the specific "per-domain
+// failures" message that routes the operator to the daemon log.
+// Pins the exact branch (not "first apply failed", which is the
+// distinct AcquireApply-error path covered by
+// `_OperatorOmitsApplyOptsLock_FirstApplyFails`).
 func TestCheckApplyIdempotency_OperatorWithFailingBackend_FirstPassReportsFailures(t *testing.T) {
 	domains := loadFixtureDomains(t)
-	ctx := bear.ContextWithBackend(t.Context(), failingBearcliBackend{})
+	backend := failingBearcliBackend{err: simulatedErr("bearcli simulated outage")}
+	ctx := bear.ContextWithBackend(t.Context(), backend)
 	got := verify.CheckApplyIdempotencyForTest(ctx, verify.Options{
 		ApplyOpts: applyOpts(t),
 	}, domains)
-	// Outcome must be StatusError (not Fail, not Pass) — bearcli outage
-	// is infrastructure-class, not idempotency-class.
 	if got.Status != verify.StatusError {
 		t.Errorf("status = %v, want StatusError (bearcli outage classified as infrastructure)",
 			got.Status)
 	}
-	// Either of the two error messages is acceptable — the engine
-	// might surface as a Plan-level err OR via per-domain Failed counts.
-	wantOneOf := []string{
-		"first apply failed",
-		"first apply pass reported per-domain failures",
-	}
-	matched := false
-	for _, w := range wantOneOf {
-		if strings.Contains(got.Message, w) {
-			matched = true
-			break
-		}
-	}
-	if !matched {
-		t.Errorf("expected one of %v in message; got: %q", wantOneOf, got.Message)
+	const want = "first apply pass reported per-domain failures"
+	if !strings.Contains(got.Message, want) {
+		t.Errorf("expected %q in message; got: %q", want, got.Message)
 	}
 }
 
 // TestCheckApplyIdempotency_OperatorCancelsMidCycle_SurfacesError —
 // SIGINT mid-cycle: ctx canceled before pass-1 finishes. engine.Apply
-// returns with res.Interrupted=true; runApplyOnce wraps that as
-// "apply interrupted" error. Check surfaces StatusError so the verdict
-// line shows ERROR.
+// either returns with res.Interrupted=true (runApplyOnce wraps that as
+// "apply interrupted" error) OR per-domain failures show up because
+// the canceled-ctx bearcli calls error out (first.AnyFailed branch).
+// Either path surfaces StatusError so the verdict line shows ERROR.
 func TestCheckApplyIdempotency_OperatorCancelsMidCycle_SurfacesError(t *testing.T) {
 	domains := loadFixtureDomains(t)
 	ctx, cancel := context.WithCancel(ctxWithBenignBackend(t))

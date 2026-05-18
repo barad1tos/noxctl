@@ -104,10 +104,8 @@ func TestCheckDaemonLog_LoopDetectedAfterStart(t *testing.T) {
 		"2026/05/18 10:05:01 regen[poetry]: complete",
 	})
 	rendered, err := runVerifyWithLog(t, path)
-	if !errors.Is(err, verify.ErrVerifyFailed) && !errors.Is(err, verify.ErrVerifyRuntimeError) {
-		t.Fatalf("err = %v, want either ErrVerifyFailed (daemon-log FAIL) "+
-			"or ErrVerifyRuntimeError (catalog-load ERROR trumps; the test config "+
-			"is intentionally invalid)", err)
+	if !errors.Is(err, verify.ErrVerifyFailed) {
+		t.Fatalf("err = %v, want ErrVerifyFailed (daemon-log FAIL)", err)
 	}
 	line := findCheckLine(t, rendered, "daemon-log")
 	if !strings.Contains(line, "✗") {
@@ -210,18 +208,45 @@ func TestCheckDaemonLog_PathDoesNotExist(t *testing.T) {
 	}
 }
 
-// TestCheckDaemonLog_PathIsDirectory — operator misconfigured
-// `--log-path` to point at a directory rather than a file. `os.Open`
-// succeeds but the subsequent read fails (EISDIR / "is a directory");
-// alternatively `os.Open` may itself fail on some platforms. Either
-// way the check must surface as ERROR (not FAIL) — operator
-// remediation is "fix the config path", not "fix the daemon".
-func TestCheckDaemonLog_PathIsDirectory(t *testing.T) {
+// TestCheckDaemonLog_PathIsDirectory_SurfacesScanError — operator
+// misconfigured `--log-path` to point at a directory. macOS
+// `os.Open` succeeds but the subsequent `bufio.Scanner` read fails
+// with "is a directory"; `scanLogSinceStartup` propagates that as
+// the scan-error branch, and the check surfaces ERROR with a
+// "scan <path>:" hint that routes the operator to the path config.
+func TestCheckDaemonLog_PathIsDirectory_SurfacesScanError(t *testing.T) {
 	dirPath := t.TempDir() // an existing directory, not a file
 	rendered, _ := runVerifyWithLog(t, dirPath)
 	line := findCheckLine(t, rendered, "daemon-log")
 	if !strings.Contains(line, "⚠") {
 		t.Errorf("directory-as-log must surface ⚠ (ERROR); got: %q", line)
+	}
+	if !strings.Contains(line, "scan ") {
+		t.Errorf("expected 'scan <path>:' read-error hint; got: %q", line)
+	}
+}
+
+// TestCheckDaemonLog_ScannerOverflow_SurfacesScanError — a single
+// line larger than bufio.Scanner's default 64 KiB token cap triggers
+// `scanner.Err() != nil` mid-rewind. `scanLogSinceStartup` propagates
+// the error; checkDaemonLog must surface a "scan <path>: ..." StatusError
+// so the operator sees the I/O class of failure, not the
+// "no startup marker" fallback.
+func TestCheckDaemonLog_ScannerOverflow_SurfacesScanError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "regen-watchd.log")
+	huge := strings.Repeat("a", 2*1024*1024) // 2 MiB > default token cap
+	body := "2026/05/18 10:00:00 regen-watchd starting\n" + huge + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write huge log: %v", err)
+	}
+	rendered, _ := runVerifyWithLog(t, path)
+	line := findCheckLine(t, rendered, "daemon-log")
+	if !strings.Contains(line, "⚠") {
+		t.Errorf("scanner-overflow must surface ⚠ (ERROR); got: %q", line)
+	}
+	if !strings.Contains(line, "scan ") {
+		t.Errorf("expected 'scan <path>:' I/O-error hint; got: %q", line)
 	}
 }
 
