@@ -90,6 +90,14 @@ func runVerify(cmd *cobra.Command, _ []string) error {
 	}
 	runErr := verify.Run(cmd.Context(), opts)
 	switch {
+	case errors.Is(runErr, verify.ErrVerifyInterrupted):
+		// `errInterrupted` is the existing cmd-level sentinel for
+		// SIGINT-during-mutation; main.go maps it to
+		// `ExitInterrupted = 130` (POSIX 128 + SIGINT). Without this
+		// arm, a Ctrl-C during `--with-apply` surfaces as a generic
+		// runtime error (exit 1) instead of the project-wide
+		// convention `apply`/`plan` already honor.
+		return errInterrupted
 	case errors.Is(runErr, verify.ErrVerifyFailed):
 		return errVerifyFailed
 	case errors.Is(runErr, verify.ErrVerifyRuntimeError):

@@ -2,6 +2,7 @@ package verify_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"testing"
 
@@ -53,16 +54,56 @@ func TestRun_CatalogLoadError_ReturnsRuntimeErrorSentinel(t *testing.T) {
 	}
 }
 
-// TestSentinels_Distinct documents the two-sentinel contract: the
+// TestSentinels_Distinct documents the three-sentinel contract: the
 // exit-code dispatcher at cmd/noxctl/main.go branches on
 // errors.Is(err, errVerifyFailed) vs errors.Is(err, errVerifyRuntime)
-// — those mappings depend on the package-level sentinels being
-// distinct error values.
+// vs errors.Is(err, errInterrupted) — those mappings depend on the
+// package-level sentinels being distinct error values.
 func TestSentinels_Distinct(t *testing.T) {
-	if errors.Is(verify.ErrVerifyFailed, verify.ErrVerifyRuntimeError) {
-		t.Errorf("ErrVerifyFailed must NOT be identity-equal to ErrVerifyRuntimeError")
+	cases := []struct {
+		name string
+		a, b error
+	}{
+		{"FailedVsRuntime", verify.ErrVerifyFailed, verify.ErrVerifyRuntimeError},
+		{"RuntimeVsFailed", verify.ErrVerifyRuntimeError, verify.ErrVerifyFailed},
+		{"InterruptedVsFailed", verify.ErrVerifyInterrupted, verify.ErrVerifyFailed},
+		{"InterruptedVsRuntime", verify.ErrVerifyInterrupted, verify.ErrVerifyRuntimeError},
 	}
-	if errors.Is(verify.ErrVerifyRuntimeError, verify.ErrVerifyFailed) {
-		t.Errorf("ErrVerifyRuntimeError must NOT be identity-equal to ErrVerifyFailed")
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if errors.Is(c.a, c.b) {
+				t.Errorf("%v MUST NOT match %v via errors.Is", c.a, c.b)
+			}
+		})
+	}
+}
+
+// TestRun_CtxCanceledOnEntry_ReturnsInterruptedSentinel pins the
+// "interrupted trumps verdict" contract in finalize. Pre-cancel the
+// ctx before Run, and even though the catalog-load fails (would
+// otherwise return ErrVerifyRuntimeError), the ctx-cancellation
+// check wins and ErrVerifyInterrupted comes out. cmd/noxctl/main.go
+// then maps this to ExitInterrupted = 130 via errInterrupted.
+func TestRun_CtxCanceledOnEntry_ReturnsInterruptedSentinel(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // pre-cancel before Run runs any check
+	var stdout, stderr bytes.Buffer
+	err := verify.Run(ctx, verify.Options{
+		ConfigPath: "/tmp/noxctl-test-nonexistent-config-xxxxx.toml",
+		Output:     "text",
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+	})
+	if err == nil {
+		t.Fatalf("Run err = nil, want ErrVerifyInterrupted")
+	}
+	if !errors.Is(err, verify.ErrVerifyInterrupted) {
+		t.Errorf("Run err = %v, want errors.Is == ErrVerifyInterrupted", err)
+	}
+	// Make sure the dispatch priority is correct: interrupted
+	// trumps the catalog-load StatusError that would otherwise
+	// surface as ErrVerifyRuntimeError.
+	if errors.Is(err, verify.ErrVerifyRuntimeError) {
+		t.Errorf("interrupted ctx must NOT surface as ErrVerifyRuntimeError; got %v", err)
 	}
 }

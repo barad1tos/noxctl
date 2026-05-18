@@ -27,6 +27,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/barad1tos/noxctl/bear"
@@ -120,6 +122,19 @@ var ErrVerifyFailed = errors.New("noxctl verify: gate failed")
 // from "stop, I couldn't ask the question".
 var ErrVerifyRuntimeError = errors.New("noxctl verify: runtime error")
 
+// ErrVerifyInterrupted is returned when SIGINT or SIGTERM canceled
+// the run mid-flight. Symmetric with `plan.ErrInterrupted`. The cmd
+// layer maps this to `errInterrupted`, which `main.go` dispatches to
+// `ExitInterrupted = 130` — the project-wide POSIX 128 + SIGINT
+// convention. Without this, a Ctrl-C during `--with-apply` would
+// surface as a generic StatusError → exit 1, hiding the operator's
+// intent from any caller that branches on exit code.
+//
+// Takes priority over `ErrVerifyFailed` / `ErrVerifyRuntimeError` in
+// `finalize`: the operator's "stop" signal trumps any check-level
+// verdict.
+var ErrVerifyInterrupted = errors.New("noxctl verify: interrupted")
+
 // ValidateOutput rejects values other than "text" and "json". Hoisted
 // to a public helper so cmd/noxctl can validate the flag before
 // constructing Options.
@@ -140,6 +155,14 @@ func ValidateOutput(output string) error {
 func Run(ctx context.Context, opts Options) error {
 	defaultIOAndPool(&opts)
 
+	// Bridge SIGINT / SIGTERM into ctx cancellation so the apply-
+	// idempotency check's engine.Apply call can yield cleanly and
+	// finalize can translate to ErrVerifyInterrupted (exit 130 at
+	// the cmd layer). Mirrors plan.Run's signal handling — verify
+	// owns the same boundary.
+	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	result := Result{
 		SchemaVersion: resultSchemaVersion,
 		StartedAt:     time.Now().UTC(),
@@ -157,15 +180,15 @@ func Run(ctx context.Context, opts Options) error {
 			Message: fmt.Sprintf("config.Load(%q) failed: %v", opts.ConfigPath, err),
 		})
 		result.CompletedAt = time.Now().UTC()
-		return finalize(opts, &result)
+		return finalize(opts, sigCtx, &result)
 	}
 
 	result.Checks = append(result.Checks,
-		checkPlanParity(ctx, opts, domains),
+		checkPlanParity(sigCtx, opts, domains),
 		checkDaemonLog(opts),
 	)
 	if opts.WithApply {
-		result.Checks = append(result.Checks, checkApplyIdempotency(ctx, opts, domains))
+		result.Checks = append(result.Checks, checkApplyIdempotency(sigCtx, opts, domains))
 	} else {
 		result.Checks = append(result.Checks, Check{
 			Name:    "apply-idempotency",
@@ -175,7 +198,7 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	result.CompletedAt = time.Now().UTC()
-	return finalize(opts, &result)
+	return finalize(opts, sigCtx, &result)
 }
 
 // defaultIOAndPool fills nil Stdout/Stderr with the process streams
@@ -192,8 +215,13 @@ func defaultIOAndPool(opts *Options) {
 }
 
 // finalize computes the Summary, renders, and returns the
-// FAIL/ERROR/nil dispatch.
-func finalize(opts Options, result *Result) error {
+// INTERRUPTED/FAIL/ERROR/nil dispatch.
+//
+// Render happens BEFORE the ctx-cancellation check so the operator
+// sees what completed before SIGINT arrived — matches plan.Run's
+// render-then-translate ordering and gives the operator
+// post-mortem visibility instead of a silent stop.
+func finalize(opts Options, ctx context.Context, result *Result) error {
 	for _, c := range result.Checks {
 		switch c.Status {
 		case StatusPass:
@@ -208,6 +236,12 @@ func finalize(opts Options, result *Result) error {
 	}
 	if err := render(opts, result); err != nil {
 		return err
+	}
+	// Interrupted trumps every other verdict. The operator's
+	// Ctrl-C intent is "stop, signal exit 130" — not "I want to
+	// know if drift was found before you stopped".
+	if ctx.Err() != nil {
+		return ErrVerifyInterrupted
 	}
 	switch {
 	case result.Summary.Error > 0:
