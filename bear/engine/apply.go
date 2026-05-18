@@ -51,7 +51,7 @@ type ApplyOpts struct {
 
 	// BearcliConcurrency is the operator-tuned cap for concurrent bearcli
 	// subprocesses (D-01). Zero or negative => engine default
-	// applyDefaultBearcliConcurrency. When > 0, Apply calls
+	// DefaultBearcliConcurrency. When > 0, Apply calls
 	// bear.SetBearcliConcurrency(n) once at entry before any pre-pass
 	// fires. The sync.Once gate inside SetBearcliConcurrency means
 	// subsequent calls are silent no-ops; bench mode uses
@@ -72,9 +72,13 @@ type ApplyOpts struct {
 	DomainTimingHook func(tag string, elapsed time.Duration)
 }
 
-// applyDefaultBearcliConcurrency is the ship-default for ApplyOpts.BearcliConcurrency
-// when the operator passes 0 or negative. Mirrors D-01 (CONTEXT).
-const applyDefaultBearcliConcurrency = 8
+// DefaultBearcliConcurrency is the ship-default capacity for
+// `bear.SetBearcliConcurrency` across every entry point — apply,
+// daemon, plan. Exported so the read-only `noxctl plan` path can
+// install the same ceiling without redeclaring the constant
+// (Sourcery PR-5: silently drifting defaults are a maintenance
+// trap).
+const DefaultBearcliConcurrency = 8
 
 // Apply runs the orchestrator one-shot: acquires flock,
 // runs pre-passes (gated by opts.Features), iterates opts.Domains
@@ -109,7 +113,7 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	// (--sweep) drives ResetBearcliPoolForTest between cycles to re-arm
 	// at a new capacity; production daemon path is one-shot per process.
 	if opts.BearcliConcurrency <= 0 {
-		opts.BearcliConcurrency = applyDefaultBearcliConcurrency
+		opts.BearcliConcurrency = DefaultBearcliConcurrency
 	}
 	bear.SetBearcliConcurrency(opts.BearcliConcurrency)
 

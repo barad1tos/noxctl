@@ -297,7 +297,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// FSEvent burst and hits "bearcli pool not initialized".
 	bearcliConcurrency := d.opts.BearcliConcurrency
 	if bearcliConcurrency <= 0 {
-		bearcliConcurrency = applyDefaultBearcliConcurrency
+		bearcliConcurrency = DefaultBearcliConcurrency
 	}
 	bear.SetBearcliConcurrency(bearcliConcurrency)
 

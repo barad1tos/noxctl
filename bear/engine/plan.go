@@ -211,6 +211,13 @@ func translateUntracked(b bear.UntrackedReport) UntrackedReport {
 func seedDuplicateRegistry(ctx context.Context, domains []*bear.Domain, stderr io.Writer) {
 	registry, err := bear.BuildDuplicateRegistry(ctx, domains)
 	if err != nil {
+		// Defense in depth: planSinglePath already defaults nil
+		// stderr to os.Stderr, but callers landing here through
+		// future refactors might not. Fall back rather than panic
+		// inside fmt.Fprintf.
+		if stderr == nil {
+			stderr = os.Stderr
+		}
 		_, _ = fmt.Fprintf(stderr,
 			"duplicates: registry build failed: %v (continuing with plain wikilinks)\n", err)
 		return

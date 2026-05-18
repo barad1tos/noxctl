@@ -65,24 +65,18 @@ func ValidateOutput(output string) error {
 	return nil
 }
 
-// planBearcliConcurrency is the bearcli-pool capacity `noxctl plan`
-// installs at entry. Mirrors the daemon's `applyDefaultBearcliConcurrency`
-// default — plan is read-only so the same ceiling is safe. The pool
-// uses a `sync.Once` internally, so repeated calls across plan / apply
-// / daemon paths in the same process are no-ops after the first.
-const planBearcliConcurrency = 8
-
 // Run is the plan orchestrator. Loads the domain slice(s) per
 // ConfigSource, dispatches to engine.Plan, renders the result, and
 // returns one of (nil, ErrDriftDetected, ErrInterrupted, error).
 //
-// Initializes the global bearcli semaphore at entry — `engine.Plan`'s
+// Initializes the global bearcli semaphore at entry via the shared
+// `engine.DefaultBearcliConcurrency` ceiling — `engine.Plan`'s
 // `SnapshotDomainRenderInputs` calls `listNotes` which requires the
 // pool to be live. Apply and daemon paths set this themselves;
 // plan's path was missed, surfacing as "bearcli pool not initialized"
 // errors for every domain when `noxctl plan` ran standalone.
 func Run(ctx context.Context, opts Options) error {
-	bear.SetBearcliConcurrency(planBearcliConcurrency)
+	bear.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
 
 	tomlDomains, hardDomains, err := LoadDomainsByConfigSource(opts.Source, opts.Args,
 		opts.CfgPath, opts.PinLegacy, opts.PinTarget, opts.Stderr)
