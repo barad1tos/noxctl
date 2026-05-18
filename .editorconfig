@@ -1,0 +1,20 @@
+root = true
+
+# Default: Go-style — tab indent, width 4. Applies to .go, Makefile,
+# and any other file that doesn't override below.
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = tab
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Configuration languages — 2-space indent per their respective specs.
+[*.{yml,yaml,toml,json,md}]
+indent_style = space
+indent_size = 2
+
+# Scripts (shell, Python) — 4-space indent per PEP 8 / shellcheck.
+[*.{sh,py}]
+indent_style = space

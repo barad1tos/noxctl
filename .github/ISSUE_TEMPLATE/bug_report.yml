@@ -1,0 +1,72 @@
+name: Bug Report
+description: Report a misbehavior, idempotency drift, or crash
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please fill in the details below so the
+        issue can be reproduced.
+
+  - type: input
+    id: version
+    attributes:
+      label: noxctl version
+      description: Output of `noxctl --version`.
+      placeholder: "v0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: Output of `sw_vers -productVersion`.
+      placeholder: "15.2"
+    validations:
+      required: true
+
+  - type: input
+    id: bear
+    attributes:
+      label: Bear version
+      description: Bear → About Bear → Version string.
+      placeholder: "2.4 (12345)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear, concise description of the misbehavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Minimal steps to reproduce. Include the relevant
+        `noxctl.toml` stanza if applicable.
+      placeholder: |
+        1. `noxctl validate ./noxctl.toml` → exit 0
+        2. `noxctl apply --once` → expected `unchanged`, observed …
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Daemon log excerpt
+      description: Relevant lines from `~/.cache/regen-watchd.log`
+        around the timestamp of the issue. Strip personal note titles
+        if needed.
+      render: shell

@@ -126,9 +126,11 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - uses: golangci/golangci-lint-action@e5a9d7b91c39c95f4d51b2e3d4ce5c0f4cc6e0a8 # v7.0.0
+      - uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7
         with:
-          version: v2.0.2
+          # v2.12.2 is built with Go 1.26.2 — earlier 2.0.x was built
+          # with Go 1.24 and refused to lint a Go-1.26-targeted repo.
+          version: v2.12.2
           args: --timeout=5m
 
   # ── Tier 3: Unit + integration tests (parallel with lint) ──

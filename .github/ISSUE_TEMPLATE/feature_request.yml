@@ -1,0 +1,46 @@
+name: Feature Request
+description: Suggest a new blueprint, subcommand, or behavior
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea? Please describe the use case before the
+        implementation — the closed catalog of six blueprints is
+        deliberately small, so additions need to clear a high bar.
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Use case
+      description: What are you trying to do? What does the workflow
+        look like today, and what is friction or missing?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: One or two paragraphs sketching the shape of the
+        feature. CLI surface, config schema, expected output, edge
+        cases.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you tried, or other tools that
+        solve a similar problem.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This fits the "Terraform for Bear notes" framing
+            (declarative, idempotent, closed catalog).
+        - label: I understand `noxctl` is macOS-only and will stay
+            macOS-only.
