@@ -3,12 +3,12 @@ package plan_test
 import (
 	"bytes"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/cli/plan"
-	"github.com/barad1tos/noxctl/bear/engine"
+	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
 func TestErrDriftDetectedSentinelDeclared(t *testing.T) {
@@ -37,7 +37,7 @@ func TestValidateOutputRejectsUnknownFormat(t *testing.T) {
 }
 
 func TestScopeDomainsRejectsUnknownTag(t *testing.T) {
-	_, err := plan.ScopeDomains(nil, "unknown/tag", "noxctl.toml")
+	_, err := plan.ScopeDomains(nil, "unknown/tag")
 	if err == nil {
 		t.Fatal("ScopeDomains(nil, unknown) expected error; got nil")
 	}
@@ -46,161 +46,75 @@ func TestScopeDomainsRejectsUnknownTag(t *testing.T) {
 	}
 }
 
-// TestScopeDomainsSourceLabel locks WR-03: the "unknown tag" error
-// message names the catalog source the user requested via
-// --config-source, not a hardcoded "noxctl.toml" string. The CLI
-// boundary translation is ConfigSourceLabel; this test exercises it
-// end-to-end via ScopeDomains for each ConfigSource value.
-func TestScopeDomainsSourceLabel(t *testing.T) {
-	fakeDomain := &bear.Domain{Tag: "library/poetry"}
-	domains := []*bear.Domain{fakeDomain}
-
-	cases := []struct {
-		name       string
-		src        engine.ConfigSource
-		wantPhrase string
-	}{
-		{"toml-default", engine.ConfigSourceTOML, "noxctl.toml"},
-		{"hardcoded-bridge", engine.ConfigSourceHardcoded, "hardcoded registry"},
-		{"both-parity", engine.ConfigSourceBoth, "any catalog"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			label := plan.ConfigSourceLabel(tc.src)
-			_, err := plan.ScopeDomains(domains, "nonexistent/tag", label)
-			if err == nil {
-				t.Fatal("expected error for unknown tag")
-			}
-			if !strings.Contains(err.Error(), tc.wantPhrase) {
-				t.Errorf("err %q must contain %q for src=%v",
-					err.Error(), tc.wantPhrase, tc.src)
-			}
-		})
-	}
-}
-
-func TestLoadDomainsByConfigSourceBothLoadsBothSlices(t *testing.T) {
+// TestLoadDomains_NoArgsReturnsFullCatalog — `noxctl plan` без позиційного
+// arg повертає всі домени з examples/roman.toml. Pin'ить core load path:
+// pin migration is best-effort (logged warning, never blocks), TOML parse
+// must succeed, slice must be non-empty.
+func TestLoadDomains_NoArgsReturnsFullCatalog(t *testing.T) {
+	tmp := t.TempDir()
 	var stderr bytes.Buffer
-	toml, hard, err := plan.LoadDomainsByConfigSource(
-		engine.ConfigSourceBoth, nil,
-		"../../../../examples/roman.toml",
-		"/dev/null/legacy-pins.json", // bogus — MigratePins ignores missing files
-		"/dev/null/target-pins.json",
+	domains, err := plan.LoadDomains(
+		nil,
+		testutil.CatalogPath(t),
+		filepath.Join(tmp, "legacy-pins.json"),
+		filepath.Join(tmp, "target-pins.json"),
 		&stderr,
 	)
 	if err != nil {
-		t.Fatalf("LoadDomainsByConfigSource: %v", err)
+		t.Fatalf("LoadDomains: %v", err)
 	}
-	if len(toml) == 0 {
-		t.Error("Both mode: toml slice is empty; want >0 from examples/roman.toml")
+	if len(domains) == 0 {
+		t.Fatal("LoadDomains returned empty slice; expected the full catalog")
 	}
-	if len(hard) != 31 {
-		t.Errorf("Both mode: hard slice len = %d, want 31 (registry.All)", len(hard))
+	// 31 = 27 leaves + 4 umbrellas (matches testutil's catalog self-test).
+	if len(domains) != 31 {
+		t.Errorf("len(domains) = %d, want 31", len(domains))
 	}
 }
 
-func TestLoadDomainsByConfigSourceBothScopesArgs(t *testing.T) {
+// TestLoadDomains_SingleTagArgScopes — positional arg narrows the slice
+// to one domain. The exact tag must round-trip — no silent drop or
+// substring match.
+func TestLoadDomains_SingleTagArgScopes(t *testing.T) {
+	tmp := t.TempDir()
 	var stderr bytes.Buffer
-	toml, hard, err := plan.LoadDomainsByConfigSource(
-		engine.ConfigSourceBoth, []string{"library/poetry"},
-		"../../../../examples/roman.toml",
-		"/dev/null/legacy-pins.json",
-		"/dev/null/target-pins.json",
+	const wantTag = "library/poetry"
+	domains, err := plan.LoadDomains(
+		[]string{wantTag},
+		testutil.CatalogPath(t),
+		filepath.Join(tmp, "legacy-pins.json"),
+		filepath.Join(tmp, "target-pins.json"),
 		&stderr,
 	)
 	if err != nil {
-		t.Fatalf("LoadDomainsByConfigSource: %v", err)
+		t.Fatalf("LoadDomains(%q): %v", wantTag, err)
 	}
-	if len(toml) != 1 || toml[0].Tag != "library/poetry" {
-		t.Errorf("toml after scoping: got len=%d, first tag=%q; want 1 entry tag=library/poetry",
-			len(toml), tagOrEmpty(toml))
+	if len(domains) != 1 {
+		t.Fatalf("len(domains) = %d, want 1 when scoping by tag", len(domains))
 	}
-	if len(hard) != 1 || hard[0].Tag != "library/poetry" {
-		t.Errorf("hard after scoping: got len=%d, first tag=%q; want 1 entry tag=library/poetry",
-			len(hard), tagOrEmpty(hard))
+	if domains[0].Tag != wantTag {
+		t.Errorf("scoped domain Tag = %q, want %q", domains[0].Tag, wantTag)
 	}
 }
 
-// tagOrEmpty returns the first domain's Tag for diagnostic messages.
-// Defensive against empty slices so the surrounding Errorf never
-// dereferences a missing index when the test fixture itself misbehaves.
-func tagOrEmpty(ds []*bear.Domain) string {
-	if len(ds) == 0 {
-		return ""
+// TestLoadDomains_UnknownTagSurfacesError — operator typo'd a tag.
+// LoadDomains must reject with the "unknown tag" message from
+// ScopeDomains so the operator gets a friendly hint instead of a
+// crash deep inside the engine.
+func TestLoadDomains_UnknownTagSurfacesError(t *testing.T) {
+	tmp := t.TempDir()
+	var stderr bytes.Buffer
+	_, err := plan.LoadDomains(
+		[]string{"library/no-such-tag"},
+		testutil.CatalogPath(t),
+		filepath.Join(tmp, "legacy-pins.json"),
+		filepath.Join(tmp, "target-pins.json"),
+		&stderr,
+	)
+	if err == nil {
+		t.Fatal("LoadDomains with bogus tag returned nil error; expected unknown-tag rejection")
 	}
-	return ds[0].Tag
-}
-
-func TestPickPrimary(t *testing.T) {
-	tomlDomains := []*bear.Domain{{Tag: "toml-only"}}
-	hardDomains := []*bear.Domain{{Tag: "hard-only"}}
-	cases := []struct {
-		name    string
-		src     engine.ConfigSource
-		want    string
-		wantNil bool
-	}{
-		{"toml-picks-toml", engine.ConfigSourceTOML, "toml-only", false},
-		{"hardcoded-picks-hard", engine.ConfigSourceHardcoded, "hard-only", false},
-		{"both-picks-toml", engine.ConfigSourceBoth, "toml-only", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := plan.PickPrimary(tc.src, tomlDomains, hardDomains)
-			if len(got) != 1 || got[0].Tag != tc.want {
-				t.Errorf("PickPrimary(%v) = %v, want [{Tag:%s}]", tc.src, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestPickRef(t *testing.T) {
-	hardDomains := []*bear.Domain{{Tag: "hard-only"}}
-	cases := []struct {
-		name    string
-		src     engine.ConfigSource
-		wantNil bool
-	}{
-		{"toml-ref-nil", engine.ConfigSourceTOML, true},
-		{"hardcoded-ref-nil", engine.ConfigSourceHardcoded, true},
-		{"both-ref-hard", engine.ConfigSourceBoth, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := plan.PickRef(tc.src, hardDomains)
-			if tc.wantNil && got != nil {
-				t.Errorf("PickRef(%v) = %v, want nil", tc.src, got)
-			}
-			if !tc.wantNil && (len(got) != 1 || got[0].Tag != "hard-only") {
-				t.Errorf("PickRef(%v) = %v, want hardDomains", tc.src, got)
-			}
-		})
-	}
-}
-
-func TestHasParityMismatch(t *testing.T) {
-	cases := []struct {
-		name string
-		r    *engine.PlanResult
-		want bool
-	}{
-		{"nil result", nil, false},
-		{"empty domains", &engine.PlanResult{}, false},
-		{"only-clean", &engine.PlanResult{
-			Domains: []engine.DomainPlan{{Tag: "a", Status: engine.StatusClean}},
-		}, false},
-		{"has-parity-mismatch", &engine.PlanResult{
-			Domains: []engine.DomainPlan{
-				{Tag: "a", Status: engine.StatusClean},
-				{Tag: "b", Status: engine.StatusParityMismatch},
-			},
-		}, true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := plan.HasParityMismatch(tc.r); got != tc.want {
-				t.Errorf("HasParityMismatch = %v, want %v", got, tc.want)
-			}
-		})
+	if !strings.Contains(err.Error(), "unknown tag") {
+		t.Errorf("error should mention 'unknown tag'; got %q", err.Error())
 	}
 }

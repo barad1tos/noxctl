@@ -119,7 +119,11 @@ func TestI18nCatalogComplete(t *testing.T) {
 		t.Fatalf("decode locales/uk.toml: %v", err)
 	}
 
-	roots := []string{"bear", "library", "llm", "it", "personal", "quicknote"}
+	// After the atomic catalog migration the hardcoded domain packages
+	// (library/llm/it/personal/quicknote) are gone — every domain now
+	// lives in examples/roman.toml. The remaining Go-source `bear.T(...)`
+	// call sites are inside bear/ (core + custom renderers).
+	roots := []string{"bear"}
 	keys := collectTKeys(t, repoRoot, roots)
 
 	var missing []string

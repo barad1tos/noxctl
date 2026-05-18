@@ -48,6 +48,15 @@ var catalogOnce = sync.OnceValues(func() ([]*bear.Domain, error) {
 	return domains, err
 })
 
+// CatalogPath returns the absolute path to examples/roman.toml,
+// resolved from this file's location via runtime.Caller. Useful for
+// tests that pass the path to a production loader (e.g. config.Load)
+// rather than reusing the cached domain slice.
+func CatalogPath(tb testing.TB) string {
+	tb.Helper()
+	return catalogPathOnce()
+}
+
 // LoadDomains returns the parsed domain slice from examples/roman.toml.
 // Fails the test on parse error. Reuses the cached parse via
 // sync.OnceValues.

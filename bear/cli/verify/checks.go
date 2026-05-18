@@ -31,9 +31,8 @@ func failCheck(name, message string, details []string) Check {
 func checkPlanParity(ctx context.Context, opts Options, domains []*bear.Domain) Check {
 	c := Check{Name: "plan-parity"}
 	res, err := engine.Plan(ctx, engine.PlanOpts{
-		Domains:      domains,
-		ConfigSource: engine.ConfigSourceTOML,
-		Stderr:       opts.Stderr,
+		Domains: domains,
+		Stderr:  opts.Stderr,
 	})
 	if err != nil {
 		c.Status = StatusError

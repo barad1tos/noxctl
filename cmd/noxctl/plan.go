@@ -18,9 +18,8 @@ var errDriftDetected = errors.New("noxctl: drift detected")
 
 // CLI-state for plan-specific flags.
 var (
-	planColor        string // --color=auto|always|never (default "auto")
-	planOutput       string // -o text|json (default "text")
-	planConfigSource string // --config-source=toml|hardcoded|both (D-01, D-04)
+	planColor  string // --color=auto|always|never (default "auto")
+	planOutput string // -o text|json (default "text")
 )
 
 // planCmd is the real `noxctl plan` subcommand. Replaces the
@@ -47,17 +46,11 @@ Color override (auto by default):
   --color=always  force ANSI even when piped
   --color=never   plain ASCII
 
-Config source (D-04 default toml; bridge-window opt-ins per D-01):
-  --config-source=toml       (default) reads noxctl.toml
-  --config-source=hardcoded  reads the hardcoded domain registry ( bridge)
-  --config-source=both       renders both paths and reports per-domain parity
-
 Plan reports the next apply tick's delta only (single-pass per CONTEXT D-06).
 On a freshly-edited corpus, expect drift to remain after the first apply;
 rerun 'noxctl plan' after 'noxctl apply' to confirm convergence.
 
-Exit codes: 0=no drift, 2=drift exists, 1=error, 130=interrupted.
-With --config-source=both, exit 2 also signals any parity mismatch.`,
+Exit codes: 0=no drift, 2=drift exists, 1=error, 130=interrupted.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runPlan,
 }
@@ -70,10 +63,6 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	src, err := engine.ParseConfigSource(planConfigSource)
-	if err != nil {
-		return err
-	}
 	if err = plan.ValidateOutput(planOutput); err != nil {
 		return err
 	}
@@ -82,7 +71,6 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	runErr := plan.Run(cmd.Context(), plan.Options{
 		Color:     color,
 		Output:    planOutput,
-		Source:    src,
 		Args:      args,
 		CfgPath:   cfgPath,
 		PinLegacy: legacyPath,
@@ -104,7 +92,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 }
 
 // registerEnumCompletion wires a static list of valid values as the
-// shell-completion source for flagName. Extracted because three
+// shell-completion source for flagName. Extracted because two
 // near-identical RegisterFlagCompletionFunc blocks crossed the dupl
 // threshold; the helper folds them to single-line registrations.
 func registerEnumCompletion(cmd *cobra.Command, flagName string, values []string) {
@@ -119,10 +107,7 @@ func init() {
 		"color output: auto|always|never (auto detects TTY + honors NO_COLOR)")
 	planCmd.Flags().StringVarP(&planOutput, "output", "o", "text",
 		"output format: text|json")
-	planCmd.Flags().StringVar(&planConfigSource, "config-source", "toml",
-		"config source: toml (default) | hardcoded | both")
 	registerEnumCompletion(planCmd, "color", []string{"auto", "always", "never"})
 	registerEnumCompletion(planCmd, "output", []string{"text", "json"})
-	registerEnumCompletion(planCmd, "config-source", []string{"toml", "hardcoded", "both"})
 	rootCmd.AddCommand(planCmd)
 }

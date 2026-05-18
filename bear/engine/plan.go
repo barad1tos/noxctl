@@ -22,63 +22,6 @@ import (
 	"github.com/barad1tos/noxctl/bear"
 )
 
-// ConfigSource selects which domain catalog `noxctl plan` reads.
-// ConfigSourceTOML is the post-Phase-4 default and the only value users
-// will see after the bridge window closes; the other two are explicit
-// opt-ins for the bridge window (D-01, D-04).
-//
-// The zero value (== ConfigSourceTOML) preserves Phase-03 behavior for
-// every existing caller — engine.Plan without an explicit ConfigSource
-// dispatches into planSinglePath verbatim.
-type ConfigSource int
-
-const (
-	// ConfigSourceTOML — default. Reads opts.Domains as the TOML-loaded
-	// catalog and runs the Phase-03 single-path drift compare.
-	ConfigSourceTOML ConfigSource = iota
-	// ConfigSourceHardcoded — explicit opt-in. Reads opts.Domains as the
-	// hardcoded `registry.All` slice and runs the same single-path
-	// drift compare. Bridge-window only; post-Phase-4 the CLI rejects
-	// this value with a friendly "removed" message.
-	ConfigSourceHardcoded
-	// ConfigSourceBoth — explicit opt-in. Pairs opts.Domains (TOML)
-	// against opts.HardcodedRef (hardcoded) by Tag and renders both
-	// halves in-memory; mismatches surface as Status=StatusParityMismatch.
-	// Bridge-window only.
-	ConfigSourceBoth
-)
-
-// String makes ConfigSource log/marshal friendly. Unknown int values
-// surface as "ConfigSource(N)" — same shape as Stringer-generated enums.
-func (c ConfigSource) String() string {
-	switch c {
-	case ConfigSourceTOML:
-		return "toml"
-	case ConfigSourceHardcoded:
-		return "hardcoded"
-	case ConfigSourceBoth:
-		return "both"
-	}
-	return fmt.Sprintf("ConfigSource(%d)", int(c))
-}
-
-// ParseConfigSource validates a --config-source flag value. Mirrors
-// ParseColorMode (bear/engine/diff.go) — returns a wrapped error with
-// the rejected value in the message. Empty string maps to TOML, the
-// post-Phase-4 default. NEVER silently defaults on unknown values
-// (RESEARCH Pitfall 8).
-func ParseConfigSource(s string) (ConfigSource, error) {
-	switch s {
-	case "", "toml":
-		return ConfigSourceTOML, nil
-	case "hardcoded":
-		return ConfigSourceHardcoded, nil
-	case "both":
-		return ConfigSourceBoth, nil
-	}
-	return ConfigSourceTOML, fmt.Errorf("invalid --config-source value %q (expected toml|hardcoded|both)", s)
-}
-
 // PlanOpts bundles inputs to engine.Plan. Mirrors ApplyOpts shape but
 // drops every write-path knob (Features.AcquireFlock, etc.) — plan is
 // read-only by construction.
@@ -86,15 +29,10 @@ type PlanOpts struct {
 	// Domains is the closed-catalog set of domains to evaluate.
 	// Iteration order is preserved into PlanResult.Domains; RenderText
 	// applies its own alphabetical sort on top.
-	//
-	// When ConfigSource=ConfigSourceBoth, Domains carries the TOML half
-	// and HardcodedRef carries the hardcoded half — the planParity loop
-	// pairs them by Tag.
 	Domains []*bear.Domain
 
-	// StatePath is optional and READ-ONLY. wires it for
-	// header lines like "applied_config_hash=…"; does not
-	// dereference it.
+	// StatePath is optional and READ-ONLY. Wired for header lines like
+	// "applied_config_hash=…"; never dereferenced.
 	StatePath string
 
 	// Verbose populates Diff.Detail with before/after strings and
@@ -104,41 +42,16 @@ type PlanOpts struct {
 	// Stderr is the verbose-trace target. Defaults to os.Stderr when
 	// nil. Tests inject a bytes.Buffer here.
 	Stderr io.Writer
-
-	// ConfigSource selects single-path render (TOML or Hardcoded) vs
-	// parity render (Both). Default zero-value is ConfigSourceTOML —
-	// preserves callers' behavior. D-04.
-	ConfigSource ConfigSource
-
-	// HardcodedRef carries the hardcoded *bear.Domain slice when
-	// ConfigSource == ConfigSourceBoth. Pairs are matched by Tag.
-	// nil/empty when ConfigSource != Both — planSinglePath does not
-	// read this field.
-	HardcodedRef []*bear.Domain
 }
 
-// Plan walks opts.Domains and returns a *PlanResult. Plan dispatches
-// between planSinglePath (TOML or Hardcoded — single-path render) and
-// planParity (Both — dual-path render with byte-equality compare).
-//
-// The dispatcher is deliberately tiny so gocognit stays well under the
-// threshold; the work happens in the two helpers (RESEARCH Pitfall 10).
+// Plan walks opts.Domains and returns a *PlanResult.
 func Plan(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
-	if opts.ConfigSource == ConfigSourceBoth {
-		return planParity(ctx, opts)
-	}
 	return planSinglePath(ctx, opts)
 }
 
-// planSinglePath holds the verbatim Plan body. Behavior is
-// byte-identical to the pre-Phase-04 implementation; this is a refactor
-// for the parity-branch split (RESEARCH Pitfall 10), NOT a behavior
-// change. Reachable via the dispatcher when ConfigSource is TOML or
-// Hardcoded — for ConfigSource=Hardcoded, the caller (cmd/noxctl/plan.go)
-// has resolved opts.Domains from registry.All before invoking Plan.
-//
+// planSinglePath walks opts.Domains once and produces a PlanResult.
 // Read-only: never invokes overwriteWithRetry, never writes state.json,
-// never acquires flock. Single-pass per CONTEXT D-06.
+// never acquires flock.
 //
 // Per-domain failures collect into PlanResult.Errors and continue
 // (mirrors apply.go log-and-continue pattern). Context cancellation
@@ -296,11 +209,10 @@ func computeDomainDelta(ctx context.Context, d *bear.Domain, verbose bool) (Doma
 	return dp, nil
 }
 
-// newEmptyPlanResult builds the JSON-stable empty *PlanResult shape
-// (slice fields initialized via make so they marshal as `[]`, not
-// `null` — RESEARCH Pitfall 6). Shared between planSinglePath and
-// planParity; extracting kept the dupl gate happy and keeps the
-// SchemaVersion=1 promise in one place.
+// newEmptyPlanResult builds the JSON-stable empty *PlanResult shape:
+// slice fields initialized via make so they marshal as `[]` instead of
+// `null`. SchemaVersion=1 is pinned here so any future bump lives in
+// exactly one place.
 func newEmptyPlanResult(capDomains int) *PlanResult {
 	return &PlanResult{
 		SchemaVersion: 1,
@@ -323,8 +235,6 @@ func computeSummary(r *PlanResult) PlanSummary {
 			s.DomainsDrift++
 		case StatusError:
 			s.DomainsError++
-		case StatusParityMismatch:
-			s.DomainsParityMismatch++
 		}
 		s.ChangesTotal += len(dp.Changes)
 	}

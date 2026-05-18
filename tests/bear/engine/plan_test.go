@@ -15,7 +15,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/engine"
@@ -320,78 +319,16 @@ func TestRenderTextErrorDomainShowsErrorGlyph(t *testing.T) {
 	}
 }
 
-// ---------- Task 1 — ConfigSource dispatcher --------------
-
-func TestParseConfigSource(t *testing.T) {
-	cases := []struct {
-		in      string
-		want    engine.ConfigSource
-		wantErr bool
-	}{
-		{"", engine.ConfigSourceTOML, false},
-		{"toml", engine.ConfigSourceTOML, false},
-		{"hardcoded", engine.ConfigSourceHardcoded, false},
-		{"both", engine.ConfigSourceBoth, false},
-		{"hardcode", engine.ConfigSourceTOML, true}, // typo
-		{"TOML", engine.ConfigSourceTOML, true},     // case-sensitive
-		{"yaml", engine.ConfigSourceTOML, true},     // unknown
-		{"both ", engine.ConfigSourceTOML, true},    // trailing space
-	}
-	for _, tc := range cases {
-		t.Run(tc.in, func(t *testing.T) {
-			got, err := engine.ParseConfigSource(tc.in)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("err: got %v, wantErr %v", err, tc.wantErr)
-			}
-			if !tc.wantErr && got != tc.want {
-				t.Errorf("got %v, want %v", got, tc.want)
-			}
-			if tc.wantErr && err != nil && !strings.Contains(err.Error(), tc.in) {
-				t.Errorf("error message lacks input %q: %q", tc.in, err.Error())
-			}
-		})
-	}
-}
-
-func TestConfigSourceStringer(t *testing.T) {
-	if got := engine.ConfigSourceTOML.String(); got != "toml" {
-		t.Errorf("ConfigSourceTOML.String() = %q, want %q", got, "toml")
-	}
-	if got := engine.ConfigSourceHardcoded.String(); got != "hardcoded" {
-		t.Errorf("ConfigSourceHardcoded.String() = %q, want %q", got, "hardcoded")
-	}
-	if got := engine.ConfigSourceBoth.String(); got != "both" {
-		t.Errorf("ConfigSourceBoth.String() = %q, want %q", got, "both")
-	}
-	// Unknown int → "ConfigSource(N)" fallback (defensive log/marshal shape).
-	if got := engine.ConfigSource(42).String(); got != "ConfigSource(42)" {
-		t.Errorf("ConfigSource(42).String() = %q, want %q", got, "ConfigSource(42)")
-	}
-}
-
-// TestPlanDispatchToSinglePathDefaults verifies that omitting
-// ConfigSource (zero value == ConfigSourceTOML) preserves
-// behavior: zero-domain Plan returns a clean empty result, never
-// touches the parity branch.
-func TestPlanDispatchToSinglePathDefaults(t *testing.T) {
+// TestPlanWithEmptyOpts verifies that a zero-value PlanOpts returns
+// a clean empty result without errors (defensive: no nil-deref, no
+// spurious entries in PlanResult).
+func TestPlanWithEmptyOpts(t *testing.T) {
 	res, err := engine.Plan(context.Background(), engine.PlanOpts{})
 	if err != nil {
 		t.Fatalf("Plan zero-value opts: %v", err)
 	}
 	if res == nil {
 		t.Fatal("Plan returned nil")
-	}
-	if res.Summary.DomainsParityMismatch != 0 {
-		t.Errorf("DomainsParityMismatch = %d on single-path; want 0", res.Summary.DomainsParityMismatch)
-	}
-}
-
-// TestStatusParityMismatchConstantValue locks the wire string. The
-// daily plist cron + parity-check consume this exact
-// string from JSON output; changing it is a breaking schema change.
-func TestStatusParityMismatchConstantValue(t *testing.T) {
-	if engine.StatusParityMismatch != "parity-mismatch" {
-		t.Errorf("StatusParityMismatch = %q, want %q", engine.StatusParityMismatch, "parity-mismatch")
 	}
 }
 
