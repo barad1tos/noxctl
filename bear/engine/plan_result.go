@@ -36,17 +36,13 @@ type Diff struct {
 	Detail  []string `json:"detail,omitempty"` // populated only when verbose
 }
 
-// status constants and the D-03 parity-mismatch
-// addition. Pre-Phase-4, the three legacy values were inline string
-// literals across plan.go / diff.go / external tests; keeps
-// those literals untouched (touching the existing strings would ripple
-// into RenderText / RenderJSON / external test fixtures) and only
-// surfaces the new constant for callers of planParity.
+// Wire values for DomainPlan.Status. Stable lowercase ASCII so jq
+// and downstream tooling can switch on them without case folding;
+// changes to these literals are a JSON-schema bump.
 const (
-	StatusClean          = "clean"           // no drift, no parity mismatch
-	StatusDrift          = "drift"           // single-path drift vs Bear state
-	StatusError          = "error"           // per-domain failure
-	StatusParityMismatch = "parity-mismatch" //  D-03 — only when ConfigSource=Both
+	StatusClean = "clean" // no drift
+	StatusDrift = "drift" // drift vs Bear state
+	StatusError = "error" // per-domain failure
 )
 
 // DomainPlan groups one domain's per-note changes plus a status flag.
@@ -55,7 +51,7 @@ const (
 // domains (RESEARCH Pitfall 6).
 type DomainPlan struct {
 	Tag     string `json:"tag"`
-	Status  string `json:"status"`  // StatusClean | StatusDrift | StatusError | StatusParityMismatch
+	Status  string `json:"status"`  // StatusClean | StatusDrift | StatusError
 	Changes []Diff `json:"changes"` // make([]Diff, 0) — never null
 }
 
@@ -89,19 +85,12 @@ type PlanError struct {
 // the "Plan: N domains drift, M changes, K errors" closing line; JSON
 // consumers query individual fields directly.
 type PlanSummary struct {
-	DomainsTotal int `json:"domains_total"`
-	DomainsClean int `json:"domains_clean"`
-	DomainsDrift int `json:"domains_drift"`
-	DomainsError int `json:"domains_error"`
-	// DomainsParityMismatch — D-03 addition. Counts DomainPlan
-	// rows whose Status == StatusParityMismatch (only emitted when the
-	// caller invokes engine.Plan with ConfigSource=ConfigSourceBoth).
-	// `omitempty` keeps the legacy single-path JSON output byte-equal
-	// to — clean+drift+error PlanResults marshal without this
-	// field (Pitfall 6 backwards compatibility).
-	DomainsParityMismatch int `json:"domains_parity_mismatch,omitempty"`
-	ChangesTotal          int `json:"changes_total"`
-	UntrackedFamilies     int `json:"untracked_families"`
+	DomainsTotal      int `json:"domains_total"`
+	DomainsClean      int `json:"domains_clean"`
+	DomainsDrift      int `json:"domains_drift"`
+	DomainsError      int `json:"domains_error"`
+	ChangesTotal      int `json:"changes_total"`
+	UntrackedFamilies int `json:"untracked_families"`
 }
 
 // PlanResult is the complete return payload of engine.Plan. Stable
