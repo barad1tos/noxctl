@@ -67,6 +67,16 @@ func statusGlyph(s Status) string {
 	}
 }
 
+// RenderForTest exposes `render` to the external test package under
+// `tests/bear/cli/verify/`. Production code reaches the same logic
+// through `verify.Run`'s `finalize`; this wrapper lets hermetic tests
+// drive arbitrary `Result` fixtures through the renderer without
+// having to plumb the whole pipeline. Pins the per-status glyph and
+// verdict semantics in one place.
+func RenderForTest(opts Options, result *Result) error {
+	return render(opts, result)
+}
+
 // overallVerdict reduces the summary to a single bold label. Error
 // trumps fail (verify couldn't make a verdict ⇒ tell the operator
 // loudly); fail trumps pass; otherwise PASS.

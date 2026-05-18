@@ -168,6 +168,41 @@ func ScanDaemonLogForTest(r io.Reader) ([]string, bool, error) {
 	return scanLogSinceStartup(r)
 }
 
+// RunApplyOnceForTest exposes `runApplyOnce` to the external test
+// package. Used by `checkApplyIdempotency` tests to calibrate per-
+// pass bearcli call counts (so a stateful test backend can be primed
+// to fail mid-pass with a known threshold instead of guessing).
+func RunApplyOnceForTest(ctx context.Context, opts Options, domains []*bear.Domain) (*engine.ApplyResult, error) {
+	return runApplyOnce(ctx, opts, domains)
+}
+
+// CheckApplyIdempotencyForTest exposes `checkApplyIdempotency` to the
+// external test package. Production code reaches it through
+// `verify.Run`'s `WithApply` branch; this wrapper lets hermetic tests
+// drive the twin-apply path against in-memory `bear.BearcliBackend`
+// fakes (registered on ctx) without spinning up real apply
+// orchestration plumbing from the cmd layer.
+func CheckApplyIdempotencyForTest(ctx context.Context, opts Options, domains []*bear.Domain) Check {
+	return checkApplyIdempotency(ctx, opts, domains)
+}
+
+// NonIdempotentDomainsForTest exposes `nonIdempotentDomains` to the
+// external test package. Production code reaches it through
+// `checkApplyIdempotency`'s second-pass branch; this wrapper lets
+// hermetic tests pin the alphabetical-sort contract (paste-into-issue
+// stability) without driving a full bearcli-backed apply cycle.
+func NonIdempotentDomainsForTest(res *engine.ApplyResult) []string {
+	return nonIdempotentDomains(res)
+}
+
+// SumApplyFieldForTest exposes `sumApplyField` to the external test
+// package. Production code reaches it through `checkApplyIdempotency`'s
+// PASS message; this wrapper lets hermetic tests pin the aggregation
+// behavior over synthetic ApplyResult fixtures.
+func SumApplyFieldForTest(res *engine.ApplyResult, pick func(engine.DomainCounts) int) int {
+	return sumApplyField(res, pick)
+}
+
 // scanLogSinceStartup walks the log once, remembering the most recent
 // "regen-watchd starting" line index, then collects every warning
 // from that line forward. Returns `(warnings, ok, err)`:
