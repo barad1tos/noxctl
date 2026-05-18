@@ -984,7 +984,7 @@ func (d *Domain) upsertHub(ctx context.Context, bucket string, notes []Note) (st
 		return "", fmt.Errorf("upsertHub %q parse: %w", hubTitle, err)
 	}
 
-	autoZone, manual := splitMarker(existing.Content)
+	autoZone, manual := SplitMarker(existing.Content)
 	existingOrder := parseHubOrder(autoZone)
 	newAuto := d.RenderHub(d, bucket, notes, existingOrder)
 
@@ -1030,7 +1030,7 @@ func (d *Domain) upsertMasterIndex(ctx context.Context, groups map[string][]Note
 		return "", fmt.Errorf("upsertMasterIndex(%s) parse: %w", d.IndexTitle, err)
 	}
 
-	_, manual := splitMarker(existing.Content)
+	_, manual := SplitMarker(existing.Content)
 	var newBody string
 	if manual != "" {
 		newBody = newAuto + "\n" + manual

@@ -148,6 +148,7 @@ func planSinglePath(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
 	if opts.Stderr == nil {
 		opts.Stderr = os.Stderr
 	}
+	seedDuplicateRegistry(ctx, opts.Domains, opts.Stderr)
 	result := newEmptyPlanResult(len(opts.Domains))
 	for _, d := range opts.Domains {
 		if ctx.Err() != nil {
@@ -199,6 +200,26 @@ func translateUntracked(b bear.UntrackedReport) UntrackedReport {
 	return UntrackedReport{TagFamilies: fams, TotalNotes: b.TotalNotes}
 }
 
+// seedDuplicateRegistry primes `Domain.Duplicates` on every domain so
+// `AtomicWikilink` emits the `[Title](bear://x-callback-url/open-note?id=X)`
+// disambiguation form for cross-corpus duplicate titles. Without it
+// every duplicate atom renders as plain `[[Title]]` here and the vault
+// read (which has the URL form, written by `apply`) surfaces as false
+// drift. Build-failure is non-fatal: log to stderr and fall back to
+// plain wikilinks (matches the apply-side log-and-continue pattern at
+// `bear/engine/apply.go`).
+func seedDuplicateRegistry(ctx context.Context, domains []*bear.Domain, stderr io.Writer) {
+	registry, err := bear.BuildDuplicateRegistry(ctx, domains)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr,
+			"duplicates: registry build failed: %v (continuing with plain wikilinks)\n", err)
+		return
+	}
+	for _, d := range domains {
+		d.Duplicates = registry
+	}
+}
+
 // computeDomainDelta returns one domain's plan entry by reading
 // current Bear state (FetchMasterContent) and rendering desired state
 // via bear.SnapshotDomainRenderInputs + d.RenderMaster, comparing via
@@ -218,10 +239,27 @@ func computeDomainDelta(ctx context.Context, d *bear.Domain, verbose bool) (Doma
 	if err != nil {
 		return dp, fmt.Errorf("computeDomainDelta(%s) inputs: %w", d.Tag, err)
 	}
-	desiredMaster := d.RenderMaster(d, inputs.Groups)
+	desiredAuto := d.RenderMaster(d, inputs.Groups)
 	currentMaster, err := bear.FetchMasterContent(ctx, d)
 	if err != nil {
 		return dp, fmt.Errorf("computeDomainDelta(%s) master read: %w", d.Tag, err)
+	}
+	// `FetchMasterContent` pre-strips `bear://` new-note URLs from
+	// the vault read (`bear/snapshot.go::FetchMasterContent` → D-07
+	// idempotency-hash convention). The renderer emits them. Strip
+	// the desired side too so both halves are URL-free before the
+	// strict comparator's URL count check — otherwise every domain
+	// surfaces as false drift (1 vs 0 URLs in the header).
+	desiredAuto = bear.StripNewNoteURLsFromBody(desiredAuto)
+	// Preserve the curator zone (below `## ✱ Куратор`) before
+	// comparing. `upsertMasterIndex` in `bear/core.go` composes the
+	// final write as `desiredAuto + "\n" + manual`; plan MUST mirror
+	// that or every master with a curator zone surfaces as false
+	// drift here.
+	_, manual := bear.SplitMarker(currentMaster)
+	desiredMaster := desiredAuto
+	if manual != "" {
+		desiredMaster = desiredAuto + "\n" + manual
 	}
 	switch {
 	case currentMaster == "":

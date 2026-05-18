@@ -528,9 +528,13 @@ func stripHeaderCount(line, prefix string) string {
 	return strings.TrimSpace(stripped)
 }
 
-// splitMarker partitions a hub/master note body into its auto-zone (above the
-// curator marker) and manual zone (from the marker onward).
-func splitMarker(body string) (auto, manual string) {
+// SplitMarker partitions a hub/master note body into its auto-zone (above the
+// curator marker) and manual zone (from the marker onward). Exported so
+// the plan path (`bear/engine/plan.go::computeDomainDelta`) can mirror
+// `upsertMasterIndex`'s manual-zone preservation before comparing
+// rendered output to live vault content — otherwise plan reports false
+// drift on every master that has a curator zone.
+func SplitMarker(body string) (auto, manual string) {
 	markerStart := strings.Index(body, HubMarker)
 	if markerStart < 0 {
 		return body, ""
