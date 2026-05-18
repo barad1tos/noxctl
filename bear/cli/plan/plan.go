@@ -68,7 +68,16 @@ func ValidateOutput(output string) error {
 // Run is the plan orchestrator. Loads the domain slice(s) per
 // ConfigSource, dispatches to engine.Plan, renders the result, and
 // returns one of (nil, ErrDriftDetected, ErrInterrupted, error).
+//
+// Initializes the global bearcli semaphore at entry via the shared
+// `engine.DefaultBearcliConcurrency` ceiling — `engine.Plan`'s
+// `SnapshotDomainRenderInputs` calls `listNotes` which requires the
+// pool to be live. Apply and daemon paths set this themselves;
+// plan's path was missed, surfacing as "bearcli pool not initialized"
+// errors for every domain when `noxctl plan` ran standalone.
 func Run(ctx context.Context, opts Options) error {
+	bear.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
+
 	tomlDomains, hardDomains, err := LoadDomainsByConfigSource(opts.Source, opts.Args,
 		opts.CfgPath, opts.PinLegacy, opts.PinTarget, opts.Stderr)
 	if err != nil {
