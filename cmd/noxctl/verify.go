@@ -2,11 +2,15 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/cli/verify"
+	"github.com/barad1tos/noxctl/bear/config"
+	"github.com/barad1tos/noxctl/bear/engine"
 )
 
 // errVerifyFailed and errVerifyError are cmd-level sentinels for
@@ -57,11 +61,18 @@ ERROR (a check could not run — bearcli unreachable, log absent, etc.).`,
 // runVerify is the thin RunE shim that adapts cobra state into a
 // verify.Options struct and delegates to verify.Run. Mirrors plan.go's
 // shape — all business logic lives in bear/cli/verify.
+//
+// When `--with-apply` is set, runVerify also primes the
+// `verify.Options.ApplyOpts` template with the same Pins / paths /
+// Features `noxctl apply` would use. Without this priming the
+// idempotency check errors at flock-acquire ("AcquireApply open …")
+// before the second pass runs. Catalog load happens here (cmd
+// layer) because `featuresFromCatalog` lives in cmd/noxctl/preflight.go
+// and the engine→config import direction is forbidden by D-01.
 func runVerify(cmd *cobra.Command, _ []string) error {
-	if err := verify.ValidateOutput(verifyOutput); err != nil {
-		return err
-	}
-	runErr := verify.Run(cmd.Context(), verify.Options{
+	// Output validation happens inside `verify.Run → render`; we
+	// don't duplicate the check at the cmd layer (single owner).
+	opts := verify.Options{
 		ConfigPath: cfgPath,
 		WithApply:  verifyWithApply,
 		LogPath:    verifyLogPath,
@@ -69,7 +80,15 @@ func runVerify(cmd *cobra.Command, _ []string) error {
 		Output:     verifyOutput,
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,
-	})
+	}
+	if verifyWithApply {
+		applyTemplate, err := buildVerifyApplyTemplate()
+		if err != nil {
+			return err
+		}
+		opts.ApplyOpts = applyTemplate
+	}
+	runErr := verify.Run(cmd.Context(), opts)
 	switch {
 	case errors.Is(runErr, verify.ErrVerifyFailed):
 		return errVerifyFailed
@@ -77,6 +96,31 @@ func runVerify(cmd *cobra.Command, _ []string) error {
 		return errVerifyRuntime
 	}
 	return runErr
+}
+
+// buildVerifyApplyTemplate primes `engine.ApplyOpts` with the
+// catalog-derived features + pin registry + project-local state/lock
+// paths that `noxctl apply` uses. Returns the template (Domains and
+// Stderr are filled in by verify at call time).
+//
+// Errors only when the catalog itself can't be loaded — pin load is
+// best-effort (nil-safe registry per bear/pins.go), matching
+// runApply's behavior in cmd/noxctl/apply.go.
+func buildVerifyApplyTemplate() (engine.ApplyOpts, error) {
+	_, cat, loadErr := config.Load(cfgPath)
+	if loadErr != nil {
+		return engine.ApplyOpts{}, fmt.Errorf("verify --with-apply: %s",
+			config.FormatLoadError(loadErr, cfgPath))
+	}
+	_, pinTarget := pinPaths()
+	pins, _ := bear.LoadPinRegistry(pinTarget)
+	return engine.ApplyOpts{
+		Pins:         pins,
+		StatePath:    "./.noxctl/state.json",
+		LockPath:     "./.noxctl/.lock",
+		Features:     featuresFromCatalog(cat),
+		AuditEnabled: false,
+	}, nil
 }
 
 func init() {

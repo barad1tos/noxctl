@@ -43,6 +43,15 @@ type Options struct {
 	// WithApply opts into the destructive apply-twice idempotency
 	// check. Default false — verify stays read-only.
 	WithApply bool
+	// ApplyOpts is the template `engine.Apply` invocation verify
+	// uses when `WithApply` is true. The caller fills Pins,
+	// StatePath, LockPath, Features (typically via the cmd-layer's
+	// `featuresFromCatalog`) — verify overrides Domains and Stderr
+	// at call time. Required when WithApply is true; ignored
+	// otherwise. Without these the underlying `engine.Apply` errors
+	// at flock-acquire with "AcquireApply open : no such file or
+	// directory" before the idempotency check can even begin.
+	ApplyOpts engine.ApplyOpts
 	// LogPath overrides the daemon log location. Empty defaults to
 	// `~/.cache/regen-watchd.log`.
 	LogPath string

@@ -86,6 +86,11 @@ func driftDomainList(res *engine.PlanResult) []string {
 // daemonLogStartupMarker is the line the daemon emits on every fresh
 // boot. `checkDaemonLog` rewinds to the most recent occurrence and
 // scans forward from there — older history is by design out of scope.
+//
+// TODO(rebrand): when the `regen-watchd` binary renames to `noxctl
+// daemon` (or whatever the post-migration name is), this marker
+// must follow. Best done by reading it from a single constant
+// shared with the daemon's startup-log emit site (`bear/engine/daemon.go`).
 const daemonLogStartupMarker = "regen-watchd starting"
 
 // daemonLogWarnPattern matches the three categories of post-startup
@@ -278,16 +283,17 @@ func checkApplyIdempotency(ctx context.Context, opts Options, domains []*bear.Do
 	return c
 }
 
-// runApplyOnce wraps `engine.Apply` with the verify-specific
-// ApplyOpts (TOML-only catalog, all features default-on per the
-// production daemon's set). Returns the result for stat collection
-// or an error on infrastructure-level failure.
+// runApplyOnce invokes `engine.Apply` using `opts.ApplyOpts` as the
+// template — Pins, StatePath, LockPath, Features are caller-supplied
+// (cmd layer derives them from the same catalog `noxctl apply` uses,
+// via `featuresFromCatalog`). Domains and Stderr are overridden here
+// so the verify package stays catalog-agnostic. Returns the result
+// for stat collection or an error on infrastructure-level failure.
 func runApplyOnce(ctx context.Context, opts Options, domains []*bear.Domain) (*engine.ApplyResult, error) {
-	res, err := engine.Apply(ctx, engine.ApplyOpts{
-		Domains:  domains,
-		Features: engine.AllFeaturesOn(),
-		Stderr:   opts.Stderr,
-	})
+	apply := opts.ApplyOpts
+	apply.Domains = domains
+	apply.Stderr = opts.Stderr
+	res, err := engine.Apply(ctx, apply)
 	if err != nil {
 		return nil, err
 	}
