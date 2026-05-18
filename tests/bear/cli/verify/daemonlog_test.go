@@ -209,10 +209,10 @@ func TestCheckDaemonLog_PathDoesNotExist(t *testing.T) {
 }
 
 // TestCheckDaemonLog_PathIsDirectory_SurfacesScanError — operator
-// misconfigured `--log-path` to point at a directory. macOS
-// `os.Open` succeeds but the subsequent `bufio.Scanner` read fails
-// with "is a directory"; `scanLogSinceStartup` propagates that as
-// the scan-error branch, and the check surfaces ERROR with a
+// misconfigured `--log-path` to point at a directory. `os.Open`
+// succeeds but the subsequent `bufio.Scanner` read fails with EISDIR
+// ("is a directory") on POSIX; `scanLogSinceStartup` propagates that
+// as the scan-error branch, and the check surfaces ERROR with a
 // "scan <path>:" hint that routes the operator to the path config.
 func TestCheckDaemonLog_PathIsDirectory_SurfacesScanError(t *testing.T) {
 	dirPath := t.TempDir() // an existing directory, not a file

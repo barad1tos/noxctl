@@ -72,6 +72,15 @@ func TestRun_CtxCanceledMidPlan_PlanParitySurfacesInterrupted(t *testing.T) {
 // describe drift — never "untracked". Pins the strict no-fire branch
 // so a regression that surfaces a spurious "0 untracked families"
 // FAIL gets caught.
+//
+// Note: the symmetric FIRE branch (UntrackedFamilies > 0 → "strict:
+// N untracked tag-family/families detected") is not reachable through
+// the current hermetic backend — engine.Plan's pre-strict drift/error
+// gate short-circuits before strict on any non-empty catalog (benign
+// backend's empty bearcli responses force drift), and residue scan is
+// gated on len(opts.Domains) > 0 so an empty catalog never reaches
+// the residue path. The FIRE branch is exercised by ship-gate.sh
+// against the live vault as part of the full hard-gate run.
 func TestRun_StrictModeWithCleanCatalog_StrictUpgradeDoesNotFire(t *testing.T) {
 	cfg := writeMinimalCatalog(t)
 	logPath := writeDaemonLog(t, []string{

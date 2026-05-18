@@ -96,13 +96,8 @@ func TestCheckApplyIdempotency_OperatorOmitsApplyOptsLock_FirstApplyFails(t *tes
 }
 
 // TestCheckApplyIdempotency_OperatorOnCleanVault_PassesWithSecondPassClean
-// — drive the full twin-apply path with the benign backend (which
-// returns shape-valid empty list/show responses) and a populated
-// ApplyOpts. Expected: pass-1 creates the master from the empty-
-// corpus render, pass-2 sees an unchanged vault → 0 writes → check
-// surfaces PASS with "second pass clean" message and the pass-1
-// stat block. Pins the happy-path operator outcome (gate accepted)
-// the way ship-gate.sh asserts it against the real vault.
+// — pins the happy-path operator outcome (gate accepted) the way
+// ship-gate.sh asserts it against the real vault.
 func TestCheckApplyIdempotency_OperatorOnCleanVault_PassesWithSecondPassClean(t *testing.T) {
 	domains := loadFixtureDomains(t)
 	ctx := ctxWithBenignBackend(t)
@@ -148,14 +143,10 @@ type simulatedErr string
 func (e simulatedErr) Error() string { return string(e) }
 
 // TestCheckApplyIdempotency_OperatorWithFailingBackend_FirstPassReportsFailures
-// — bearcli outage during the first apply pass. engine.Apply
-// completes (the orchestrator catches per-domain failures and
-// continues) but DomainCounts.Failed > 0 trips `first.AnyFailed()`;
-// the check surfaces StatusError with the specific "per-domain
-// failures" message that routes the operator to the daemon log.
-// Pins the exact branch (not "first apply failed", which is the
-// distinct AcquireApply-error path covered by
-// `_OperatorOmitsApplyOptsLock_FirstApplyFails`).
+// — bearcli outage during the first apply pass. Pins the
+// `first.AnyFailed()` per-domain-failure branch (distinct from the
+// AcquireApply-error branch covered by
+// _OperatorOmitsApplyOptsLock_FirstApplyFails).
 func TestCheckApplyIdempotency_OperatorWithFailingBackend_FirstPassReportsFailures(t *testing.T) {
 	domains := loadFixtureDomains(t)
 	backend := failingBearcliBackend{err: simulatedErr("bearcli simulated outage")}
