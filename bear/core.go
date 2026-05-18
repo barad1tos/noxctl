@@ -444,7 +444,7 @@ func parseHubBulletIdentifiers(content string) []string {
 // besides the daemon-managed family (#<family> and #<family>/*). The family
 // is the top-level segment of d.Tag (e.g. "library" for "library/poetry",
 // "llm" for "llm/agents"); we never re-emit these as extras because the
-// canonicaliser writes a single authoritative tag-line. Without this filter
+// canonicalizer writes a single authoritative tag-line. Without this filter
 // each regen pass would accumulate the canonical tag in ExtraTags and
 // produce header lines like `#llm/agents #llm/agents #llm/agents |...`.
 //

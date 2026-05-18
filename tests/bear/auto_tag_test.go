@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/barad1tos/noxctl/bear"
-	"github.com/barad1tos/noxctl/quicknote"
+	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
 // userGibberishLine mirrors the user-reported screenshot body ("тестовий
@@ -45,7 +45,7 @@ func TestRenderCanonicalForBootstrap_EmptyContent_ProducesCanonicalForm(t *testi
 	fixedNow := time.Date(2026, 5, 15, 22, 30, 0, 0, time.Local)
 	bear.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
-	out := quicknote.DailyDomain.RenderCanonicalForBootstrap("")
+	out := testutil.Domain(t, "quicknote/daily").RenderCanonicalForBootstrap("")
 
 	wantH1 := "# 15 May 2026 at 22:30"
 	if !strings.HasPrefix(out, wantH1+"\n") {
@@ -79,7 +79,7 @@ func TestRenderCanonicalForBootstrap_NoteWithBody_PutsBodyBelowSeparator(t *test
 	// Mirrors the user's screenshot: H1 from Bear auto-title, body line
 	// typed by the user, no tag-line yet (fast-pass is about to add it).
 	in := "# 15 May 2026 at 21:59\n" + userGibberishLine + "\n"
-	out := quicknote.DailyDomain.RenderCanonicalForBootstrap(in)
+	out := testutil.Domain(t, "quicknote/daily").RenderCanonicalForBootstrap(in)
 
 	// H1 preserved verbatim — never re-stamped because it's present.
 	if !strings.HasPrefix(out, "# 15 May 2026 at 21:59\n") {
@@ -107,13 +107,13 @@ func TestRenderCanonicalForBootstrap_IdempotentWithRegenCycle(t *testing.T) {
 	bear.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
 	in := "# 15 May 2026 at 22:30\nuser typed body\n"
-	bootstrap := quicknote.DailyDomain.RenderCanonicalForBootstrap(in)
+	bootstrap := testutil.Domain(t, "quicknote/daily").RenderCanonicalForBootstrap(in)
 
 	// Now simulate the regen cycle running on the same content —
 	// RenderAtomicCanonicalForTest is the in-memory mirror of
 	// upsertAtomicBacklink's canonicalization path.
-	canonical := bear.RenderAtomicCanonicalForTest(t, quicknote.DailyDomain, "Note Title",
-		quicknote.DailyDomain.UnknownBucket, bootstrap)
+	canonical := bear.RenderAtomicCanonicalForTest(t, testutil.Domain(t, "quicknote/daily"), "Note Title",
+		testutil.Domain(t, "quicknote/daily").UnknownBucket, bootstrap)
 
 	if !bear.EqualIgnoringNewNoteLink(bootstrap, canonical) {
 		t.Errorf("bootstrap output is not idempotent under cycle re-render\n  bootstrap:\n%s\n  cycle:\n%s",
@@ -133,7 +133,7 @@ func TestApplyForeignTagEscape_CanonicalizesDestination(t *testing.T) {
 	// Use the same RenderCanonicalForBootstrap helper that
 	// processForeignTagEscape uses internally — proves the destination
 	// domain produces canonical form including its own backlink.
-	dst := quicknote.WeeklyDomain
+	dst := testutil.Domain(t, "quicknote/weekly")
 	stripped := "# 13 May 2026\n#quicknote/weekly\nweekly recap body\n"
 
 	// Substituting #quicknote/* with a foreign tag (e.g. another
@@ -167,7 +167,7 @@ func TestApplyForeignTagEscape_CanonicalizesDestination(t *testing.T) {
 // backlink target). The note remains user-managed.
 func TestApplyForeignTagEscape_UnknownDestinationFallsBackToStripOnly(t *testing.T) {
 	// Build a domainsByTag map that does NOT include the foreign tag.
-	domainsByTag := bear.DomainsByTag([]*bear.Domain{quicknote.DailyDomain})
+	domainsByTag := bear.DomainsByTag([]*bear.Domain{testutil.Domain(t, "quicknote/daily")})
 
 	if _, ok := domainsByTag["user/typed-no-domain"]; ok {
 		t.Fatalf("test precondition violated: map should not contain `user/typed-no-domain`")
@@ -330,7 +330,7 @@ func TestApplyQuicknotePlaceholderRefresh_MarkerNote_GetsTimestampStamped(t *tes
 		Content: "# Quicknote\n#quicknote/daily | [[✱ Daily]]\n---\n\n",
 	})
 
-	refreshed, err := bear.ApplyQuicknotePlaceholderRefresh(ctx, quicknote.DailyDomain)
+	refreshed, err := bear.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
 	if err != nil {
 		t.Fatalf("ApplyQuicknotePlaceholderRefresh: %v", err)
 	}
@@ -362,7 +362,7 @@ func TestApplyQuicknotePlaceholderRefresh_NonMarkerNote_Skipped(t *testing.T) {
 		Content: "# 15 May 2026 at 22:00\n#quicknote/daily | [[✱ Daily]]\n---\n\nold body\n",
 	})
 
-	refreshed, err := bear.ApplyQuicknotePlaceholderRefresh(ctx, quicknote.DailyDomain)
+	refreshed, err := bear.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
 	if err != nil {
 		t.Fatalf("ApplyQuicknotePlaceholderRefresh: %v", err)
 	}
@@ -386,7 +386,7 @@ func TestApplyQuicknotePlaceholderRefresh_LegacyForwardsToGenericScan(t *testing
 	ctx := bear.ContextWithBackend(context.Background(), backend)
 	bear.ResetBearcliPoolForTest(1)
 
-	_, err := bear.ApplyQuicknotePlaceholderRefresh(ctx, quicknote.DailyDomain)
+	_, err := bear.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
 	if err != nil {
 		t.Fatalf("ApplyQuicknotePlaceholderRefresh: %v", err)
 	}
@@ -417,7 +417,7 @@ func TestApplyPlaceholderRefresh_DispatchesToDomainByTitleAndTag(t *testing.T) {
 		Content: "# Quicknote\n#quicknote/daily | [[✱ Daily]]\n---\n\n",
 	})
 
-	domainsByTag := bear.DomainsByTag([]*bear.Domain{quicknote.DailyDomain})
+	domainsByTag := bear.DomainsByTag([]*bear.Domain{testutil.Domain(t, "quicknote/daily")})
 	refreshed, err := bear.ApplyPlaceholderRefresh(ctx, domainsByTag)
 	if err != nil {
 		t.Fatalf("ApplyPlaceholderRefresh: %v", err)
@@ -447,7 +447,7 @@ func TestApplyPlaceholderRefresh_SkipsUntaggedNotes(t *testing.T) {
 		Content: "# Quicknote\nuser typed manually\n",
 	})
 
-	domainsByTag := bear.DomainsByTag([]*bear.Domain{quicknote.DailyDomain})
+	domainsByTag := bear.DomainsByTag([]*bear.Domain{testutil.Domain(t, "quicknote/daily")})
 	refreshed, err := bear.ApplyPlaceholderRefresh(ctx, domainsByTag)
 	if err != nil {
 		t.Fatalf("ApplyPlaceholderRefresh: %v", err)
@@ -469,7 +469,7 @@ func TestApplyPlaceholderRefresh_ListArgsAreGlobal(t *testing.T) {
 	ctx := bear.ContextWithBackend(context.Background(), backend)
 	bear.ResetBearcliPoolForTest(1)
 
-	domainsByTag := bear.DomainsByTag([]*bear.Domain{quicknote.DailyDomain})
+	domainsByTag := bear.DomainsByTag([]*bear.Domain{testutil.Domain(t, "quicknote/daily")})
 	_, err := bear.ApplyPlaceholderRefresh(ctx, domainsByTag)
 	if err != nil {
 		t.Fatalf("ApplyPlaceholderRefresh: %v", err)

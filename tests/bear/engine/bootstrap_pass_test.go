@@ -1,7 +1,7 @@
 // Package engine_test — tests.
 //
 // Validates `bear.ApplyDomainBootstrap` — the new 4th fast-pass that
-// canonicalises any note whose tags match a managed leaf domain. Covers
+// canonicalizes any note whose tags match a managed leaf domain. Covers
 // all five real factory shapes (`HubRouted`, `GroupedVerticalFlat`,
 // `FlatList`, etc.), the umbrella-redirect path via `ResolveURLDomain`,
 // multi-leaf precedence (most-specific wins / tie skipped), the
@@ -26,9 +26,7 @@ import (
 	"testing/synctest"
 
 	"github.com/barad1tos/noxctl/bear"
-	"github.com/barad1tos/noxctl/library"
-	"github.com/barad1tos/noxctl/llm"
-	"github.com/barad1tos/noxctl/personal"
+	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
 // listPayload marshals a slice of fake `autoTagNote` shapes (id/title/
@@ -68,7 +66,7 @@ func lastOverwriteBody(t *testing.T, fake *fakeAutoTagBackend) string {
 func TestApplyDomainBootstrap_LeafDomain_HubRouted(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domains := []*bear.Domain{library.LyricsDomain}
+		domains := []*bear.Domain{testutil.Domain(t, "library/lyrics")}
 		domainsByTag := bear.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
@@ -107,7 +105,7 @@ func TestApplyDomainBootstrap_LeafDomain_HubRouted(t *testing.T) {
 func TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domains := []*bear.Domain{library.AphorismsDomain}
+		domains := []*bear.Domain{testutil.Domain(t, "library/aphorisms")}
 		domainsByTag := bear.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
@@ -144,7 +142,7 @@ func TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat(t *testing.T) {
 func TestApplyDomainBootstrap_LeafDomain_FlatList(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domains := []*bear.Domain{llm.CharactersDomain}
+		domains := []*bear.Domain{testutil.Domain(t, "llm/characters")}
 		domainsByTag := bear.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
@@ -182,11 +180,11 @@ func TestApplyDomainBootstrap_UmbrellaRedirect(t *testing.T) {
 			"llm",
 			"✱ LLM",
 			"llm/agents",
-			[]*bear.Domain{llm.AgentsDomain, llm.CharactersDomain},
+			[]*bear.Domain{testutil.Domain(t, "llm/agents"), testutil.Domain(t, "llm/characters")},
 		)
 		// Index BOTH umbrella and leaf so matchOwningDomain can resolve
 		// `#llm` (umbrella-only-tag branch) → ResolveURLDomain → leaf.
-		domains := []*bear.Domain{llm.AgentsDomain, llm.CharactersDomain, umbrella}
+		domains := []*bear.Domain{testutil.Domain(t, "llm/agents"), testutil.Domain(t, "llm/characters"), umbrella}
 		domainsByTag := bear.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
@@ -222,7 +220,7 @@ func TestApplyDomainBootstrap_MultipleLeafsMostSpecific(t *testing.T) {
 		// Construct a synthetic `claude` leaf alongside `llm/agents` to
 		// exercise the multi-leaf-with-different-lengths code path.
 		claude := bear.NewFlatListDomain("claude", "✱ Claude")
-		domains := []*bear.Domain{claude, llm.AgentsDomain}
+		domains := []*bear.Domain{claude, testutil.Domain(t, "llm/agents")}
 		domainsByTag := bear.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
@@ -296,12 +294,12 @@ func TestApplyDomainBootstrap_MultipleLeafsTieSkip(t *testing.T) {
 func TestApplyDomainBootstrap_AlreadyCanonicalNoOp(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domains := []*bear.Domain{llm.CharactersDomain}
+		domains := []*bear.Domain{testutil.Domain(t, "llm/characters")}
 		domainsByTag := bear.DomainsByTag(domains)
 
 		// Pre-render the canonical body via the SAME function the pass uses,
 		// so equalIgnoringNewNoteLinkStrict returns true on the input.
-		canonical := llm.CharactersDomain.RenderCanonicalForBootstrap("Wise grey wanderer.\n")
+		canonical := testutil.Domain(t, "llm/characters").RenderCanonicalForBootstrap("Wise grey wanderer.\n")
 
 		payload := listPayload(t, []map[string]any{{
 			"id":      "chr-canon-1",
@@ -338,7 +336,7 @@ func TestApplyDomainBootstrap_StructuralNoteSkip(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		bear.ResetBootstrapLoopForTest()
-		domains := []*bear.Domain{llm.CharactersDomain}
+		domains := []*bear.Domain{testutil.Domain(t, "llm/characters")}
 		domainsByTag := bear.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
@@ -375,7 +373,7 @@ func TestApplyDomainBootstrap_SubTagBucketNoOp(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		bear.ResetBootstrapLoopForTest()
-		domains := []*bear.Domain{personal.HealthDomain}
+		domains := []*bear.Domain{testutil.Domain(t, "health")}
 		domainsByTag := bear.DomainsByTag(domains)
 
 		// Sub-tag bucket form — `#health/інше | …`, the actual shape
@@ -426,7 +424,7 @@ func TestApplyDomainBootstrap_SubTagBucketNoOp(t *testing.T) {
 func TestApplyDomainBootstrap_AlreadyBucketedNoOp(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domains := []*bear.Domain{library.LyricsDomain}
+		domains := []*bear.Domain{testutil.Domain(t, "library/lyrics")}
 		domainsByTag := bear.DomainsByTag(domains)
 
 		// Hand-crafted body that simulates per-domain regen output: real
@@ -465,7 +463,7 @@ func TestApplyDomainBootstrap_AlreadyBucketedNoOp(t *testing.T) {
 func TestApplyDomainBootstrap_NoManagedTagSkip(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domains := []*bear.Domain{llm.CharactersDomain}
+		domains := []*bear.Domain{testutil.Domain(t, "llm/characters")}
 		domainsByTag := bear.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
@@ -552,7 +550,7 @@ func TestApplyDomainBootstrap_LoopGuard_SkipsAfterCap(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		bear.ResetBootstrapLoopForTest()
-		domains := []*bear.Domain{llm.CharactersDomain}
+		domains := []*bear.Domain{testutil.Domain(t, "llm/characters")}
 		domainsByTag := bear.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{

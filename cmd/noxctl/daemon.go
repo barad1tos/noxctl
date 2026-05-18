@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,6 +18,12 @@ import (
 )
 
 var daemonBearDBFlag string // --bear-db override
+
+// errFmtNoxctlDaemon prefixes every error returned by `noxctl daemon`
+// so cobra's RunE handler renders a consistent `noxctl daemon: ...`
+// prefix to stderr. Extracted to a const so the literal is defined
+// once instead of repeated at every return site.
+const errFmtNoxctlDaemon = "noxctl daemon: %w"
 
 // daemonCmd is the real `noxctl daemon` subcommand. Replaces the
 // stub. Loads noxctl.toml, constructs `engine.NewDaemon`, and runs the
@@ -43,6 +50,11 @@ Exit codes: 0=graceful shutdown or clean exit, 1=startup or runtime error.`,
 // runDaemon is the daemon RunE. Extracted to a named function so the
 // command literal stays small (mirrors apply.go::runApply).
 func runDaemon(cmd *cobra.Command, _ []string) error {
+	// Microsecond-precision timestamps match the format the legacy
+	// daemon binary emitted, so log diff tooling and operator's eye
+	// keep working across the rename.
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+
 	// Inline preflight — mirrors apply.go.
 	legacyPath, target := pinPaths()
 	if migrationErr := state.MigratePins(legacyPath, target); migrationErr != nil {
@@ -62,6 +74,10 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	bearDBDir, bearDBErr := resolveBearDB(cat, daemonBearDBFlag)
+	if bearDBErr != nil {
+		return fmt.Errorf(errFmtNoxctlDaemon, bearDBErr)
+	}
 	opts := engine.DaemonOpts{
 		ApplyOpts: engine.ApplyOpts{
 			Domains:      domains,
@@ -72,12 +88,19 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 			AuditEnabled: false,
 			Stderr:       os.Stderr,
 		},
-		BearDBDir: resolveBearDB(cat, daemonBearDBFlag),
+		BearDBDir: bearDBDir,
 	}
+
+	// Emit the startup marker `noxctl verify --check daemon-log` rewinds
+	// to. Wording preserved from the legacy daemon (`regen-watchd
+	// starting`) so the verify-gate scanner keeps matching post-rebrand
+	// without touching the constant in bear/cli/verify/checks.go.
+	log.Printf("regen-watchd starting; watching dir %s, domains=%d",
+		opts.BearDBDir, len(domains))
 
 	d, err := engine.NewDaemon(opts)
 	if err != nil {
-		return fmt.Errorf("noxctl daemon: %w", err)
+		return fmt.Errorf(errFmtNoxctlDaemon, err)
 	}
 	defer func() {
 		if cerr := d.Close(); cerr != nil {
@@ -89,7 +112,7 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 	// narrowed to apply-only. Run returns ctx.Err on cancel; we
 	// squash that to nil for exit 0.
 	if runErr := d.Run(ctx); runErr != nil && !errors.Is(runErr, context.Canceled) {
-		return fmt.Errorf("noxctl daemon: %w", runErr)
+		return fmt.Errorf(errFmtNoxctlDaemon, runErr)
 	}
 	return nil
 }

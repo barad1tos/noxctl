@@ -11,7 +11,7 @@ import (
 	"unicode"
 
 	"github.com/barad1tos/noxctl/bear"
-	"github.com/barad1tos/noxctl/quicknote"
+	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
 // TestNewNoteURLFile_NoCyrillicLiterals enforces I18N-04 on the SSOT URL
@@ -96,7 +96,7 @@ func TestDefaultQuickPlaceholderH1_Value(t *testing.T) {
 // domain. No title= query param (Bear derives title from the embedded
 // H1 marker).
 func TestNewNoteURL_BootstrapEmission_ContainsExpectedShape(t *testing.T) {
-	emitted := bear.NewNoteURLFromDomain(quicknote.DailyDomain).Emit()
+	emitted := bear.NewNoteURLFromDomain(testutil.Domain(t, "quicknote/daily")).Emit()
 	for _, marker := range []string{
 		"text=",
 		"edit=yes",
