@@ -1,0 +1,30 @@
+[
+  {
+    "id": "fixture-grouped-vertical-001",
+    "title": "GV Atom One",
+    "content": "#fixture-grouped-vertical/bucket-a | [[Fixture Index]]\n\n# GV Atom One\n\nbody one",
+    "hash": "0000000000000021",
+    "created": "2024-03-01T00:00:00Z"
+  },
+  {
+    "id": "fixture-grouped-vertical-002",
+    "title": "GV Atom Two",
+    "content": "#fixture-grouped-vertical/bucket-a | [[Fixture Index]]\n\n# GV Atom Two\n\nbody two",
+    "hash": "0000000000000022",
+    "created": "2024-03-02T00:00:00Z"
+  },
+  {
+    "id": "fixture-grouped-vertical-003",
+    "title": "GV Atom Три",
+    "content": "#fixture-grouped-vertical/bucket-b | [[Fixture Index]]\n\n# GV Atom Три\n\nbody three",
+    "hash": "0000000000000023",
+    "created": "2024-03-03T00:00:00Z"
+  },
+  {
+    "id": "fixture-grouped-vertical-004",
+    "title": "GV Atom Четвертий",
+    "content": "#fixture-grouped-vertical | [[Fixture Index]]\n\n# GV Atom Четвертий\n\nbody four",
+    "hash": "0000000000000024",
+    "created": "2024-03-04T00:00:00Z"
+  }
+]

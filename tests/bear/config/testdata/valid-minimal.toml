@@ -1,0 +1,11 @@
+[meta]
+version = "1"
+locale  = "uk"
+
+[[domain]]
+tag         = "library/poetry"
+index_title = "✱ Поезія"
+blueprint   = "hub-routed"
+own_group   = "Моя поезія"
+unknown_bucket = "Невідомі"
+hub_h2_prefix  = "Поеми"

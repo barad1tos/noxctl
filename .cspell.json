@@ -1,0 +1,39 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "ignorePaths": [
+    "go.sum",
+    "*.log"
+  ],
+  "words": [
+    "bearcli",
+    "errcheck",
+    "fsnotify",
+    "gosec",
+    "getwd",
+    "gocognit",
+    "gocyclo",
+    "gofmt",
+    "gofumpt",
+    "goimports",
+    "golangci",
+    "golint",
+    "gosimple",
+    "govet",
+    "ineffassign",
+    "kubectl",
+    "kubeconfig",
+    "kubectx",
+    "kubeuser",
+    "launchctl",
+    "launchd",
+    "lll",
+    "misspell",
+    "regen",
+    "Sonar",
+    "staticcheck",
+    "unconvert",
+    "unparam",
+    "wbadmin"
+  ]
+}

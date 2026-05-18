@@ -1,0 +1,13 @@
+[meta]
+version = "1"
+locale  = "uk"
+
+[[domain]]
+tag         = "library/poetry"
+index_title = "P1"
+blueprint   = "flat-list"
+
+[[domain]]
+tag         = "library/poetry"
+index_title = "P2"
+blueprint   = "flat-list"

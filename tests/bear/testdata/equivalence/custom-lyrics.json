@@ -1,0 +1,37 @@
+[
+  {
+    "id": "fixture-custom-lyrics-001",
+    "title": "Latin Song One",
+    "content": "#fixture-custom-lyrics | [[Fictional Latin Band]]\n\n# Latin Song One\n\nbody one",
+    "hash": "0000000000000061",
+    "created": "2024-07-01T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-lyrics-002",
+    "title": "Latin Song Two",
+    "content": "#fixture-custom-lyrics | [[Fictional Latin Band]]\n\n# Latin Song Two\n\nbody two",
+    "hash": "0000000000000062",
+    "created": "2024-07-02T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-lyrics-003",
+    "title": "Кирилична Пісня Перша",
+    "content": "#fixture-custom-lyrics | [[Тестовий Кириличний Гурт]]\n\n# Кирилична Пісня Перша\n\nbody three",
+    "hash": "0000000000000063",
+    "created": "2024-07-03T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-lyrics-004",
+    "title": "Another Latin Song",
+    "content": "#fixture-custom-lyrics | [[Another Latin Outfit]]\n\n# Another Latin Song\n\nbody four",
+    "hash": "0000000000000064",
+    "created": "2024-07-04T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-lyrics-005",
+    "title": "Pre-canonical orphan",
+    "content": "# Pre-canonical orphan\n\nbody without canonical header — falls into UnknownBucket",
+    "hash": "0000000000000065",
+    "created": "2024-07-05T00:00:00Z"
+  }
+]

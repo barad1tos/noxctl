@@ -1,0 +1,8 @@
+[meta]
+version = 1
+locale  = "uk"
+
+[[domain]]
+tag         = "x/y"
+index_title = "X"
+blueprint   = "flat-list"

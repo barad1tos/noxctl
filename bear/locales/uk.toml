@@ -1,0 +1,105 @@
+# noxctl i18n catalog — uk locale.
+#
+# Locked by D-10: catalog format is TOML, single file per locale, embedded
+# via `//go:embed locales/*.toml`. Future locales drop sibling files
+# (en.toml, etc.) without recompile-shape changes.
+#
+# Keys follow `dot.separated.lowercase` convention. Naming is grouped by
+# subsystem then by domain; the lookup function is `bear.T(key)`. Missing
+# keys at runtime invoke the swappable `missingKeyHandler` (default:
+# `log.Fatalf`) so a typo surfaces as a fast failure, never a silent
+# fallback (I18N-03).
+
+# --- Generic master/hub section labels (bear/defaults.go, bear/factory.go,
+# --- bear/hub_routed_subtag.go) ---
+"master.section.own-curated"      = "Власні"
+"master.section.authors"          = "Автори"
+"master.section.categories"       = "Категорії"
+"master.section.divisions"        = "Розділи"
+
+# --- Hub markers (bear/domain.go HubMarker — kept as Go const for now;
+# --- catalog ships the value for future Phase-4 migration) ---
+"hub.curator-marker"              = "## ✱ Куратор"
+
+# --- New-note link decoration (bear/new_note.go) ---
+"new-note.label"                  = "Нова нотатка"
+"atom.untitled-label"             = "Без назви"
+
+# --- Common shared values across many domains ---
+"common.unknown.other"            = "інше"
+
+# --- library/poetry.go ---
+"library.poetry.index"            = "✱ Поезія"
+"library.poetry.own-group"        = "Моя поезія"
+"library.poetry.own-alias.short"  = "Мої"
+"library.poetry.unknown"          = "Невідомі"
+"library.poetry.h2-prefix"        = "Поеми"
+"library.poetry.h2-legacy"        = "Поезії"
+
+# --- library/articles.go ---
+"library.articles.index"          = "✱ Статті"
+"library.articles.own-group"      = "Мої статті"
+"library.articles.unknown"        = "Інші"
+"library.articles.h2-prefix"      = "Статті"
+
+# --- library/lyrics.go ---
+"library.lyrics.index"            = "✱ Тексти"
+"library.lyrics.unknown"          = "Невідомі"
+"library.lyrics.h2-prefix"        = "Пісні"
+"library.lyrics.section.foreign"  = "Іноземні"
+"library.lyrics.section.cis"      = "СНГ"
+
+# --- library/quotes.go ---
+"library.quotes.index"            = "✱ Цитати"
+"library.quotes.unknown"          = "Без джерела"
+"library.quotes.h2-prefix"        = "Цитати"
+"library.quotes.section.sources"  = "Джерела"
+
+# --- library/aphorisms.go ---
+"library.aphorisms.index"         = "✱ Афоризми"
+"library.aphorisms.unknown"       = "Невідомі"
+"library.aphorisms.bucket.books"  = "Книги"
+"library.aphorisms.bucket.movies" = "Кіно"
+"library.aphorisms.bucket.games"  = "Ігри"
+
+# --- library/prose.go ---
+"library.prose.index"             = "✱ Проза"
+"library.prose.bucket.own"        = "Мої"
+"library.prose.bucket.others"     = "Чужі"
+
+# --- llm/agents.go ---
+"llm.agents.index"                = "✱ LLM Агенти"
+"llm.agents.h2-prefix"            = "Агенти"
+"llm.agents.column.development"   = "Розробка"
+"llm.agents.column.infra-data"    = "Інфра / Дані"
+"llm.agents.column.quality"       = "Якість"
+"llm.agents.column.orchestration" = "Координація"
+"llm.agents.column.business"      = "Бізнес"
+"llm.agents.column.other"         = "Інше"
+
+# --- llm/{characters,rules,tips}.go ---
+"llm.characters.index"            = "✱ LLM Персонажі"
+"llm.rules.index"                 = "✱ LLM Правила"
+"llm.tips.index"                  = "✱ LLM Поради"
+
+# --- it/{domains,vendors,technologies}.go ---
+"it.domains.index"                = "✱ IT Сфери"
+"it.technologies.index"           = "✱ IT Технології"
+
+# --- personal/*.go ---
+"personal.claude.index"           = "✱ Claude"
+"personal.development.index"      = "✱ Development"
+"personal.english.index"          = "✱ English"
+"personal.health.index"           = "✱ Здоров'я"
+"personal.leisure.index"          = "✱ Дозвілля"
+"personal.humor.index"            = "✱ Гумор"
+"personal.work.index"             = "✱ Робота"
+"personal.instagram.index"        = "✱ Instagram"
+"personal.travel.index"           = "✱ Подорожі"
+
+# --- quicknote/*.go ---
+"quicknote.daily.index"           = "✱ Daily"
+"quicknote.weekly.index"          = "✱ Weekly"
+"quicknote.monthly.index"         = "✱ Monthly"
+"quicknote.yearly.index"          = "✱ Yearly"
+"quicknote.decadal.index"         = "✱ Decadal"

@@ -1,0 +1,8 @@
+[meta]
+version = "1"
+locale  = "uk"
+
+[[domain]]
+tag         = "library/foo"
+index_title = "Foo"
+blueprint   = "fancy"

@@ -1,0 +1,58 @@
+[
+  {
+    "id": "fixture-custom-agents-001",
+    "title": "Agent Go One",
+    "content": "#fixture-custom-agents | [[go]]\n\n# Agent Go One\n\nbody one",
+    "hash": "0000000000000081",
+    "created": "2024-09-01T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-agents-002",
+    "title": "Agent Python One",
+    "content": "#fixture-custom-agents | [[python]]\n\n# Agent Python One\n\nbody two",
+    "hash": "0000000000000082",
+    "created": "2024-09-02T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-agents-003",
+    "title": "Agent Devops",
+    "content": "#fixture-custom-agents | [[devops]]\n\n# Agent Devops\n\nbody three",
+    "hash": "0000000000000083",
+    "created": "2024-09-03T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-agents-004",
+    "title": "Agent Quality",
+    "content": "#fixture-custom-agents | [[quality]]\n\n# Agent Quality\n\nbody four",
+    "hash": "0000000000000084",
+    "created": "2024-09-04T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-agents-005",
+    "title": "Agent Orchestration",
+    "content": "#fixture-custom-agents | [[orchestration]]\n\n# Agent Orchestration\n\nbody five",
+    "hash": "0000000000000085",
+    "created": "2024-09-05T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-agents-006",
+    "title": "Agent Business",
+    "content": "#fixture-custom-agents | [[business]]\n\n# Agent Business\n\nbody six",
+    "hash": "0000000000000086",
+    "created": "2024-09-06T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-agents-007",
+    "title": "Agent Research",
+    "content": "#fixture-custom-agents | [[research]]\n\n# Agent Research\n\nbody seven",
+    "hash": "0000000000000087",
+    "created": "2024-09-07T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-agents-008",
+    "title": "Agent Unmapped",
+    "content": "#fixture-custom-agents | [[zigzag]]\n\n# Agent Unmapped\n\nbody eight (unmapped bucket falls into Other column)",
+    "hash": "0000000000000088",
+    "created": "2024-09-08T00:00:00Z"
+  }
+]

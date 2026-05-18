@@ -1,0 +1,7 @@
+# broken-syntax.toml — true TOML syntax error so toml.ParseError fires.
+# The unclosed [meta table-header is unrecoverable at the lexer level,
+# which is exactly the cascade-1 (parse) trigger FormatLoadError must
+# classify with line+col precision. See VAL-04.
+[meta
+version = "1"
+locale  = "uk"

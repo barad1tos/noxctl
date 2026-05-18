@@ -1,0 +1,23 @@
+# Three independent errors in one document so the test can verify
+# errors.Join aggregation surfaces all three substrings in a single
+# Load error.
+#
+# 1. Top-level table [bogus] is unknown — caught by metadata.Undecoded
+# 2. domain[0].blueprint = "fancy" — caught by Dispatch (ErrUnknownBlueprint)
+# 3. domain[1] duplicates domain[0]'s tag — caught by ValidateCatalog
+[meta]
+version = "1"
+locale  = "uk"
+
+[bogus]
+nope = "value"
+
+[[domain]]
+tag         = "x/y"
+index_title = "X1"
+blueprint   = "fancy"
+
+[[domain]]
+tag         = "x/y"
+index_title = "X2"
+blueprint   = "flat-list"

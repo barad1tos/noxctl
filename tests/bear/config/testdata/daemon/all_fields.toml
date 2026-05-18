@@ -1,0 +1,11 @@
+[daemon]
+debounce_pause   = "3s"
+max_burst_window = "2m"
+audit_enabled    = false
+
+[daemon.paths]
+state   = "/var/lib/noxctl/state.json"
+lock    = "/var/lib/noxctl/.lock"
+pins    = "/var/lib/noxctl/pins.json"
+log     = "/var/log/noxctl.log"
+bear_db = "/opt/bear/db"

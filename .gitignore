@@ -1,0 +1,26 @@
+# Build artifacts — top-level + per-cmd binaries from `go build`.
+/regen-watchd
+/cmd/regen-watchd/regen-watchd
+/noxctl
+/cmd/noxctl/noxctl
+/noxctl-codegen
+/cmd/noxctl-codegen/noxctl-codegen
+
+# Project state (per-project flock + state.json + pin migration).
+.noxctl/
+
+# IDE / editor (JetBrains, VS Code, Vim).
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# Test / build noise.
+*.bak
+*.test
+*.out
+coverage.out
+coverage.html
+
+# macOS.
+.DS_Store

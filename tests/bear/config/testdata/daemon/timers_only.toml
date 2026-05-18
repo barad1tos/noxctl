@@ -1,0 +1,2 @@
+[daemon]
+debounce_pause = "1s"

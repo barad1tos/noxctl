@@ -1,0 +1,117 @@
+# noxctl daemon configuration
+# Copy to ~/.noxctl/daemon.toml and edit. Restart daemon after changes:
+# launchctl kickstart -k gui/$(id -u)/com.bear.regen-watchd
+#
+# Defaults shown explicitly. Env-vars override these values (see
+# `noxctl daemon-config show` for current effective resolution).
+
+[daemon]
+# FSEvent quiet window before regen fires (default 2s).
+# Lower = faster click-to-canonicalize, but narrower window for the user
+# to type their own H1 before the daemon stamps a datetime.
+debounce_pause   = "2s"
+
+# Force-trigger when events never stop (default 1m).
+# Caps how long a continuous-typing burst can defer regen.
+max_burst_window = "1m"
+
+# Run pre-pass audit (default true).
+# Audit scans every atomic for unsafe titles, multi-canonical lines,
+# orphan tags. Set REGEN_AUDIT=off to disable temporarily.
+audit_enabled    = true
+
+# bearcli subprocess concurrency cap (default 8). The daemon orchestrates
+# 31+ domain regens in parallel; this knob caps how many bearcli
+# subprocesses run concurrently against Bear's SQLite database.
+#
+# Tuning:
+# - 1 = sequential (old behavior; useful for debugging or low-power
+# machines)
+# - 8 = recommended baseline. Roman's vault sees ~3-4x speedup vs
+# sequential without notable hash-conflict spikes
+# - 16 = soft cap. Values above this WARN at startup and are accepted
+# but expect Bear sqlite WAL contention; verify via
+# `regen-watchd --bench --sweep=8,16,32` and inspect
+# hash_conflicts.total in the JSON output
+# - <=0 = invalid; startup is fatal
+#
+# Env override: REGEN_BEARCLI_CONCURRENCY (e.g. for `--bench` A/B).
+bearcli_concurrency = 8
+
+# Bear-write polling fallback interval (default 30s). Some Bear UI actions
+# (notably drag-to-tag) defer the SQLite write by minutes — the FSEvent
+# watcher has nothing to fire on during that gap. This knob caps the
+# user-visible "daemon settled" delay by stat-ing database.sqlite
+# every N seconds and routing detected mtime changes through the same
+# debounce path used by FSEvents.
+#
+# Tuning:
+# - "30s" = recommended baseline. Drag-to-tag canonical lands within
+# <= poll interval + debounce_pause (~32s upper bound).
+# - "10s" = aggressive; tighter latency at the cost of 3x more stat
+# syscalls. Idle CPU still effectively 0%.
+# - "60s" = conservative; lower stat rate, longer worst-case lag.
+# - "0s" = disabled. Daemon relies exclusively on FSEvents. Use only
+# if your Bear workflow never triggers write-deferral.
+# - negative = invalid; startup is fatal.
+#
+# Env override: REGEN_MTIME_POLL_INTERVAL (e.g. for short-burst testing).
+mtime_poll_interval = "30s"
+
+# Auto-tag fast-pass tick interval (default 2s). Runs ONLY the two
+# tag-stamp pre-passes (foreign-tag escape + daily-default) every N
+# seconds — independent of the full per-domain regen cycle. Target:
+# click-then-type quicknotes get `#quicknote/daily` stamped within
+# <= 5s p95, vs the 13-15s the FSEvent-then-Bear-flush path delivers.
+#
+# Tuning:
+# - "2s" = recommended baseline. Click-to-tag visible latency
+# 95th-percentile <= 5s on Roman's vault.
+# - "1s" = aggressive; tighter latency at the cost of 2x bearcli
+# list traffic. Idle CPU still effectively 0%.
+# - "5s" = conservative; one bearcli list every 5s. Trade off
+# ~2s extra worst-case for fewer subprocess invocations.
+# - "0s" = disabled. Tag stamps only on FSEvent/mtime-poll cycles.
+# Use if you prefer the 13-15s click-to-tag delay over
+# the steady 2s tick.
+# - negative = invalid; startup is fatal.
+#
+# Env override: REGEN_AUTOTAG_POLL_INTERVAL (e.g. for latency-probe
+# A/B testing — see 09-LATENCY-PROBE.md).
+auto_tag_poll_interval = "2s"
+
+# universal fast-pass canonicalization kill-switch
+# (default true). When true, every daemon tick runs a single pre-pass
+# that lifts atomic notes onto their canonical header for every
+# managed domain — replacing the per-domain copies of the same logic.
+# Runtime cost ≈ 1 extra `bearcli list` per tick.
+#
+# Tuning:
+# - true = recommended baseline (ship default). Centralized
+# canonicalization; per-domain code paths are vestigial.
+# - false = kill-switch. Reverts to current per-domain behavior
+# without redeploy if the universal pass regresses
+# vault parity.
+#
+# Env override: REGEN_DOMAIN_BOOTSTRAP. Mirrors REGEN_AUDIT semantics —
+# the env var disables only when set to literal "off"; any other
+# non-empty value enables.
+# domain_bootstrap = true
+
+[daemon.paths]
+# Apply-state JSON; tracks per-domain LastApply, etc.
+state   = "~/.noxctl/state.json"
+
+# Single-daemon flock; prevents two regen-watchd processes from
+# concurrently mutating Bear.
+lock    = "~/.noxctl/.lock"
+
+# Cross-domain pin registry; persists user-driven moves so promotion
+# pre-passes don't undo them.
+pins    = "~/.cache/regen-watchd-pins.json"
+
+# Daemon log file (stderr fallback when log path is unwriteable).
+log     = "~/.cache/regen-watchd.log"
+
+# Bear's Group Container DB dir; empty = auto-discover via $HOME.
+bear_db = ""

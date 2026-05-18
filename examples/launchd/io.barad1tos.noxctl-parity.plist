@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.barad1tos.noxctl-parity</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>mkdir -p $HOME/.cache/noxctl-parity &amp;&amp; $HOME/bin/noxctl plan --config-source=both -o json --config $HOME/path/to/noxctl.toml &gt; $HOME/.cache/noxctl-parity/$(date -u +%Y-%m-%d).json 2&gt;$HOME/.cache/noxctl-parity/$(date -u +%Y-%m-%d).err &amp;&amp; find $HOME/.cache/noxctl-parity -mtime +14 -name '*.json' -delete</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>2</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/CHANGEME/.cache/noxctl-parity-launchd.out</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/CHANGEME/.cache/noxctl-parity-launchd.err</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/CHANGEME</string>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+</dict>
+</plist>

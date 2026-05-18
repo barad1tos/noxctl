@@ -1,0 +1,30 @@
+[
+  {
+    "id": "fixture-custom-quotes-001",
+    "title": "Quote Atom One",
+    "content": "#fixture-custom-quotes | [[Source Alpha]]\n\n# Quote Atom One\n\nbody one",
+    "hash": "0000000000000071",
+    "created": "2024-08-01T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-quotes-002",
+    "title": "Quote Atom Two",
+    "content": "#fixture-custom-quotes | [[Source Alpha]]\n\n# Quote Atom Two\n\nbody two",
+    "hash": "0000000000000072",
+    "created": "2024-08-02T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-quotes-003",
+    "title": "Quote Atom Three",
+    "content": "#fixture-custom-quotes | [[Джерело Бета]]\n\n# Quote Atom Three\n\nbody three",
+    "hash": "0000000000000073",
+    "created": "2024-08-03T00:00:00Z"
+  },
+  {
+    "id": "fixture-custom-quotes-004",
+    "title": "Quote Atom Four",
+    "content": "#fixture-custom-quotes | [[Джерело Бета]]\n\n# Quote Atom Four\n\nbody four",
+    "hash": "0000000000000074",
+    "created": "2024-08-04T00:00:00Z"
+  }
+]

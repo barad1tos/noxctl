@@ -1,0 +1,122 @@
+# golangci-lint v2 configuration for regen-watchd.
+#
+# Mirrors the Sonar-style thresholds the CI/IDE pipeline already enforces so
+# `golangci-lint run` locally surfaces the same findings before they reach
+# the editor's inline annotations. Keep these limits in sync with whatever
+# the IDE shows — moving them here without coordinating with the IDE setup
+# defeats the purpose of having a single source of truth.
+
+version: "2"
+
+run:
+  timeout: 2m
+  tests: true
+
+linters:
+  default: none
+  enable:
+ # Correctness
+    - errcheck     # unchecked errors
+    - govet        # built-in vet checks
+    - ineffassign  # unused assignments
+    - staticcheck  # extensive static analysis
+    - unused       # unused identifiers
+ # Style / consistency
+    - misspell     # English spelling typos
+    - unconvert    # redundant type conversions
+ # Complexity (matches Sonar thresholds)
+    - gocognit     # cognitive complexity per function
+    - gocyclo      # cyclomatic complexity
+    - dupl         # duplicate code blocks
+    - lll          # line length
+ # Naming / style
+    - revive       # general golint-style naming + style
+ # Dead code
+    - unparam      # unused function parameters
+ # Go ≥1.24 idiom upgrades (slices.Contains, strings.{SplitSeq,FieldsSeq,Cut}, …).
+ # Replaces former forbidigo entry; Cyrillic-literal ban now lives in
+ # tools/cyrillic-lint (wired through pre-commit, see I18N-04).
+    - modernize
+
+  settings:
+    govet:
+ # Built-in `shadow` analyzer is opt-in. Enable it so accidental
+ # `if err:= …` shadows of an outer `err` (or any other binding) get
+ # flagged at the same time as the rest of vet. `strict: true` makes
+ # the analyzer flag ALL shadows, not just the conservative subset
+ # the default mode catches — matches gopls IDE behavior so editor
+ # warnings and CI lint agree.
+      enable:
+        - shadow
+      settings:
+        shadow:
+          strict: true
+    gocognit:
+ # Sonar's default is 15 — match it so IDE warnings agree with CLI.
+      min-complexity: 15
+    gocyclo:
+      min-complexity: 15
+    dupl:
+ # Tokens, not lines. Tuned by bisection after extracting every real
+ # duplication into bear/factory.go (NewFlatTableDomain,
+ # NewFlatListDomain, NewHubRoutedDomain) and bear.SortTitles helper.
+ # Bisect map after refactor:
+ # threshold ≤ 20 → 9 findings, all genuine Go idioms (error
+ # wrapping `if err != nil { return fmt.Errorf }`,
+ # wikilink shape check, callback signature
+ # mirror between struct field and function impl)
+ # threshold ≥ 30 → 0 findings
+ # 30 is the lowest viable threshold. Lower values flag language-
+ # natural patterns whose extraction would hurt readability. Re-run
+ # bisection after any structural change before relaxing.
+      threshold: 30
+    lll:
+      line-length: 150
+      tab-width: 4
+    misspell:
+      locale: US
+    revive:
+      severity: warning
+      rules:
+        - name: var-naming
+        - name: error-return
+        - name: error-naming
+        - name: exported
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+        - name: unreachable-code
+
+  exclusions:
+ # Don't apply default preset exclusions — the noise filter hides genuine
+ # warnings. Explicit rules below cover the legitimate exemptions.
+    generated: lax
+    presets:
+      - common-false-positives
+    rules:
+ # Migration scripts under /tmp are one-shot; they live outside the module.
+      - path: 'tmp/'
+        linters:
+          - errcheck
+          - govet
+          - ineffassign
+          - staticcheck
+          - unused
+          - misspell
+          - unconvert
+          - gocognit
+          - gocyclo
+          - dupl
+          - lll
+          - revive
+          - unparam
+
+formatters:
+  enable:
+    - gofmt      # canonical formatting
+    - goimports  # import grouping

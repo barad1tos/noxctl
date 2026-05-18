@@ -1,0 +1,30 @@
+[
+  {
+    "id": "fixture-hub-routed-subtag-001",
+    "title": "HRS Atom One",
+    "content": "#fixture-hub-routed-subtag/bucket-a | [[Fixture · bucket-a]]\n\n# HRS Atom One\n\nbody one",
+    "hash": "0000000000000041",
+    "created": "2024-05-01T00:00:00Z"
+  },
+  {
+    "id": "fixture-hub-routed-subtag-002",
+    "title": "HRS Atom Two",
+    "content": "#fixture-hub-routed-subtag/bucket-a | [[Fixture · bucket-a]]\n\n# HRS Atom Two\n\nbody two",
+    "hash": "0000000000000042",
+    "created": "2024-05-02T00:00:00Z"
+  },
+  {
+    "id": "fixture-hub-routed-subtag-003",
+    "title": "HRS Atom Three",
+    "content": "#fixture-hub-routed-subtag/bucket-b | [[Fixture · bucket-b]]\n\n# HRS Atom Three\n\nbody three",
+    "hash": "0000000000000043",
+    "created": "2024-05-03T00:00:00Z"
+  },
+  {
+    "id": "fixture-hub-routed-subtag-004",
+    "title": "HRS Atom Four",
+    "content": "#fixture-hub-routed-subtag | [[Fixture Index]]\n\n# HRS Atom Four\n\nbody four",
+    "hash": "0000000000000044",
+    "created": "2024-05-04T00:00:00Z"
+  }
+]

@@ -1,0 +1,23 @@
+[
+  {
+    "id": "fixture-flat-list-001",
+    "title": "Alpha Persona",
+    "content": "#flat-list-fixture | [[Roster]]\n\n# Alpha Persona\n\nbody one",
+    "hash": "0000000000000001",
+    "created": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": "fixture-flat-list-002",
+    "title": "Бета Постать",
+    "content": "#flat-list-fixture | [[Roster]]\n\n# Бета Постать\n\nbody two",
+    "hash": "0000000000000002",
+    "created": "2024-01-02T00:00:00Z"
+  },
+  {
+    "id": "fixture-flat-list-003",
+    "title": "Gamma Voice",
+    "content": "#flat-list-fixture | [[Roster]]\n\n# Gamma Voice\n\nbody three",
+    "hash": "0000000000000003",
+    "created": "2024-01-03T00:00:00Z"
+  }
+]

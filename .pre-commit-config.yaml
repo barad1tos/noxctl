@@ -1,0 +1,94 @@
+# Pre-commit hooks for noxctl / regen-watchd.
+#
+# Layout: generic file-level checks first, then local language-specific
+# gates. To install:
+#
+#     pre-commit install
+#     pre-commit install --hook-type commit-msg
+#
+# Hooks expected on PATH: `gofmt`, `go`, `golangci-lint`. The Go-specific
+# stages run as `language: system` so they pick up the user's local Go
+# toolchain rather than locking to a pre-commit-managed version — keeps
+# tooling drift in one place (Go's own version manager).
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: no-commit-to-branch
+        args: ['--branch', 'main']
+        # Fire on both pre-commit AND commit-msg stages so cherry-picks,
+        # reverts, and amends on main are caught — not just plain commit.
+        stages: [pre-commit, commit-msg]
+      - id: detect-private-key
+
+  # GitHub Actions security scanner — flags injection / token leaks / etc.
+  - repo: https://github.com/woodruffw/zizmor-pre-commit
+    rev: v1.22.0
+    hooks:
+      - id: zizmor
+        args: ['--min-severity', 'medium']
+
+  # Local Go-specific hooks. Order is intentional: gofmt first (cheap,
+  # fixes noise that would otherwise drown the slower checks), then go vet
+  # (built-in, fast, catches the obvious bugs), then golangci-lint (the
+  # heavy lifter that consults .golangci.yml — including the gocognit ≤15
+  # threshold). go test runs last because it's the slowest gate.
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        entry: gofmt -l -w
+        language: system
+        types: [go]
+
+      - id: go-vet
+        name: go vet
+        entry: go vet ./...
+        language: system
+        pass_filenames: false
+        types: [go]
+
+      - id: cyrillic-lint
+        name: cyrillic-lint
+        # singlechecker resolves package patterns against the module of
+        # the CWD's go.mod, so we build the analyzer (sub-module) first,
+        # then invoke it from the repo root where ./bear/... and
+        # ./cmd/... resolve.
+        # Use --git-common-dir so the cache binary lives in the shared
+        # `.git/` for both main checkouts (where `.git` is a directory)
+        # and worktrees (where `.git` is a file pointing at
+        # .git/worktrees/<name>/, and --git-common-dir still resolves to
+        # the parent .git/).
+        entry: bash -c 'GD=$(git rev-parse --git-common-dir) && go -C tools/cyrillic-lint build -o "$GD/cyrillic-lint" . && "$GD/cyrillic-lint" ./bear/... ./cmd/...'
+        language: system
+        pass_filenames: false
+        types: [go]
+
+      - id: golangci-lint
+        name: golangci-lint
+        entry: golangci-lint run
+        language: system
+        pass_filenames: false
+        types: [go]
+
+      - id: go-mod-tidy
+        name: go mod tidy
+        entry: go mod tidy
+        language: system
+        pass_filenames: false
+        files: '(go\.mod|go\.sum)$'
+
+      - id: go-test
+        name: go test
+        entry: go test ./...
+        language: system
+        pass_filenames: false
+        types: [go]

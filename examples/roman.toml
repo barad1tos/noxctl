@@ -1,0 +1,222 @@
+[meta]
+  version = "1"
+  locale = "uk"
+  bear_db = ""
+
+[[domain]]
+  tag = "library/poetry"
+  index_title = "✱ Поезія"
+  blueprint = "hub-routed"
+  unknown_bucket = "Невідомі"
+  hub_h2_prefix = "Поеми"
+  hub_h2_legacy = ["Поезії"]
+  own_group = "Моя поезія"
+  own_aliases = ["Моя поезія", "Мої"]
+  legacy_author_fallback = true
+  strip_legacy_author_h2 = true
+
+[[domain]]
+  tag = "library/aphorisms"
+  index_title = "✱ Афоризми"
+  blueprint = "flat-table"
+  unknown_bucket = "Невідомі"
+  buckets = ["Книги", "Кіно", "Ігри"]
+
+[[domain]]
+  tag = "library/articles"
+  index_title = "✱ Статті"
+  blueprint = "hub-routed"
+  unknown_bucket = "Інші"
+  hub_h2_prefix = "Статті"
+  own_group = "Мої статті"
+  own_aliases = ["Мої статті"]
+  legacy_author_fallback = false
+  strip_legacy_author_h2 = false
+
+[[domain]]
+  tag = "library/lyrics"
+  index_title = "✱ Тексти"
+  blueprint = "custom"
+  unknown_bucket = "Невідомі"
+  hub_h2_prefix = "Пісні"
+  legacy_author_fallback = true
+  strip_legacy_author_h2 = true
+  renderer = "lyrics"
+
+[[domain]]
+  tag = "library/prose"
+  index_title = "✱ Проза"
+  blueprint = "flat-table"
+  unknown_bucket = "Мої"
+  buckets = ["Мої", "Чужі"]
+
+[[domain]]
+  tag = "library/quotes"
+  index_title = "✱ Цитати"
+  blueprint = "custom"
+  unknown_bucket = "Без джерела"
+  hub_h2_prefix = "Цитати"
+  legacy_author_fallback = true
+  strip_legacy_author_h2 = true
+  renderer = "quotes"
+
+[[domain]]
+  tag = "llm/agents"
+  index_title = "✱ LLM Агенти"
+  blueprint = "custom"
+  unknown_bucket = "uncategorized"
+  hub_h2_prefix = "Агенти"
+  renderer = "agents"
+
+[[domain]]
+  tag = "llm/characters"
+  index_title = "✱ LLM Персонажі"
+  blueprint = "flat-list"
+
+[[domain]]
+  tag = "llm/rules"
+  index_title = "✱ LLM Правила"
+  blueprint = "flat-list"
+
+[[domain]]
+  tag = "llm/tips"
+  index_title = "✱ LLM Поради"
+  blueprint = "flat-list"
+
+[[domain]]
+  tag = "it/domains"
+  index_title = "✱ IT Сфери"
+  blueprint = "flat-list"
+
+[[domain]]
+  tag = "it/vendors"
+  index_title = "✱ IT Vendors"
+  blueprint = "flat-table"
+  unknown_bucket = "інше"
+  buckets = ["apple", "aws", "mikrotik", "windows"]
+
+[[domain]]
+  tag = "it/technologies"
+  index_title = "✱ IT Технології"
+  blueprint = "flat-table"
+  unknown_bucket = "articles"
+  buckets = ["kubernetes", "linux", "python", "articles"]
+
+[[domain]]
+  tag = "claude"
+  index_title = "✱ Claude"
+  blueprint = "hub-routed-with-subtag"
+  unknown_bucket = "інше"
+  buckets = ["sessions", "memory", "decisions", "concepts", "research", "pets", "tasks"]
+
+[[domain]]
+  tag = "english"
+  index_title = "✱ English"
+  blueprint = "grouped-vertical"
+  unknown_bucket = "інше"
+  buckets = ["homework", "rules", "vocabulary", "adverbs", "prepositions"]
+
+[[domain]]
+  tag = "work"
+  index_title = "✱ Робота"
+  blueprint = "grouped-vertical"
+  unknown_bucket = "інше"
+  buckets = ["questions", "tasks"]
+
+[[domain]]
+  tag = "health"
+  index_title = "✱ Здоров'я"
+  blueprint = "grouped-vertical"
+  unknown_bucket = "інше"
+  buckets = ["meals", "medicine", "psyche", "food", "training"]
+
+[[domain]]
+  tag = "leisure"
+  index_title = "✱ Дозвілля"
+  blueprint = "grouped-vertical"
+  unknown_bucket = "інше"
+  buckets = ["cafe", "books", "gifts"]
+
+[[domain]]
+  tag = "humor"
+  index_title = "✱ Гумор"
+  blueprint = "grouped-vertical"
+  unknown_bucket = "інше"
+  buckets = ["articles", "it", "typologies"]
+
+[[domain]]
+  tag = "instagram"
+  index_title = "✱ Instagram"
+  blueprint = "grouped-vertical"
+  unknown_bucket = "інше"
+  buckets = ["templates", "posts"]
+
+[[domain]]
+  tag = "travel"
+  index_title = "✱ Подорожі"
+  blueprint = "grouped-vertical"
+  unknown_bucket = "інше"
+  buckets = ["ukraine"]
+
+[[domain]]
+  tag = "development"
+  index_title = "✱ Development"
+  blueprint = "grouped-vertical"
+  unknown_bucket = "інше"
+  buckets = ["ayu-jetbrains", "genreupdater"]
+
+[[domain]]
+  tag = "quicknote/daily"
+  index_title = "✱ Daily"
+  blueprint = "flat-list"
+  quick_placeholder_h1 = "Quicknote"
+
+[[domain]]
+  tag = "quicknote/weekly"
+  index_title = "✱ Weekly"
+  blueprint = "flat-list"
+
+[[domain]]
+  tag = "quicknote/monthly"
+  index_title = "✱ Monthly"
+  blueprint = "flat-list"
+
+[[domain]]
+  tag = "quicknote/yearly"
+  index_title = "✱ Yearly"
+  blueprint = "flat-list"
+
+[[domain]]
+  tag = "quicknote/decadal"
+  index_title = "✱ Decadal"
+  blueprint = "flat-list"
+
+[[domain]]
+  tag = "it"
+  index_title = "✱ IT"
+  blueprint = "umbrella"
+  children = ["it/domains", "it/vendors", "it/technologies"]
+  default_child = "it/domains"
+
+[[domain]]
+  tag = "library"
+  index_title = "✱ Library"
+  blueprint = "umbrella"
+  children = ["library/poetry", "library/aphorisms", "library/articles", "library/lyrics", "library/prose", "library/quotes"]
+  default_child = "library/poetry"
+
+[[domain]]
+  tag = "llm"
+  index_title = "✱ LLM"
+  blueprint = "umbrella"
+  children = ["llm/agents", "llm/characters", "llm/rules", "llm/tips"]
+  default_child = "llm/agents"
+
+[[domain]]
+  tag = "quicknote"
+  index_title = "✱ Quicknote"
+  blueprint = "umbrella"
+  children = ["quicknote/daily", "quicknote/weekly", "quicknote/monthly", "quicknote/yearly", "quicknote/decadal"]
+  default_child = "quicknote/daily"
+
+[features]

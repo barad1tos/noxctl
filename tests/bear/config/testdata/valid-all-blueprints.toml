@@ -1,0 +1,60 @@
+# Fixture exercises all 6 closed-catalog blueprints (D-12) with one
+# minimal but representative stanza each. ships the full
+# 28-domain Roman corpus; this file only verifies that every dispatch
+# path round-trips cleanly with no metadata.Undecoded drift.
+
+[meta]
+version = "1"
+locale  = "uk"
+
+# 1. flat-list — bare-tag canonical, single bullet stream.
+[[domain]]
+tag         = "llm/characters"
+index_title = "✱ Characters"
+blueprint   = "flat-list"
+
+# 2. flat-table (= grouped-vertical-flat) — H2 bucket sections, no
+# sub-tag preservation.
+[[domain]]
+tag            = "library/aphorisms"
+index_title    = "✱ Афоризми"
+blueprint      = "flat-table"
+unknown_bucket = "Інші"
+buckets        = ["Класика", "Сучасні"]
+
+# 3. grouped-vertical — H2 bucket sections, sub-tag preserved as
+# `#<top>/<bucket>`.
+[[domain]]
+tag            = "personal/work"
+index_title    = "✱ Work"
+blueprint      = "grouped-vertical"
+unknown_bucket = "_misc"
+buckets        = ["meeting", "review"]
+
+# 4. hub-routed — Tier-2 hubs per bucket, master backlink at hub.
+[[domain]]
+tag            = "library/poetry"
+index_title    = "✱ Поезія"
+blueprint      = "hub-routed"
+unknown_bucket = "Невідомі"
+hub_h2_prefix  = "Поеми"
+own_group      = "Моя поезія"
+own_aliases    = ["Власні", "Свої"]
+legacy_author_fallback = true
+strip_legacy_author_h2 = true
+
+# 5. hub-routed-with-subtag — Tier-2 hubs titled `<top> · <bucket>`.
+[[domain]]
+tag            = "personal/claude"
+index_title    = "✱ Claude"
+blueprint      = "hub-routed-with-subtag"
+unknown_bucket = "_misc"
+buckets        = ["session", "skill"]
+
+# 6. umbrella — directory of child masters (children dispatched first).
+[[domain]]
+tag           = "library"
+index_title   = "✱ Library"
+blueprint     = "umbrella"
+children      = ["library/poetry", "library/aphorisms"]
+default_child = "library/poetry"

@@ -1,0 +1,37 @@
+[
+  {
+    "id": "fixture-hub-routed-001",
+    "title": "HR Atom One",
+    "content": "#fixture-hub-routed | [[Fixture Author Alpha]]\n\n# HR Atom One\n\nbody one",
+    "hash": "0000000000000031",
+    "created": "2024-04-01T00:00:00Z"
+  },
+  {
+    "id": "fixture-hub-routed-002",
+    "title": "HR Atom Two",
+    "content": "#fixture-hub-routed | [[Fixture Author Alpha]]\n\n# HR Atom Two\n\nbody two",
+    "hash": "0000000000000032",
+    "created": "2024-04-02T00:00:00Z"
+  },
+  {
+    "id": "fixture-hub-routed-003",
+    "title": "HR Atom Three",
+    "content": "#fixture-hub-routed | [[Fixture Author Alpha]] | section-x\n\n# HR Atom Three\n\nbody three",
+    "hash": "0000000000000033",
+    "created": "2024-04-03T00:00:00Z"
+  },
+  {
+    "id": "fixture-hub-routed-004",
+    "title": "HR Atom Four",
+    "content": "#fixture-hub-routed | [[Fixture Author Beta]]\n\n# HR Atom Four\n\nbody four",
+    "hash": "0000000000000034",
+    "created": "2024-04-04T00:00:00Z"
+  },
+  {
+    "id": "fixture-hub-routed-005",
+    "title": "HR Atom Five",
+    "content": "#fixture-hub-routed | [[Fixture Author Beta]]\n\n# HR Atom Five\n\nbody five",
+    "hash": "0000000000000035",
+    "created": "2024-04-05T00:00:00Z"
+  }
+]
