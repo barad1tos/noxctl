@@ -5,27 +5,19 @@ import (
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear"
-	"github.com/barad1tos/noxctl/quicknote"
-	"github.com/barad1tos/noxctl/registry"
+	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
-// resolveUmbrella locates a hardcoded umbrella by its top-level tag.
-// The registry package exposes umbrellas only via HardcodedUmbrellas,
-// so a per-test helper avoids polluting the public surface with a
-// MustResolveDomain shim used solely by tests.
+// resolveUmbrella locates a catalog-loaded umbrella by its top-level
+// tag. testutil.Domain handles the lookup; this thin wrapper preserves
+// the existing call shape used across the tests below.
 func resolveUmbrella(t *testing.T, tag string) *bear.Domain {
 	t.Helper()
-	for _, d := range registry.HardcodedUmbrellas() {
-		if d.Tag == tag {
-			return d
-		}
-	}
-	t.Fatalf("umbrella %q not found in registry.HardcodedUmbrellas()", tag)
-	return nil
+	return testutil.Domain(t, tag)
 }
 
 func TestNewNoteURLFromDomain_QuicknoteDaily_BootstrapForm(t *testing.T) {
-	u := bear.NewNoteURLFromDomain(quicknote.DailyDomain)
+	u := bear.NewNoteURLFromDomain(testutil.Domain(t, "quicknote/daily"))
 	if u.Form != bear.FormBootstrap {
 		t.Fatalf("expected FormBootstrap, got %v", u.Form)
 	}
@@ -52,7 +44,7 @@ func TestNewNoteURLFromDomain_UmbrellaResolvesToLeaf(t *testing.T) {
 }
 
 func TestNewNoteURL_RoundTrip_QuicknoteDaily(t *testing.T) {
-	original := bear.NewNoteURLFromDomain(quicknote.DailyDomain)
+	original := bear.NewNoteURLFromDomain(testutil.Domain(t, "quicknote/daily"))
 	emitted := original.Emit()
 	parsed, ok := bear.ParseNewNoteURLSegment(strings.TrimPrefix(emitted, " | "))
 	if !ok {
@@ -183,7 +175,7 @@ func TestStripNewNoteURLsFromBody_PreservesUserPastedLinks(t *testing.T) {
 }
 
 func TestResolveURLDomain_LeafReturnsSelf(t *testing.T) {
-	d := quicknote.DailyDomain
+	d := testutil.Domain(t, "quicknote/daily")
 	if d.ResolveURLDomain() != d {
 		t.Error("leaf domain ResolveURLDomain() should return self")
 	}

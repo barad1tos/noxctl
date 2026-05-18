@@ -5,8 +5,7 @@ import (
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear"
-	"github.com/barad1tos/noxctl/library"
-	"github.com/barad1tos/noxctl/quicknote"
+	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
 // TestRewriteCanonicalTag_EmitsBootstrapForm verifies the Task 3 of:
@@ -16,9 +15,10 @@ import (
 // target.IndexTitle in the backlink, and text= / edit=yes in the URL
 // query string (bootstrap form's two distinguishing parameters).
 func TestRewriteCanonicalTag_EmitsBootstrapForm(t *testing.T) {
-	target := library.PoetryDomain
-	content := "# X\n" + quicknote.DailyDomain.CanonicalTag + " | [[✱ Daily]]\n---\nbody\n"
-	out, rewrote := bear.RewriteCanonicalTagForTest(content, quicknote.DailyDomain.CanonicalTag, target)
+	target := testutil.Domain(t, "library/poetry")
+	daily := testutil.Domain(t, "quicknote/daily")
+	content := "# X\n" + daily.CanonicalTag + " | [[✱ Daily]]\n---\nbody\n"
+	out, rewrote := bear.RewriteCanonicalTagForTest(content, daily.CanonicalTag, target)
 	if !rewrote {
 		t.Fatal("rewrote=false despite source tag present")
 	}
@@ -34,8 +34,10 @@ func TestRewriteCanonicalTag_EmitsBootstrapForm(t *testing.T) {
 // gate: when the source tag-line isn't present, the function returns the
 // content untouched plus rewrote=false. Callers short-circuit on the bool.
 func TestRewriteCanonicalTag_ReturnsFalseWhenSourceTagAbsent(t *testing.T) {
+	daily := testutil.Domain(t, "quicknote/daily")
+	poetry := testutil.Domain(t, "library/poetry")
 	content := "# X\nno tag here\nbody\n"
-	out, rewrote := bear.RewriteCanonicalTagForTest(content, quicknote.DailyDomain.CanonicalTag, library.PoetryDomain)
+	out, rewrote := bear.RewriteCanonicalTagForTest(content, daily.CanonicalTag, poetry)
 	if rewrote {
 		t.Error("rewrote=true despite no source tag-line in content")
 	}
@@ -47,8 +49,10 @@ func TestRewriteCanonicalTag_ReturnsFalseWhenSourceTagAbsent(t *testing.T) {
 // TestRewriteCanonicalTag_ReturnsTrueWhenRewritten verifies the positive
 // branch of the bool return: tag-line found → rewrote=true.
 func TestRewriteCanonicalTag_ReturnsTrueWhenRewritten(t *testing.T) {
-	content := "# X\n" + quicknote.DailyDomain.CanonicalTag + " | [[✱ Daily]]\n---\nbody\n"
-	_, rewrote := bear.RewriteCanonicalTagForTest(content, quicknote.DailyDomain.CanonicalTag, library.PoetryDomain)
+	daily := testutil.Domain(t, "quicknote/daily")
+	poetry := testutil.Domain(t, "library/poetry")
+	content := "# X\n" + daily.CanonicalTag + " | [[✱ Daily]]\n---\nbody\n"
+	_, rewrote := bear.RewriteCanonicalTagForTest(content, daily.CanonicalTag, poetry)
 	if !rewrote {
 		t.Error("rewrote=false despite source tag-line present")
 	}

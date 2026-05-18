@@ -30,7 +30,7 @@ var PoetryDomain = &bear.Domain{
 	HubH2Legacy:   []string{bear.T("library.poetry.h2-legacy")},
 
 	LegacyAuthorFallback: true, // pre-canonical poetry notes still carry "## <Author>" in body
-	StripLegacyAuthorH2:  true, // canonicaliser drops the legacy author H2 from body
+	StripLegacyAuthorH2:  true, // canonicalizer drops the legacy author H2 from body
 
 	ParseMeta:    bear.DefaultParseMetaCanonical,
 	RenderHub:    bear.DefaultRenderHub3Tier,

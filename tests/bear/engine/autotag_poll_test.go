@@ -22,6 +22,8 @@
 // that lets the test flip d.regenInProgress directly. This matches
 // SPEC TAG-03 acceptance verbatim and avoids orchestrating a
 // blocking cycle to hold the flag mid-flight.
+
+//goland:noinspection SpellCheckingInspection
 package engine_test
 
 import (
@@ -37,8 +39,7 @@ import (
 
 	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/engine"
-	"github.com/barad1tos/noxctl/library"
-	"github.com/barad1tos/noxctl/quicknote"
+	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
 // fakeAutoTagBackend records every bear.runBearcli call routed through
@@ -134,7 +135,7 @@ func autoTagOptsFor(t *testing.T, pollInterval time.Duration, features engine.Fe
 	// to receive a non-nil *Domain matching `quicknote/daily`. Register
 	// the real DailyDomain here so domainsByTag["quicknote/daily"]
 	// resolves correctly inside handleAutoTagTick.
-	return autoTagOptsForDomains(t, pollInterval, features, []*bear.Domain{quicknote.DailyDomain})
+	return autoTagOptsForDomains(t, pollInterval, features, []*bear.Domain{testutil.Domain(t, "quicknote/daily")})
 }
 
 // countAutoTagStamps counts "auto-tag:" prefix lines emitted by
@@ -151,6 +152,55 @@ func countForeignEscapes(buf *bytes.Buffer) int {
 	return strings.Count(buf.String(), "foreign-tag escape:")
 }
 
+// daemonRun bundles every handle a synctest scenario needs after the
+// daemon goroutine is live. Construct via startDaemonRun; advance
+// virtual time via WaitFor; access Daemon for mid-flight state writes
+// (e.g. SetRegenInProgressForTest), Buf for log assertions.
+type daemonRun struct {
+	Daemon *engine.Daemon
+	Buf    *bytes.Buffer
+	cancel context.CancelFunc
+	errCh  <-chan error
+}
+
+// startDaemonRun centralizes the synctest-based daemon test scaffold:
+// reset bearcli pool, build a fake watcher + daemon, capture log
+// output, attach the supplied BearcliBackend onto ctx, then start
+// d.Run in a goroutine. Returned daemonRun must have WaitFor called
+// to cancel ctx and drain the goroutine. Optional `before` callback
+// fires AFTER daemon construction but BEFORE the goroutine starts,
+// so tests can prime mid-flight state (regenInProgress) without a
+// race against the first tick.
+func startDaemonRun(t *testing.T, fake *fakeAutoTagBackend, opts engine.DaemonOpts, before func(d *engine.Daemon)) *daemonRun {
+	t.Helper()
+	resetPoolForApply(t)
+	fw := newFakeWatcher()
+	d := engine.NewDaemonWithWatcher(opts, fw)
+	t.Cleanup(func() { _ = d.Close() })
+
+	buf := captureLog(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	ctx = bear.ContextWithBackend(ctx, fake)
+	t.Cleanup(cancel)
+
+	if before != nil {
+		before(d)
+	}
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- d.Run(ctx) }()
+	return &daemonRun{Daemon: d, Buf: buf, cancel: cancel, errCh: errCh}
+}
+
+// WaitFor advances virtual time by `dur`, then cancels ctx and waits
+// for the daemon goroutine to return. Idempotent under repeated
+// cancel (context.WithCancel allows it).
+func (r *daemonRun) WaitFor(dur time.Duration) {
+	time.Sleep(dur)
+	r.cancel()
+	<-r.errCh
+}
+
 // TestDaemonAutoTagPoll_TickFires asserts TAG-02: a fast-pass tick
 // invokes ApplyForeignTagEscape + ApplyDailyDefaultTag via the
 // BearcliBackend seam — but NEVER invokes cycleOnce. With one untagged
@@ -159,24 +209,11 @@ func countForeignEscapes(buf *bytes.Buffer) int {
 // is emitted.
 func TestDaemonAutoTagPoll_TickFires(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		resetPoolForApply(t)
 		fake := newFakeAutoTagBackend(untaggedListPayload(t))
 		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
-
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		ctx = bear.ContextWithBackend(ctx, fake) // D-01 seam — stamp the backend onto ctx
-		t.Cleanup(cancel)
-
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
-
-		time.Sleep(500 * time.Millisecond) // ~4 ticks of the 100ms ticker
-		cancel()
-		<-errCh
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(500 * time.Millisecond) // ~4 ticks of the 100ms ticker
+		buf := run.Buf
 
 		// At least one overwrite must fire (the daily-default pass stamps
 		// the untagged note). Use >=1 rather than ==1 because the fake
@@ -208,26 +245,15 @@ func TestDaemonAutoTagPoll_TickFires(t *testing.T) {
 // SetBearcliConcurrency precedent.
 func TestDaemonAutoTagPoll_SkippedWhenRegenInProgress(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		resetPoolForApply(t)
 		fake := newFakeAutoTagBackend(untaggedListPayload(t))
 		opts := autoTagOptsFor(t, 50*time.Millisecond, engine.AllFeaturesOn())
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
-
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		ctx = bear.ContextWithBackend(ctx, fake)
-		t.Cleanup(cancel)
-
-		// Flip regenInProgress=true BEFORE the daemon starts so the
-		// very first tick observes it as set. This is the same
-		// technique uses for SetBearcliConcurrency — a tiny
-		// test-only setter on Daemon (added in Task 2 below).
-		d.SetRegenInProgressForTest(true)
-
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
+		// Flip regenInProgress=true BEFORE the goroutine starts so the
+		// very first tick observes it as set — same technique as
+		// SetBearcliConcurrency: a tiny test-only setter on Daemon.
+		run := startDaemonRun(t, fake, opts, func(d *engine.Daemon) {
+			d.SetRegenInProgressForTest(true)
+		})
+		buf := run.Buf
 
 		// Advance through ~4 fast-pass ticks while flag is true.
 		time.Sleep(250 * time.Millisecond)
@@ -239,18 +265,14 @@ func TestDaemonAutoTagPoll_SkippedWhenRegenInProgress(t *testing.T) {
 		}
 
 		// Clear the flag; next tick must fire normally.
-		d.SetRegenInProgressForTest(false)
-
-		time.Sleep(200 * time.Millisecond)
+		run.Daemon.SetRegenInProgressForTest(false)
+		run.WaitFor(200 * time.Millisecond)
 
 		if listN := fake.CountKind("list"); listN < 1 {
 			t.Errorf("list count after clearing regenInProgress = %d, want >= 1 "+
 				"(fast-pass must resume on next tick)\nlog:\n%s",
 				listN, buf.String())
 		}
-
-		cancel()
-		<-errCh
 	})
 }
 
@@ -261,26 +283,13 @@ func TestDaemonAutoTagPoll_SkippedWhenRegenInProgress(t *testing.T) {
 func TestDaemonAutoTagPoll_FeatureToggleRespected(t *testing.T) {
 	t.Run("only_foreign_escape", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			resetPoolForApply(t)
 			fake := newFakeAutoTagBackend(untaggedListPayload(t))
 			feats := engine.AllFeaturesOn()
 			feats.AutoTagDefault = false // OFF — only foreign-tag escape should run
 			opts := autoTagOptsFor(t, 100*time.Millisecond, feats)
-			fw := newFakeWatcher()
-			d := engine.NewDaemonWithWatcher(opts, fw)
-			t.Cleanup(func() { _ = d.Close() })
-
-			buf := captureLog(t)
-			ctx, cancel := context.WithCancel(t.Context())
-			ctx = bear.ContextWithBackend(ctx, fake)
-			t.Cleanup(cancel)
-
-			errCh := make(chan error, 1)
-			go func() { errCh <- d.Run(ctx) }()
-
-			time.Sleep(300 * time.Millisecond)
-			cancel()
-			<-errCh
+			run := startDaemonRun(t, fake, opts, nil)
+			run.WaitFor(300 * time.Millisecond)
+			buf := run.Buf
 
 			if stamps := countAutoTagStamps(buf); stamps != 0 {
 				t.Errorf("auto-tag stamp count = %d, want 0 (Features.AutoTagDefault=false)\nlog:\n%s",
@@ -296,26 +305,13 @@ func TestDaemonAutoTagPoll_FeatureToggleRespected(t *testing.T) {
 
 	t.Run("only_daily_default", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			resetPoolForApply(t)
 			fake := newFakeAutoTagBackend(untaggedListPayload(t))
 			feats := engine.AllFeaturesOn()
 			feats.ForeignTagEscape = false // OFF — only daily-default should run
 			opts := autoTagOptsFor(t, 100*time.Millisecond, feats)
-			fw := newFakeWatcher()
-			d := engine.NewDaemonWithWatcher(opts, fw)
-			t.Cleanup(func() { _ = d.Close() })
-
-			buf := captureLog(t)
-			ctx, cancel := context.WithCancel(t.Context())
-			ctx = bear.ContextWithBackend(ctx, fake)
-			t.Cleanup(cancel)
-
-			errCh := make(chan error, 1)
-			go func() { errCh <- d.Run(ctx) }()
-
-			time.Sleep(300 * time.Millisecond)
-			cancel()
-			<-errCh
+			run := startDaemonRun(t, fake, opts, nil)
+			run.WaitFor(300 * time.Millisecond)
+			buf := run.Buf
 
 			if escapes := countForeignEscapes(buf); escapes != 0 {
 				t.Errorf("foreign-tag escape count = %d, want 0 (Features.ForeignTagEscape=false)\nlog:\n%s",
@@ -334,28 +330,14 @@ func TestDaemonAutoTagPoll_FeatureToggleRespected(t *testing.T) {
 // Mirrors mtime_poll_test.go::TestDaemonPoll_ZeroDisables shape.
 func TestDaemonAutoTagPoll_Disabled(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		resetPoolForApply(t)
 		fake := newFakeAutoTagBackend(untaggedListPayload(t))
 		opts := autoTagOptsFor(t, 0, engine.AllFeaturesOn()) // AutoTagPollInterval == 0 → disabled
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
-
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		ctx = bear.ContextWithBackend(ctx, fake)
-		t.Cleanup(cancel)
-
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
-
-		time.Sleep(5 * time.Second) // far longer than the default 2s ticker would fire
-		cancel()
-		<-errCh
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(5 * time.Second) // far longer than the default 2s ticker would fire
 
 		if got := fake.TotalCalls(); got != 0 {
 			t.Errorf("backend total calls = %d, want 0 (AutoTagPollInterval=0 must disable fast-pass entirely)\nlog:\n%s",
-				got, buf.String())
+				got, run.Buf.String())
 		}
 	})
 }
@@ -363,7 +345,7 @@ func TestDaemonAutoTagPoll_Disabled(t *testing.T) {
 // autoTagOptsForDomains is a variant of autoTagOptsFor that
 // accepts a caller-supplied domain set. The 4th `domain-bootstrap`
 // fast-pass needs at least one non-`quicknote/daily` leaf domain in
-// scope (e.g. `library.AphorismsDomain`) so the canonicalisation path
+// scope (e.g. `#library/aphorisms`) so the canonicalization path
 // actually rewrites a note. Keeps the rest of the DaemonOpts shape
 // identical to `autoTagOptsFor` so existing wiring (SkipFlock,
 // MtimePollInterval=0, etc.) carries through.
@@ -385,7 +367,7 @@ func autoTagOptsForDomains(t *testing.T, pollInterval time.Duration, features en
 
 // aphorismListPayload builds the bearcli list JSON for one note tagged
 // `#library/aphorisms` with a non-canonical body — exactly the shape
-// `ApplyDomainBootstrap` rewrites via `library.AphorismsDomain`'s
+// `ApplyDomainBootstrap` rewrites via the `#library/aphorisms` leaf's
 // `RenderCanonicalForBootstrap`. Mirrors the `aph-1` fixture in
 // `bootstrap_pass_test.go::TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat`.
 func aphorismListPayload(t *testing.T) []byte {
@@ -409,33 +391,20 @@ func aphorismListPayload(t *testing.T) []byte {
 // one `bearcli list` per tick. Drives a single virtual tick under
 // `synctest` and asserts:
 // - `list` count == 4 (one per pass; equality pins the ordinal slot)
-// - `overwrite` count >= 1 (the aphorism note got canonicalised by
-// the 4th pass via `library.AphorismsDomain`).
+// - `overwrite` count >= 1 (the aphorism note got canonicalized by
+// the 4th pass via the `#library/aphorisms` leaf).
 //
 // MUST FAIL until Task 2 inserts the 4th `passes` entry.
 func TestDaemonAutoTagPoll_FourPassesInOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		resetPoolForApply(t)
 		fake := newFakeAutoTagBackend(aphorismListPayload(t))
 		// Pin a single tick: ticker=200ms + sleep=300ms under synctest
 		// virtual time advances past exactly one fire at the 200ms mark.
 		opts := autoTagOptsForDomains(t, 200*time.Millisecond, engine.AllFeaturesOn(),
-			[]*bear.Domain{quicknote.DailyDomain, library.AphorismsDomain})
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
-
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		ctx = bear.ContextWithBackend(ctx, fake)
-		t.Cleanup(cancel)
-
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
-
-		time.Sleep(300 * time.Millisecond) // one virtual tick at 200ms
-		cancel()
-		<-errCh
+			[]*bear.Domain{testutil.Domain(t, "quicknote/daily"), testutil.Domain(t, "library/aphorisms")})
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(300 * time.Millisecond) // one virtual tick at 200ms
+		buf := run.Buf
 
 		if got := fake.CountKind("list"); got != 4 {
 			t.Errorf("list call count = %d, want 4 "+
@@ -443,7 +412,7 @@ func TestDaemonAutoTagPoll_FourPassesInOrder(t *testing.T) {
 				"one each per tick)\nlog:\n%s", got, buf.String())
 		}
 		if got := fake.CountKind("overwrite"); got < 1 {
-			t.Errorf("overwrite count = %d, want >= 1 (domain-bootstrap must canonicalise the aphorism note)\nlog:\n%s",
+			t.Errorf("overwrite count = %d, want >= 1 (domain-bootstrap must canonicalize the aphorism note)\nlog:\n%s",
 				got, buf.String())
 		}
 	})
@@ -459,27 +428,14 @@ func TestDaemonAutoTagPoll_FourPassesInOrder(t *testing.T) {
 // MUST FAIL until Task 2 wires the gated `passes` entry.
 func TestDaemonAutoTagPoll_DomainBootstrapFlagOff(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		resetPoolForApply(t)
 		fake := newFakeAutoTagBackend(aphorismListPayload(t))
 		feats := engine.AllFeaturesOn()
 		feats.DomainBootstrap = false
 		opts := autoTagOptsForDomains(t, 200*time.Millisecond, feats,
-			[]*bear.Domain{quicknote.DailyDomain, library.AphorismsDomain})
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
-
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		ctx = bear.ContextWithBackend(ctx, fake)
-		t.Cleanup(cancel)
-
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
-
-		time.Sleep(300 * time.Millisecond) // one virtual tick at 200ms
-		cancel()
-		<-errCh
+			[]*bear.Domain{testutil.Domain(t, "quicknote/daily"), testutil.Domain(t, "library/aphorisms")})
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(300 * time.Millisecond) // one virtual tick at 200ms
+		buf := run.Buf
 
 		if got := fake.CountKind("list"); got != 3 {
 			t.Errorf("list call count = %d, want 3 (DomainBootstrap=false → bootstrap pass skipped, other 3 still run)\nlog:\n%s",

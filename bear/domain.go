@@ -193,7 +193,7 @@ type Domain struct {
 	// "Нова нотатка" link targets. Spec component 4: without this field,
 	// umbrella clicks land on the umbrella's bare tag (e.g. `#library`),
 	// Bear creates a note with only that top-level tag, daemon's
-	// SkipAtomicsPass=true means the note is never canonicalised, and
+	// SkipAtomicsPass=true means the note is never canonicalized, and
 	// the new note becomes a permanent orphan. Required for any domain
 	// with SkipAtomicsPass=true (every current umbrella); Validate
 	// rejects an empty value or one that doesn't match a registered
@@ -285,7 +285,7 @@ func (d *Domain) Validate() error {
 // bootstrap URL's inner `tags=` parameter. For umbrella domains
 // (SkipAtomicsPass=true) it returns DefaultChild so clicks on the
 // umbrella master land in a leaf-domain-tagged note that the leaf's
-// regen pipeline can canonicalise. For leaf domains it returns Tag —
+// regen pipeline can canonicalize. For leaf domains it returns Tag —
 // the existing behavior. Centralizes the choice so newNoteBootstrapLink
 // doesn't branch on SkipAtomicsPass.
 func (d *Domain) newNoteRawTag() string {

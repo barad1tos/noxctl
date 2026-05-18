@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -76,17 +77,24 @@ func featuresFromCatalog(cat *config.Catalog) engine.Features {
 //
 // B4 (checker fix): `config.Catalog.Meta` is a VALUE TYPE (not `*Meta`);
 // check `cat.Meta.BearDB != ""` directly, NOT `cat.Meta != nil`.
-func resolveBearDB(cat *config.Catalog, cliFlag string) string {
+func resolveBearDB(cat *config.Catalog, cliFlag string) (string, error) {
 	if cliFlag != "" {
-		return cliFlag
+		return cliFlag, nil
 	}
 	if env := os.Getenv("BEAR_DB_DIR"); env != "" {
-		return env
+		return env, nil
 	}
 	if cat != nil && cat.Meta.BearDB != "" {
-		return cat.Meta.BearDB
+		return cat.Meta.BearDB, nil
 	}
 	// fsnotify default: Bear's macOS Group Container Application Data dir.
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, "Library", "Group Containers", "9K33E3U3T4.net.shinyfrog.bear", "Application Data")
+	// HOME resolution must succeed — silently joining with empty home yields
+	// `/Library/Group Containers/...` (root-relative, on-disk nonexistent),
+	// which then prints into the startup marker and tricks the verify gate
+	// into a green PASS against a daemon watching nothing.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolveBearDB: UserHomeDir: %w", err)
+	}
+	return filepath.Join(home, "Library", "Group Containers", "9K33E3U3T4.net.shinyfrog.bear", "Application Data"), nil
 }

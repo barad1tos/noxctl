@@ -25,7 +25,7 @@ func init() {
 // Why the deltas exist:
 // - LegacyAuthorFallback=false: agent bodies often start with
 // `## Metadata` H2 — the legacy fallback would misread that as
-// the bucket name and re-canonicalise atoms into a "Metadata"
+// the bucket name and re-canonicalize atoms into a "Metadata"
 // bucket, corrupting the corpus.
 // - StripLegacyAuthorH2=false: the same H2s carry content the
 // curator wants preserved; stripping them would erase data.

@@ -75,6 +75,26 @@ linters:
       tab-width: 4
     misspell:
       locale: US
+      # client9/misspell ships a common-typo dictionary keyed by locale,
+      # but it does NOT cover every British→American variant pair —
+      # `canonicalisation`/`canonicalised`/`canonicaliser` are
+      # domain-specific tech terms missing from the default table.
+      # Extra-words fills the gap so the linter catches them too.
+      extra-words:
+        - typo: canonicalisation
+          correction: canonicalization
+        - typo: canonicalised
+          correction: canonicalized
+        - typo: canonicalises
+          correction: canonicalizes
+        - typo: canonicalising
+          correction: canonicalizing
+        - typo: canonicaliser
+          correction: canonicalizer
+        - typo: canonicalisers
+          correction: canonicalizers
+        - typo: canonicalise
+          correction: canonicalize
     revive:
       severity: warning
       rules:

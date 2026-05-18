@@ -56,7 +56,7 @@ func NewGroupedVerticalFlatDomain(tag, indexTitle, unknownBucket string, buckets
 //	- [[✱ IT Технології]] (16)
 //
 // Reuses the standard RunRegen pipeline (listNotes → groupAtomics → master
-// upsert) with SkipAtomicsPass=true so the canonicaliser doesn't clobber
+// upsert) with SkipAtomicsPass=true so the canonicalizer doesn't clobber
 // child-domain atom canonicals. ParseMetaFromSubTag groups atomics by their
 // sub-tag, so `groups["vendors"]` is the live atom count for `#it/vendors`.
 // SkipNote delegates to each child's predicate so Tier-2 hubs of children
@@ -213,7 +213,7 @@ func NewFlatListDomain(tag, indexTitle string) *Domain {
 // Used by lyrics, quotes, and any future domain matching this shape.
 //
 // LegacyAuthorFallback is enabled by default (poetry/articles convention —
-// pre-canonical atomics carry `## <Bucket>` H2 in body; the canonicaliser
+// pre-canonical atomics carry `## <Bucket>` H2 in body; the canonicalizer
 // promotes the H2 into the header on first regen and strips it). Domains
 // that should NOT do that (e.g. atomics whose body H2s are content
 // sections) build the Domain literal directly instead of using this factory.

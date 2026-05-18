@@ -52,7 +52,7 @@ func TestWriteMasterHeader_UmbrellaUsesDefaultChild(t *testing.T) {
 }
 
 // TestUpsertAtomic_StampsH1WhenAbsent covers spec component 2 + 8: when
-// an atom's body lacks a recognized H1 and the daemon canonicalises it,
+// an atom's body lacks a recognized H1 and the daemon canonicalizes it,
 // the rendered canonical body must lead with a stamped `# <NOW>` H1.
 // Old behavior (synthesizing H1 from noteTitle) is replaced by
 // deterministic datetime stamping.
@@ -75,7 +75,7 @@ func TestUpsertAtomic_StampsH1WhenAbsent(t *testing.T) {
 
 // TestUpsertAtomic_PreservesNonTagPreamble covers spec component 5:
 // non-tag-line content above the canonical tag-line must be preserved
-// in place after canonicalisation — between the H1 and the tag-line,
+// in place after canonicalization — between the H1 and the tag-line,
 // NOT pushed below `---`. Pre-fix the rebuild logic moved preamble to
 // the body zone; this regression test locks the new contract.
 func TestUpsertAtomic_PreservesNonTagPreamble(t *testing.T) {

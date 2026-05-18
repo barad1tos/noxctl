@@ -12,7 +12,7 @@ import (
 )
 
 // TestBearcliFixtures_FreshUntitled drives the fresh-clicked-untitled
-// shape through the canonicaliser and asserts that the rendered body
+// shape through the canonicalizer and asserts that the rendered body
 // leads with a stamped datetime H1 (spec component 2). Locks the
 // integration between bearcli JSON ingest → StampDatetimeH1 path →
 // renderAtomicCanonical.

@@ -10,7 +10,7 @@ import (
 // flavors per (SSOT refactor):
 // - Non-strict (atomic flavor): strips every new-note URL decoration
 // and compares the residual body. ANY URL drift is ignored —
-// atomic canonicalisation migrates lazily as atoms are touched
+// atomic canonicalization migrates lazily as atoms are touched
 // for other reasons. Used by upsertAtomicBacklink's fallback
 // check and promoteAtomToDomain.
 // - Strict (master/hub/cross-domain flavor): scans every new-note
