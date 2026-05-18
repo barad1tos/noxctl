@@ -2,12 +2,9 @@
 
 ## Scope
 
-`noxctl` is a macOS-only CLI that mutates Bear notes in place. It has
-no networking code and stores no credentials. The relevant security
-surface is limited to:
+`noxctl` is a macOS-only CLI that mutates Bear notes in place. It has no networking code and stores no credentials. The relevant security surface is limited to:
 
-- Local file-system access (`bearcli` shell-out, FSEvents watcher,
-  per-project state JSON).
+- Local file-system access (`bearcli` shell-out, FSEvents watcher, per-project state JSON).
 - Supply chain attacks through Go module dependencies.
 - Distribution integrity (the published binary on the release page).
 
@@ -27,6 +24,7 @@ Only the latest minor release line receives security fixes.
 Use the [Report a vulnerability](https://github.com/barad1tos/noxctl/security/advisories/new) button in this repository's Security tab. This keeps your report confidential until a fix is available.
 
 Please include:
+
 - Description of the vulnerability
 - Steps to reproduce
 - Affected versions
@@ -41,23 +39,17 @@ Please include:
 
 ## What Qualifies
 
-- Code-injection vectors via the configuration file (TOML loader,
-  blueprint dispatch).
-- Path-traversal or symlink-following bugs in the state-file writer
-  or `bearcli` shell-out.
+- Code-injection vectors via the configuration file (TOML loader, blueprint dispatch).
+- Path-traversal or symlink-following bugs in the state-file writer or `bearcli` shell-out.
 - Dependency vulnerabilities in the runtime Go module chain.
 - Distribution integrity issues (binary tampering, supply chain).
 
 ## What Does NOT Qualify
 
-- Cosmetic bugs (wrong note content, idempotency drift) — use
-  [regular issue templates](https://github.com/barad1tos/noxctl/issues/new/choose).
+- Cosmetic bugs (wrong note content, idempotency drift) — use [regular issue templates](https://github.com/barad1tos/noxctl/issues/new/choose).
 - Bear app vulnerabilities — report those to [Shiny Frog](https://bear.app).
-- Theoretical attacks requiring physical access to the developer's
-  machine.
+- Theoretical attacks requiring physical access to the developer's machine.
 
 ## Bug Bounty
 
-This is a solo-developer open source project. There is no monetary
-bug bounty, but confirmed reporters will be credited in the release
-notes.
+This is a solo-developer open source project. There is no monetary bug bounty, but confirmed reporters will be credited in the release notes.
