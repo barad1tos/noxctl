@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/barad1tos/noxctl/bear"
@@ -157,7 +159,7 @@ func resolveDaemonLogPath(override string) (string, error) {
 // the same logic through `checkDaemonLog`; this wrapper exists solely
 // to let hermetic tests exercise the rewind-to-last-startup semantics
 // without a real log file.
-func ScanDaemonLogForTest(r interface{ Read(p []byte) (int, error) }) ([]string, bool, error) {
+func ScanDaemonLogForTest(r io.Reader) ([]string, bool, error) {
 	return scanLogSinceStartup(r)
 }
 
@@ -176,7 +178,7 @@ func ScanDaemonLogForTest(r interface{ Read(p []byte) (int, error) }) ([]string,
 //
 // Single-pass on purpose; the daemon log can grow to MBs on a busy
 // vault and a two-pass scan doubles the I/O.
-func scanLogSinceStartup(r interface{ Read(p []byte) (int, error) }) ([]string, bool, error) {
+func scanLogSinceStartup(r io.Reader) ([]string, bool, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
@@ -250,8 +252,14 @@ func checkApplyIdempotency(ctx context.Context, opts Options, domains []*bear.Do
 			offenders)
 	}
 	if second.AnyFailed() {
-		c.Status = StatusFail
-		c.Message = "second apply pass reported per-domain failures"
+		// Mirror the first-pass treatment: `AnyFailed()` on a write
+		// path means infrastructure-level breakage (bearcli outage,
+		// flock contention, etc.), not "idempotency contract
+		// violated". Surface as StatusError so the operator routes
+		// to the daemon log instead of trying to debug renderer
+		// determinism.
+		c.Status = StatusError
+		c.Message = "second apply pass reported per-domain failures (see daemon log)"
 		return c
 	}
 
@@ -291,7 +299,9 @@ func runApplyOnce(ctx context.Context, opts Options, domains []*bear.Domain) (*e
 
 // nonIdempotentDomains returns the tags of any domain whose second
 // pass produced a write (Created > 0 OR Changed > 0). Failed counts
-// are surfaced separately via AnyFailed.
+// are surfaced separately via AnyFailed. Sorted alphabetically so
+// the Details slice is diff-stable across runs (Go map iteration
+// order is randomized, which jitters paste-into-issue workflows).
 func nonIdempotentDomains(res *engine.ApplyResult) []string {
 	out := make([]string, 0)
 	for tag, counts := range res.Domains {
@@ -300,6 +310,7 @@ func nonIdempotentDomains(res *engine.ApplyResult) []string {
 				tag, counts.Created, counts.Changed))
 		}
 	}
+	sort.Strings(out)
 	return out
 }
 

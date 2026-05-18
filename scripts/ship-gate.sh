@@ -21,6 +21,10 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
+# `examples/roman.toml` is the in-repo reference catalog (Roman's
+# vault config baked into the repo for codegen round-trip testing).
+# Future operators / forks should override via `NOXCTL_CONFIG=<path>`
+# to point at their own catalog file before running this gate.
 CONFIG="${NOXCTL_CONFIG:-examples/roman.toml}"
 # Per-invocation step log — `mktemp` keeps concurrent ship-gate runs
 # (different repos, parallel scripts) from clobbering each other.
