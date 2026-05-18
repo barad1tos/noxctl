@@ -79,7 +79,10 @@ func TestScanLogSinceStartup(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			warnings, ok := verify.ScanDaemonLogForTest(strings.NewReader(strings.Join(c.log, "\n")))
+			warnings, ok, err := verify.ScanDaemonLogForTest(strings.NewReader(strings.Join(c.log, "\n")))
+			if err != nil {
+				t.Fatalf("ScanDaemonLogForTest err = %v, want nil", err)
+			}
 			if ok != c.wantOK {
 				t.Errorf("ok = %v, want %v", ok, c.wantOK)
 			}

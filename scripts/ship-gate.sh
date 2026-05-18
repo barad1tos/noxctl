@@ -22,6 +22,11 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 CONFIG="${NOXCTL_CONFIG:-examples/roman.toml}"
+# Per-invocation step log — `mktemp` keeps concurrent ship-gate runs
+# (different repos, parallel scripts) from clobbering each other.
+# Cleaned on EXIT; survives only when a step failed and tail-ed.
+STEP_LOG=$(mktemp -t ship-gate-step.XXXXXX)
+trap 'rm -f "$STEP_LOG"' EXIT
 
 echo "═══ ship-gate ═══"
 echo "  repo:    $(pwd)"
@@ -34,21 +39,33 @@ echo
 run_step() {
   printf "→ %-32s " "$1"
   shift
-  if "$@" >/tmp/ship-gate-step.log 2>&1; then
+  if "$@" >"$STEP_LOG" 2>&1; then
     echo "PASS"
   else
     rc=$?
     echo "FAIL"
     echo "--- last 30 lines ---"
-    tail -30 /tmp/ship-gate-step.log
+    tail -30 "$STEP_LOG"
     return "$rc"
+  fi
+}
+
+# check_gofmt returns non-zero (with diagnostic) when any file would
+# be reformatted. Hoisted to a function so the outer shell doesn't
+# need `bash -c '…'` quoting gymnastics that confuse ShellCheck.
+check_gofmt() {
+  local unformatted
+  unformatted=$(gofmt -l .)
+  if [ -n "$unformatted" ]; then
+    echo "$unformatted"
+    return 1
   fi
 }
 
 echo "Tier 1: hermetic"
 run_step "go build"      go build ./...
 run_step "go vet"        go vet ./...
-run_step "gofmt -l"      bash -c 'unfmt=$(gofmt -l .); [ -z "$unfmt" ] || { echo "$unfmt"; exit 1; }'
+run_step "gofmt -l"      check_gofmt
 run_step "golangci-lint" golangci-lint run
 run_step "go test"       go test -race -count=1 ./...
 run_step "noxctl validate" go run ./cmd/noxctl validate "$CONFIG"

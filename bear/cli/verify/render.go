@@ -50,7 +50,10 @@ func renderText(w io.Writer, result *Result) error {
 // statusGlyph maps per-check status to a one-glyph prefix matching
 // the convention used by `noxctl plan`/`apply` recap (`✓` / `✗` / `~`
 // / `•`). Plain ASCII fallback would be nice; current code matches
-// the rest of the project's UTF-8-only output.
+// the rest of the project's UTF-8-only output. `⚠` distinguishes
+// StatusError (verify couldn't make a verdict) from StatusFail
+// (verify made a verdict and the answer is no) — the operator
+// remediation is different (fix infrastructure vs fix drift).
 func statusGlyph(s Status) string {
 	switch s {
 	case StatusPass:
@@ -60,7 +63,7 @@ func statusGlyph(s Status) string {
 	case StatusSkipped:
 		return "•"
 	default: // StatusError
-		return "✗"
+		return "⚠"
 	}
 }
 

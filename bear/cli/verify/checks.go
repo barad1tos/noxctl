@@ -117,7 +117,12 @@ func checkDaemonLog(opts Options) Check {
 	}
 	defer func() { _ = f.Close() }()
 
-	warnings, ok := scanLogSinceStartup(f)
+	warnings, ok, scanErr := scanLogSinceStartup(f)
+	if scanErr != nil {
+		c.Status = StatusError
+		c.Message = fmt.Sprintf("scan %s: %v", path, scanErr)
+		return c
+	}
 	if !ok {
 		c.Status = StatusError
 		c.Message = fmt.Sprintf("no %q line in %s — daemon may have never started", daemonLogStartupMarker, path)
@@ -152,18 +157,26 @@ func resolveDaemonLogPath(override string) (string, error) {
 // the same logic through `checkDaemonLog`; this wrapper exists solely
 // to let hermetic tests exercise the rewind-to-last-startup semantics
 // without a real log file.
-func ScanDaemonLogForTest(r interface{ Read(p []byte) (int, error) }) ([]string, bool) {
+func ScanDaemonLogForTest(r interface{ Read(p []byte) (int, error) }) ([]string, bool, error) {
 	return scanLogSinceStartup(r)
 }
 
 // scanLogSinceStartup walks the log once, remembering the most recent
 // "regen-watchd starting" line index, then collects every warning
-// from that line forward. Returns (warnings, ok) — ok=false signals
-// no startup marker was found.
+// from that line forward. Returns `(warnings, ok, err)`:
+//
+//   - `ok=false, err=nil` — no startup marker; daemon may have never
+//     run with this binary.
+//   - `ok=true, err=nil` — clean read; `warnings` is authoritative.
+//   - `err != nil` — Scanner failed mid-read (over-length line at the
+//     1 MB buffer cap, I/O error, etc.). Caller surfaces a dedicated
+//     StatusError so the operator knows verify could not make a
+//     verdict, instead of getting a false "daemon never started"
+//     signal.
 //
 // Single-pass on purpose; the daemon log can grow to MBs on a busy
 // vault and a two-pass scan doubles the I/O.
-func scanLogSinceStartup(r interface{ Read(p []byte) (int, error) }) ([]string, bool) {
+func scanLogSinceStartup(r interface{ Read(p []byte) (int, error) }) ([]string, bool, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
@@ -183,7 +196,10 @@ func scanLogSinceStartup(r interface{ Read(p []byte) (int, error) }) ([]string, 
 			warnings = append(warnings, line)
 		}
 	}
-	return warnings, startupSeen
+	if err := scanner.Err(); err != nil {
+		return warnings, startupSeen, fmt.Errorf("daemon log scan: %w", err)
+	}
+	return warnings, startupSeen, nil
 }
 
 // checkApplyIdempotency runs `engine.Apply` twice. The first pass
@@ -206,6 +222,16 @@ func checkApplyIdempotency(ctx context.Context, opts Options, domains []*bear.Do
 	if err != nil {
 		c.Status = StatusError
 		c.Message = fmt.Sprintf("first apply failed: %v", err)
+		return c
+	}
+	// `engine.Apply` returns no err but logs+continues per-domain
+	// failures; `AnyFailed()` is the only signal that an underlying
+	// write path broke mid-cycle. Treat as runtime error so the
+	// "did idempotency hold?" verdict is not muddied by an apply
+	// that never finished its first attempt cleanly.
+	if first.AnyFailed() {
+		c.Status = StatusError
+		c.Message = "first apply pass reported per-domain failures (see daemon log)"
 		return c
 	}
 
