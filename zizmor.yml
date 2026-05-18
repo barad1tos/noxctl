@@ -1,0 +1,10 @@
+rules:
+  # Dependabot manages action version updates via tag-then-SHA pinning —
+  # tag-only pins surface as `unpinned-uses` even though every pin we
+  # use IS a 40-char SHA with an annotated tag. Disable the noisy rule.
+  unpinned-uses:
+    disable: true
+  # Single-owner repo; cache-poisoning risk on Go module cache is
+  # minimal and the cache is per-Go-version anyway.
+  cache-poisoning:
+    disable: true

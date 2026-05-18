@@ -1,0 +1,28 @@
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 2%
+    patch:
+      default:
+        target: 80%
+        threshold: 5%
+        informational: true
+
+ignore:
+  # Generated code — no asserts of value.
+  - "cmd/noxctl-codegen/**/*.go"
+  # Bridge package: re-exports the closed catalog of hardcoded domains
+  # for the migration window. Trivial passthrough, exercised end-to-end
+  # via integration tests.
+  - "registry/**/*.go"
+  # Test fixtures (analyzer testdata).
+  - "tools/cyrillic-lint/cyrillic/testdata/**"
+
+comment:
+  layout: "condensed_header, condensed_files, condensed_footer"
+  require_changes: true

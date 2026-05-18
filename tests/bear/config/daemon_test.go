@@ -13,6 +13,35 @@ import (
 	"github.com/barad1tos/noxctl/bear/engine"
 )
 
+// loadDaemonCase is the table-driven shape shared by every
+// TestLoadDaemon_X happy-path subtest in this file: file body OR env
+// value OR neither, plus the expected resolved value (typed) and the
+// provenance source ("default" | "file" | "env"). Generic over the
+// value type so a single runner covers both Duration-valued and
+// bool-valued resolution chains without duplicating the
+// `t.Run`/loop block (which would trip `dupl`).
+type loadDaemonCase[V any] struct {
+	name       string
+	tomlBody   string // empty → file absent
+	envValue   string // empty → env unset
+	wantValue  V
+	wantSource string
+}
+
+// runLoadDaemonCases applies `assert` to each table case under its own
+// `t.Run`. Extracted to dodge `dupl` on the for-range/`t.Run` block
+// without an `//nolint` suppression.
+func runLoadDaemonCases[V any](
+	t *testing.T,
+	cases []loadDaemonCase[V],
+	assert func(*testing.T, loadDaemonCase[V]),
+) {
+	t.Helper()
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) { assert(t, c) })
+	}
+}
+
 // TestLoadDaemon_FileAbsent_ReturnsDefaults asserts spec contract:
 // "File absent -> defaults populated, no error, source = 'default'
 // for all fields".
@@ -590,13 +619,7 @@ func assertLoadDaemonNegativeDurationCases(t *testing.T, tomlKey, envName string
 // asserts BOTH the parsed duration AND the provenance source. Negative
 // rejection is covered by TestLoadDaemon_AutoTagPollInterval_NegativeFatal.
 func TestLoadDaemon_AutoTagPollInterval(t *testing.T) {
-	cases := []struct {
-		name       string
-		tomlBody   string // empty → file absent
-		envValue   string // empty → env unset
-		wantValue  time.Duration
-		wantSource string
-	}{
+	cases := []loadDaemonCase[time.Duration]{
 		{
 			name:       "Default",
 			wantValue:  2 * time.Second,
@@ -622,11 +645,9 @@ func TestLoadDaemon_AutoTagPollInterval(t *testing.T) {
 			wantSource: "file",
 		},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			runAutoTagPollIntervalCase(t, c.tomlBody, c.envValue, c.wantValue, c.wantSource)
-		})
-	}
+	runLoadDaemonCases(t, cases, func(t *testing.T, c loadDaemonCase[time.Duration]) {
+		runAutoTagPollIntervalCase(t, c.tomlBody, c.envValue, c.wantValue, c.wantSource)
+	})
 }
 
 // runAutoTagPollIntervalCase drives one TestLoadDaemon_AutoTagPollInterval
@@ -671,13 +692,7 @@ func TestLoadDaemon_AutoTagPollInterval_NegativeFatal(t *testing.T) {
 // else enables — matches the D-03 quirk already locked in for
 // `EnvAuditEnabled`.
 func TestLoadDaemon_DomainBootstrap(t *testing.T) {
-	cases := []struct {
-		name       string
-		tomlBody   string // empty → file absent
-		envValue   string // empty → env unset
-		wantValue  bool
-		wantSource string
-	}{
+	cases := []loadDaemonCase[bool]{
 		{
 			name:       "Default",
 			wantValue:  true,
@@ -703,11 +718,9 @@ func TestLoadDaemon_DomainBootstrap(t *testing.T) {
 			wantSource: "env",
 		},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			runDomainBootstrapCase(t, c.tomlBody, c.envValue, c.wantValue, c.wantSource)
-		})
-	}
+	runLoadDaemonCases(t, cases, func(t *testing.T, c loadDaemonCase[bool]) {
+		runDomainBootstrapCase(t, c.tomlBody, c.envValue, c.wantValue, c.wantSource)
+	})
 }
 
 // runDomainBootstrapCase drives one TestLoadDaemon_DomainBootstrap

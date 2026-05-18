@@ -1,0 +1,10 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Q&A and Discussion
+    url: https://github.com/barad1tos/noxctl/discussions
+    about: Ask questions about setup, blueprints, and migration from
+      the legacy daemon.
+  - name: Security
+    url: https://github.com/barad1tos/noxctl/security/advisories/new
+    about: Report a vulnerability privately (do not use public
+      issues for security reports).
