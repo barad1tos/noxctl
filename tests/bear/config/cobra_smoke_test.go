@@ -78,7 +78,7 @@ func TestCobraSmoke(t *testing.T) {
 		{"validate-success", []string{"validate", validFixture}, "validated", true},
 		{"validate-broken", []string{"validate", brokenFixture}, "unknown field", false},
 		{"validate-nonexistent", []string{"validate", "--config", "/nonexistent/x.toml"}, "no such file", false},
-		//: apply and daemon are real subcommands; assert
+		// : apply and daemon are real subcommands; assert
 		// their flag surface via --help instead of the prior "" stub
 		// message. Real behavior is exercised by the engine-level tests
 		// at tests/bear/engine/* (no live bearcli in CI).
@@ -86,13 +86,20 @@ func TestCobraSmoke(t *testing.T) {
 		{"apply-help-auto-approve", []string{"apply", "--help"}, "--auto-approve", true},
 		{"apply-help-bear-db", []string{"apply", "--help"}, "--bear-db", true},
 		{"daemon-help-bear-db", []string{"daemon", "--help"}, "--bear-db", true},
-		//: plan is a real subcommand now; assert flag surface
+		// : plan is a real subcommand now; assert flag surface
 		// via --help instead of the prior "" stub message. Real behavior
 		// (engine.Plan + diff renderer + exit codes) lives in engine-level tests
 		// + manual smoke (no live bearcli in CI).
 		{"plan-help-color", []string{"plan", "--help"}, "--color", true},
 		{"plan-help-output", []string{"plan", "--help"}, "--output", true},
 		{"plan-help-tag-arg", []string{"plan", "--help"}, "[tag]", true},
+		// audit + lint are the operator-facing wrappers around
+		// bear.AuditDomains / bear.LintApplyDomains. They went orphan
+		// after cmd/regen-watchd/ was deleted; smoke their --help so
+		// the flag surface stays visible to future refactors.
+		{"audit-help-readonly", []string{"audit", "--help"}, "read-only", true},
+		{"lint-help-apply", []string{"lint", "--help"}, "--apply", true},
+		{"lint-help-default-report", []string{"lint", "--help"}, "Report-only", true},
 		{"init-stub", []string{"init", "--config", validFixture}, "", true},
 		{"destroy-stub", []string{"destroy", "library/poetry", "--config", validFixture}, "", true},
 		{"import-stub", []string{"import", "library/poetry", "--config", validFixture}, "", true},
@@ -135,8 +142,8 @@ func TestCobraStubStdoutEmpty(t *testing.T) {
 		name string
 		args []string
 	}{
-		//: apply + daemon are real subcommands.
-		//: plan is real now too — its stdout is the
+		// : apply + daemon are real subcommands.
+		// : plan is real now too — its stdout is the
 		// rendered diff, not empty. Only init/destroy/import remain
 		// stubbed in v1 (will land them).
 		{"init", []string{"init", "--config", validFixture}},
@@ -181,8 +188,8 @@ func TestCobraStubsNoConfig(t *testing.T) {
 		args []string
 		want string
 	}{
-		//: apply + daemon load the config eagerly.
-		//: plan also loads the config eagerly. Only
+		// : apply + daemon load the config eagerly.
+		// : plan also loads the config eagerly. Only
 		// init/destroy/import remain stubbed in v1 (will land them).
 		{"init", []string{"init"}, ""},
 		{"destroy", []string{"destroy", "library/poetry"}, ""},

@@ -8,6 +8,7 @@ import (
 	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/engine"
+	"github.com/barad1tos/noxctl/bear/state"
 )
 
 // pinPaths returns the canonical legacy and target pin-registry
@@ -23,6 +24,32 @@ func pinPaths() (legacy, target string) {
 	legacy = filepath.Join(home, ".cache", "regen-watchd-pins.json")
 	target = filepath.Join(".noxctl", "pins.json")
 	return
+}
+
+// domainsWithPreflight runs the standard pre-load chore (pin
+// migration) and loads noxctl.toml at cfgPath, wrapping any load
+// error in formattedLoadError so the stderr trace stays uniform
+// across every subcommand.
+//
+// Audit and lint subcommands share this exact shape; without the
+// helper each call site duplicates 6 lines and trips dupl. Apply,
+// daemon, validate, and verify keep their inline preflights because
+// they need extra wiring (catalog metadata for verbose summaries,
+// state resume, pin registry, feature flags) that this helper
+// would either drag along uselessly or obscure.
+func domainsWithPreflight() ([]*bear.Domain, error) {
+	legacyPath, target := pinPaths()
+	if migrationErr := state.MigratePins(legacyPath, target); migrationErr != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "warning: pin migration failed: %v\n", migrationErr)
+	}
+	domains, _, loadErr := config.Load(cfgPath)
+	if loadErr != nil {
+		return nil, &formattedLoadError{
+			inner: loadErr,
+			msg:   config.FormatLoadError(loadErr, cfgPath),
+		}
+	}
+	return domains, nil
 }
 
 // featuresFromCatalog copies `*config.Catalog.Features` (whose fields
