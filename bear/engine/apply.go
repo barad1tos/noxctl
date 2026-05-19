@@ -197,21 +197,28 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 	// in a single bearcli call instead of relying on the next regen
 	// cycle to restructure.
 	domainsByTag := bear.DomainsByTag(opts.Domains)
-	// autoTagOn folds the catalog-driven "operator declared a daily
+	// dailyTagOn folds the catalog-driven "operator declared a daily
 	// default tag" gate into the feature toggle. With AutoTagDefault on
-	// but DailyDefaultTag empty the fast-pass is treated as disabled —
-	// otherwise the spec calls ApplyDailyDefaultTag with a nil domain
-	// (lookup miss on empty key) and the pre-pass loop stamps a
-	// spurious Failed=1 for a feature the operator never opted into.
-	autoTagOn := opts.Features.AutoTagDefault && opts.DailyDefaultTag != ""
+	// but DailyDefaultTag empty the daily-default fast-pass is treated
+	// as disabled — otherwise the spec calls ApplyDailyDefaultTag with
+	// a nil domain (lookup miss on empty key) and stamps a spurious
+	// Failed=1 for a feature the operator never opted into.
+	//
+	// placeholder-refresh stays gated on AutoTagDefault alone: it
+	// iterates every domain with a non-empty QuickPlaceholderH1 and
+	// has no dependency on the daily tag. Folding DailyDefaultTag
+	// into its gate would silently disable placeholder refresh for
+	// any catalog that declares `quick_placeholder_h1` on a domain
+	// without also setting `[meta].daily_default_tag`.
+	dailyTagOn := opts.Features.AutoTagDefault && opts.DailyDefaultTag != ""
 	specs := []prePassSpec{
 		{opts.Features.ForeignTagEscape, "foreign_tag", "foreign-tag escape",
 			func() error { _, err := bear.ApplyForeignTagEscape(ctx, domainsByTag); return err }},
-		{autoTagOn, "auto_tag", "auto-tag",
+		{dailyTagOn, "auto_tag", "auto-tag",
 			func() error { _, err := bear.ApplyDailyDefaultTag(ctx, domainsByTag[opts.DailyDefaultTag]); return err }},
 		{opts.Features.DomainBootstrap, "domain_bootstrap", "domain-bootstrap canonicalize",
 			func() error { _, err := bear.ApplyDomainBootstrap(ctx, domainsByTag); return err }},
-		{autoTagOn, "placeholder_refresh", "placeholder refresh",
+		{opts.Features.AutoTagDefault, "placeholder_refresh", "placeholder refresh",
 			func() error { _, err := bear.ApplyPlaceholderRefresh(ctx, domainsByTag); return err }},
 		{opts.Features.CrossDomainMoves, "cross_domain", "cross-domain moves",
 			func() error { return bear.ApplyCrossDomainMoves(ctx, opts.Domains, opts.Pins) }},

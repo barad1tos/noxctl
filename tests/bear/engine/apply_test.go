@@ -87,11 +87,19 @@ func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 }
 
 // TestApply_AutoTagGatedOnDailyDefaultTag pins the "empty tag = silent
-// disable" contract. With Features.AutoTagDefault=true and
-// DailyDefaultTag="" the auto-tag and placeholder-refresh specs must
-// be skipped entirely — earlier wiring called ApplyDailyDefaultTag
-// with a nil domain (map lookup on empty key) which returned an
-// error and stamped a spurious Failed=1 in the result.
+// disable" contract for the daily-default fast-pass while preserving
+// placeholder-refresh independence:
+//
+//   - auto_tag is skipped when DailyDefaultTag is empty — earlier
+//     wiring called ApplyDailyDefaultTag with a nil domain (map
+//     lookup on empty key) which returned an error and stamped a
+//     spurious Failed=1 in the result.
+//   - placeholder_refresh must still run because ApplyPlaceholder
+//     Refresh has no dependency on the daily tag — it iterates every
+//     domain with a non-empty QuickPlaceholderH1. Folding the daily
+//     gate into both passes would silently disable placeholder
+//     refresh for catalogs that set `quick_placeholder_h1` on a
+//     domain without declaring `[meta].daily_default_tag`.
 func TestApply_AutoTagGatedOnDailyDefaultTag(t *testing.T) {
 	dir := t.TempDir()
 	opts := engine.ApplyOpts{
@@ -105,10 +113,12 @@ func TestApply_AutoTagGatedOnDailyDefaultTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	for _, name := range []string{"auto_tag", "placeholder_refresh"} {
-		if _, ok := result.PrePasses[name]; ok {
-			t.Errorf("pre-pass %q ran despite empty DailyDefaultTag", name)
-		}
+	if _, ok := result.PrePasses["auto_tag"]; ok {
+		t.Error("pre-pass \"auto_tag\" ran despite empty DailyDefaultTag")
+	}
+	if _, ok := result.PrePasses["placeholder_refresh"]; !ok {
+		t.Error("pre-pass \"placeholder_refresh\" was skipped; it must stay on " +
+			"Features.AutoTagDefault alone (independent of DailyDefaultTag)")
 	}
 }
 

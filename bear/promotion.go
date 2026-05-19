@@ -24,20 +24,18 @@ type PromotionRule struct {
 	Boundary string
 }
 
-// PromoteByCalendar returns (newTag, true) when an atom currently
-// tagged `currentTag` should be promoted given its creation date,
-// the current wall-clock `now`, and the operator-declared rule
-// chain. Loops the rule table top-to-bottom so a single call chains
-// every applicable rule in one shot (aggressive catch-up).
-//
-// Tags that don't appear as any rule's From pass through unchanged.
-// An empty rules slice disables promotion entirely — the function
-// returns (currentTag, false) immediately.
 // PromoteByCalendar is the public testing seam for the rules-driven
-// promoter. Production hot paths use promoteByCalendarIndexed
-// directly with a pre-built map so the per-atom work stays
-// allocation-free; this wrapper exists so test cases can spell their
-// rule tables as a flat slice.
+// promoter. Returns (newTag, true) when an atom currently tagged
+// `currentTag` should be promoted given its creation date, the
+// current wall-clock `now`, and the operator-declared rule chain;
+// returns (currentTag, false) when no rule applies or the rules
+// slice is empty. Chains the table top-to-bottom so one call moves
+// an atom across every applicable tier (aggressive catch-up).
+//
+// Production hot paths use promoteByCalendarIndexed directly with a
+// pre-built rules map so per-atom work stays allocation-free; this
+// wrapper exists so test cases can spell their rule tables as a flat
+// slice.
 func PromoteByCalendar(currentTag string, created, now time.Time, rules []PromotionRule) (string, bool) {
 	if len(rules) == 0 {
 		return currentTag, false
@@ -134,19 +132,20 @@ func boundaryStart(boundary string, now time.Time) time.Time {
 	return time.Time{}
 }
 
-// ApplyTimeBasedPromotion walks every quicknote/* atom across `domains`,
-// computes the calendar-correct destination via PromoteByCalendar, and
-// rewrites canonical tag-lines for atoms that need to move. Skips atoms
-// with a valid pin in `pins`.
+// ApplyTimeBasedPromotion walks every atom whose source tag appears
+// as a rule's `From` across `domains`, computes the calendar-correct
+// destination via the rule chain, and rewrites canonical tag-lines
+// for atoms that need to move. Skips atoms with a valid pin in
+// `pins`.
 //
-// Two-phase design: snapshot all quicknote atoms once across every
-// domain (deduped by ID), then process each atom exactly once with
-// PromoteByCalendar's chained destination. Without the snapshot, a
-// daily→weekly rewrite mid-sweep re-surfaces the moved atom under
-// weekly's listNotes call, then monthly's, etc. — yielding up to four
-// writes for an atom that crosses all five tiers. PromoteByCalendar
-// already returns the FINAL destination via internal loop, so a single
-// rewrite per atom suffices.
+// Two-phase design: snapshot all promotion-eligible atoms once
+// across every domain (deduped by ID), then process each atom
+// exactly once with the chained destination. Without the snapshot,
+// a tier-1→tier-2 rewrite mid-sweep re-surfaces the moved atom
+// under tier-2's listNotes call, then tier-3's, etc. — yielding one
+// extra write per tier crossed. The chained promoter already
+// returns the FINAL destination, so a single rewrite per atom
+// suffices.
 //
 // Idempotency comparison strips the trailing new-note link before
 // equality (same helper used by cross-domain) so the embedded title
@@ -241,9 +240,9 @@ func processAtomForPromotion(
 // that appears as either the From or To of a promotion rule. Skip-
 // atomics-pass domains (umbrellas) are excluded so listNotes doesn't
 // pull child atoms via Bear's hierarchical tag query. The set is
-// catalog-driven now — no hardcoded "quicknote/" prefix — so an
-// operator with their own ladder ("fleeting/inbox" → "fleeting/week"
-// → …) gets the same indexing for free.
+// purely catalog-driven — operators with an arbitrary ladder shape
+// (e.g. "fleeting/inbox" → "fleeting/week" → …) get the same indexing
+// without code changes.
 func indexPromotionDomains(all []*Domain, rules []PromotionRule) map[string]*Domain {
 	wanted := make(map[string]struct{}, len(rules)*2)
 	for _, r := range rules {
