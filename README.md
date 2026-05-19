@@ -63,12 +63,12 @@ Pre-commit hooks live in `.pre-commit-config.yaml` — install once with `pre-co
 ## Deploy (maintainer's setup)
 
 ```bash
-go install ./cmd/regen-watchd       # writes ~/go/bin/regen-watchd
+go install ./cmd/noxctl             # writes ~/go/bin/noxctl
 launchctl bootout gui/$(id -u)/com.bear.regen-watchd 2>/dev/null
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.bear.regen-watchd.plist
 ```
 
-`~/bin/regen-watchd` is a symlink to `~/go/bin/regen-watchd`; the launchd plist points at `~/bin/`, so every `go install` is picked up without editing the plist.
+`~/bin/noxctl` is a symlink to `~/go/bin/noxctl`; the launchd plist `ProgramArguments` points at `~/bin/noxctl daemon --config <path>`, so every `go install` is picked up without editing the plist. The launchd label still says `com.bear.regen-watchd` for continuity with operator history — only the program target moved.
 
 ## What this is not
 
