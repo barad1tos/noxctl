@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/cli/lint"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/state"
@@ -59,6 +60,24 @@ func runWithSignalContext(cmd *cobra.Command, fn func(ctx context.Context) error
 		return errInterrupted
 	}
 	return nil
+}
+
+// runLintSweep is the shared body for `noxctl audit` (apply=false)
+// and `noxctl lint` (apply=lintApply). Splits the preflight error
+// path from the sweep itself so the two CLI shims stay trivial.
+// Lives in preflight.go alongside the other audit/lint helpers
+// (domainsWithPreflight, runWithSignalContext) so a reader following
+// the CLI dispatch chain finds the body where the rest of the
+// shared plumbing lives.
+func runLintSweep(cmd *cobra.Command, apply bool) error {
+	domains, loadErr := domainsWithPreflight()
+	if loadErr != nil {
+		return loadErr
+	}
+	return runWithSignalContext(cmd, func(ctx context.Context) error {
+		lint.Run(ctx, os.Stdout, domains, apply)
+		return nil
+	})
 }
 
 // domainsWithPreflight runs the standard pre-load chore (pin

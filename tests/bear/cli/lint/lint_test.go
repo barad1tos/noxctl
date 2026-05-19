@@ -115,6 +115,14 @@ func flatListDomainForTest() *bear.Domain {
 // fixed capacity so the lint sweep's bearcli calls actually execute.
 // Production wires this via engine.Apply; tests must do it explicitly
 // before any code path that ends up calling bear.runBearcli.
+//
+// Cleanup resets capacity to 1, NOT the production daemon default
+// (8). bearcliSema is a process-global semaphore, so any subsequent
+// test in this go test binary inherits whatever the previous test
+// left behind. Tests that need a real capacity must call
+// bear.ResetBearcliPoolForTest themselves; cleanup-to-1 is the safe
+// minimum that surfaces a missing arm as a deterministic block
+// rather than spurious concurrency surprises.
 func armBearcliPool(t *testing.T) {
 	t.Helper()
 	bear.ResetBearcliPoolForTest(4)
@@ -175,17 +183,27 @@ func TestRun_ApplyMode_InvokesAutoFix(t *testing.T) {
 
 // TestRun_CanceledContext_Aborts pins the SIGINT-like cancellation
 // contract: a ctx already canceled at entry produces no panic, no
-// hang, and no spurious writes. The audit body checks ctx via
-// AuditDomains' per-domain loop.
+// hang, and the bearcli backend records zero list calls because the
+// per-domain loop bails on the ctx.Err check before issuing any
+// I/O. AuditDomains' contract is that a canceled context short-
+// circuits each domain's listNotes call.
 func TestRun_CanceledContext_Aborts(t *testing.T) {
+	armBearcliPool(t)
 	fake := newFakeBearcli(brokenH1ListPayload(t, "test/notes"))
 	ctx, cancel := context.WithCancel(bear.ContextWithBackend(t.Context(), fake))
 	cancel() // canceled before Run even starts
 
 	var buf bytes.Buffer
-	// Must not panic / hang. Output may be empty (pre-cancel exit) or
-	// carry the empty-findings tally (post-loop exit). Either is OK.
 	lint.Run(ctx, &buf, []*bear.Domain{flatListDomainForTest()}, false)
+
+	// Honoring cancellation means the listNotes path saw ctx.Err
+	// and skipped the bearcli round-trip. Without this assertion the
+	// test would pass even if Run ignored ctx entirely — only
+	// "didn't crash", not "honored the signal".
+	if got := fake.countKind("list"); got != 0 {
+		t.Errorf("canceled-ctx Run made %d list calls; want 0 "+
+			"(ctx.Err must short-circuit listNotes)", got)
+	}
 }
 
 // TestRun_EmptyDomains_RendersEmptyTally guards the operator-facing
