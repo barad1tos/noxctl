@@ -46,10 +46,11 @@ func TestScopeDomainsRejectsUnknownTag(t *testing.T) {
 	}
 }
 
-// TestLoadDomains_NoArgsReturnsFullCatalog — `noxctl plan` без позиційного
-// arg повертає всі домени з examples/personal.toml. Pin'ить core load path:
-// pin migration is best-effort (logged warning, never blocks), TOML parse
-// must succeed, slice must be non-empty.
+// TestLoadDomains_NoArgsReturnsFullCatalog — `noxctl plan` without a
+// positional arg returns every domain from examples/personal.toml.
+// Pins the core load path: pin migration is best-effort (logged
+// warning, never blocks), TOML parse must succeed, slice must be
+// non-empty.
 func TestLoadDomains_NoArgsReturnsFullCatalog(t *testing.T) {
 	tmp := t.TempDir()
 	var stderr bytes.Buffer
