@@ -46,14 +46,11 @@
 "library.lyrics.index"            = "✱ Тексти"
 "library.lyrics.unknown"          = "Невідомі"
 "library.lyrics.h2-prefix"        = "Пісні"
-"library.lyrics.section.foreign"  = "Іноземні"
-"library.lyrics.section.cis"      = "СНГ"
 
 # --- library/quotes.go ---
 "library.quotes.index"            = "✱ Цитати"
 "library.quotes.unknown"          = "Без джерела"
 "library.quotes.h2-prefix"        = "Цитати"
-"library.quotes.section.sources"  = "Джерела"
 
 # --- library/aphorisms.go ---
 "library.aphorisms.index"         = "✱ Афоризми"

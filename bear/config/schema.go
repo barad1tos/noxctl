@@ -119,13 +119,55 @@ type Stanza struct {
 	// Empty / unset disables the bootstrap form (legacy simple URL).
 	QuickPlaceholderH1 *string `toml:"quick_placeholder_h1"`
 
-	// Renderer selects a closed Go renderer registered in
-	// bear/custom/. Only meaningful when Blueprint == "custom"; the
-	// dispatch validator rejects this field on every other blueprint
-	// (D-06 — closed catalog, no scripting hatch).
-	Renderer *string `toml:"renderer"`
+	// MasterSections turns a hub-routed domain's master from the
+	// default 3-tier layout into a vertical stack of named sections.
+	// Each entry binds a title to a predicate that selects which
+	// Tier-2 buckets fold into that section: explicit `buckets = [...]`,
+	// a script-class match via `script = "latin"|"non-latin"`, or no
+	// predicate at all (catch-all). Unset (block omitted) keeps the
+	// default 3-tier master; declaring `master_section = []` with zero
+	// sections is rejected at load — that would produce a silent blank
+	// master at render time and the validator catches it instead.
+	MasterSections *[]StanzaMasterSection `toml:"master_section"`
 
 	// Reserved: apply path stamps the last successful apply
 	// timestamp through the loader. Decoded but not yet consumed.
 	LastApply *time.Time `toml:"last_apply"`
+}
+
+// StanzaMasterSection defines one vertical section of a hub-routed
+// domain's master output. Exactly one selection rule should be set:
+//
+//   - Buckets: explicit list of bucket names that fold into this
+//     section.
+//   - Script: a first-letter script class that auto-filters buckets;
+//     valid values are "latin" (the ASCII alphabet, FirstLetter
+//     group "1") and "non-latin" (everything else — Cyrillic,
+//     Greek, CJK, symbols, digits). Operators who need a finer
+//     partition spell it via explicit `buckets = [...]`.
+//   - Neither set → catch-all: any bucket not claimed by a previous
+//     section lands here. At most one catch-all per domain (the last
+//     section's catch-all swallows the unmapped remainder).
+//
+// Order matters: sections render top-to-bottom in declaration order,
+// and earlier sections claim their buckets first.
+//
+// CountMode controls what the section header's `(N)` reports.
+// Empty / unset is equivalent to "notes" and is accepted as a
+// convenience for stanzas that don't need to override the default.
+//   - "" or "notes" (default): sum of note counts across the
+//     section's buckets — answers "how many atomics live under
+//     here?".
+//   - "buckets": number of distinct buckets — answers "how many
+//     Tier-2 hubs does this section list?".
+//
+// ShowBulletCounts controls whether each bullet appends `(count)`
+// after the wikilink. Defaults to true; set false to emit plain
+// `[[bucket]]` bullets (artist-list style).
+type StanzaMasterSection struct {
+	Title            string   `toml:"title"`
+	Buckets          []string `toml:"buckets"`
+	Script           string   `toml:"script"`
+	CountMode        string   `toml:"count_mode"`
+	ShowBulletCounts *bool    `toml:"show_bullet_counts"`
 }

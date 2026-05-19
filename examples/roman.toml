@@ -36,12 +36,23 @@
 [[domain]]
   tag = "library/lyrics"
   index_title = "✱ Тексти"
-  blueprint = "custom"
+  blueprint = "hub-routed"
   unknown_bucket = "Невідомі"
   hub_h2_prefix = "Пісні"
   legacy_author_fallback = true
   strip_legacy_author_h2 = true
-  renderer = "lyrics"
+
+  [[domain.master_section]]
+    title = "Іноземні"
+    script = "latin"
+    count_mode = "buckets"
+    show_bullet_counts = false
+
+  [[domain.master_section]]
+    title = "СНГ"
+    script = "non-latin"
+    count_mode = "buckets"
+    show_bullet_counts = false
 
 [[domain]]
   tag = "library/prose"
@@ -53,20 +64,52 @@
 [[domain]]
   tag = "library/quotes"
   index_title = "✱ Цитати"
-  blueprint = "custom"
+  blueprint = "hub-routed"
   unknown_bucket = "Без джерела"
   hub_h2_prefix = "Цитати"
   legacy_author_fallback = true
   strip_legacy_author_h2 = true
-  renderer = "quotes"
+
+  [[domain.master_section]]
+    title = "Джерела"
 
 [[domain]]
   tag = "llm/agents"
   index_title = "✱ LLM Агенти"
-  blueprint = "custom"
+  blueprint = "hub-routed"
   unknown_bucket = "uncategorized"
   hub_h2_prefix = "Агенти"
-  renderer = "agents"
+  legacy_author_fallback = false
+  strip_legacy_author_h2 = false
+
+  [[domain.master_section]]
+    title = "Розробка"
+    buckets = [
+      "angular", "cpp", "csharp", "django", "dotnet", "elixir", "flutter",
+      "go", "java", "javascript", "kotlin", "laravel", "nextjs", "php",
+      "powershell", "python", "react", "ruby", "rust", "spring", "sql",
+      "swift", "typescript", "vue",
+      "development", "dx", "meta",
+    ]
+
+  [[domain.master_section]]
+    title = "Інфра / Дані"
+    buckets = ["infrastructure", "devops", "data"]
+
+  [[domain.master_section]]
+    title = "Якість"
+    buckets = ["quality"]
+
+  [[domain.master_section]]
+    title = "Координація"
+    buckets = ["orchestration"]
+
+  [[domain.master_section]]
+    title = "Бізнес"
+    buckets = ["business", "research", "domains"]
+
+  [[domain.master_section]]
+    title = "Інше"
 
 [[domain]]
   tag = "llm/characters"

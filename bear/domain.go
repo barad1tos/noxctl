@@ -224,12 +224,62 @@ type Domain struct {
 	// placeholder text.
 	QuickPlaceholderH1 string
 
+	// MasterSections, when non-empty, replaces the default 3-tier
+	// hub-routed master with a vertical-sections layout. Sections
+	// render top-to-bottom in declaration order; each section picks
+	// the buckets it lists via an explicit bucket list, a script-class
+	// predicate, or a catch-all (no predicate). Empty → domain keeps
+	// the default master.
+	MasterSections []MasterSection
+
 	// validationError carries a factory-level error so Validate can
 	// surface it without the test-helper having to crash on misconfig.
 	// Set by NewUmbrellaDomainForTest. Production callers use
 	// NewUmbrellaDomain which panics on the same error class.
 	validationError error
 }
+
+// MasterSection is one entry of a hub-routed domain's vertical-sections
+// master layout. Title surfaces in the section header; the predicate
+// (Buckets / Script / catch-all) decides which Tier-2 buckets fold
+// into this section. Mirrors the TOML `[[domain.master_section]]`
+// block in bear/config/schema.go.
+//
+// Selection rules — set at most one:
+//
+//   - Buckets non-nil → explicit bucket-name match.
+//   - Script != "" → first-letter script class match
+//     ("latin" / "non-latin").
+//   - Both empty → catch-all (claims every still-unclaimed bucket).
+//
+// CountMode selects what `(N)` in the section header reports:
+//
+//   - CountModeNotes (default): sum of note counts across the
+//     section's buckets.
+//   - CountModeBuckets: number of distinct buckets in the section.
+//
+// ShowBulletCounts toggles the `(count)` suffix on each bullet.
+type MasterSection struct {
+	Title            string
+	Buckets          []string
+	Script           string
+	CountMode        CountMode
+	ShowBulletCounts bool
+}
+
+// CountMode picks the counting strategy for MasterSection headers.
+// Zero value is CountModeNotes, matching the most common renderer
+// expectation (sum of atomics under the section).
+type CountMode int
+
+const (
+	// CountModeNotes counts the total notes across every bucket the
+	// section claims — answers "how many atomics live here?".
+	CountModeNotes CountMode = iota
+	// CountModeBuckets counts the distinct buckets the section claims
+	// — answers "how many Tier-2 hubs does this section list?".
+	CountModeBuckets
+)
 
 // tagSuffix returns the part of d.Tag after the last "/", e.g. "poetry" for
 // "library/poetry". Used to label log lines and pilot env-vars per domain.
