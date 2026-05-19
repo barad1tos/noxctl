@@ -25,10 +25,10 @@ import (
 // surface is identical to a future real subcommand without the
 // double-load.
 //
-// VAL-02 / VAL-05: never spawns bearcli; the static guarantee at
+// validate never spawns bearcli; the static guarantee at
 // tests/bear/config/loader_test.go::TestLoaderZeroBearcli plus the
-// e2e smoke test below verify both compile-time and runtime that
-// no Bear-side I/O happens here.
+// e2e smoke test verify both compile-time and runtime that no
+// Bear-side I/O happens here.
 var validateCmd = &cobra.Command{
 	Use:   "validate [path]",
 	Short: "Validate noxctl.toml without any Bear-side I/O",
@@ -58,8 +58,8 @@ var validateCmd = &cobra.Command{
 		if loadErr != nil {
 			// Cobra surfaces this to stderr + sets exit 1.
 			// Wrap so stderr shows the uniform `path:line:col: kind:
-			// message` shape (VAL-04) while preserving errors.Is
-			// reachability of the original chain (e.g. fs.ErrNotExist).
+			// message` shape while preserving errors.Is reachability
+			// of the original chain (e.g. fs.ErrNotExist).
 			return &formattedLoadError{
 				inner: loadErr,
 				msg:   config.FormatLoadError(loadErr, path),
@@ -83,7 +83,7 @@ func init() { rootCmd.AddCommand(validateCmd) }
 // error (so existing tests like TestLoaderFileNotFound continue to
 // satisfy errors.Is(returned, fs.ErrNotExist)) while overriding
 // Error so cobra's stderr output shows the uniform shape produced
-// by config.FormatLoadError. See VAL-04.
+// by config.FormatLoadError.
 type formattedLoadError struct {
 	inner error
 	msg   string

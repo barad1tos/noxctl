@@ -3,7 +3,7 @@
 // placement rule ("Naming Patterns"). Mirrors the source
 // layout: bear/overwriteoutcome/record.go ⇄ tests/bear/overwriteoutcome/record_test.go.
 //
-// Validates PAR-06 counter arithmetic: hashConflictsTotal increments
+// Validates the counter arithmetic: hashConflictsTotal increments
 // exactly once per ErrHashConflict observed; retriesSucceeded /
 // retriesFailed track the outcome of the single retry.
 package overwriteoutcome_test

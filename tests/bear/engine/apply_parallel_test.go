@@ -1,9 +1,9 @@
 // Package engine_test — parallel applyPerDomain orchestration tests.
 //
-// Validates the per-umbrella errgroup refactor of
-// engine.applyPerDomain — PAR-02 (siblings concurrent / umbrella waits
-// on family / families concurrent), PAR-05 (state.Save serialization
-// under parallel writers), PAR-08 (idempotency across cycles).
+// Validates the per-umbrella errgroup orchestration of
+// engine.applyPerDomain: siblings concurrent / umbrella waits on
+// family / families concurrent; state.Save serialization under
+// parallel writers; idempotency across cycles.
 //
 // Production code uses errgroup.WithContext-based applyPerDomain over
 // a per-umbrella dependency graph. These

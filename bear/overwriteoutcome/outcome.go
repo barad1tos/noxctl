@@ -6,7 +6,7 @@
 // Lives as a sub-package so its arithmetic can be unit-tested from
 // tests/bear/overwriteoutcome/ without exposing internal bearcli-pool
 // counters in the bear public API and without dropping a *_test.go
-// file inside bear/. PAR-06.
+// file inside bear/.
 package overwriteoutcome
 
 import "sync/atomic"

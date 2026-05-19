@@ -1,15 +1,15 @@
 // Package bear_test — bearcli subprocess pool tests.
 //
-// Validates the global bearcli concurrency semaphore (PAR-01)
-// and the calls-by-kind / hash-conflict metrics counters (PAR-06).
-// External package per project convention ("Naming Patterns") —
-// tests/bear/ is the canonical home for bear_test files.
+// Validates the global bearcli concurrency semaphore and the
+// calls-by-kind / hash-conflict metrics counters. External package
+// per project convention — tests/bear/ is the canonical home for
+// bear_test files.
 //
-// GREEN: drives the production API landed in
-// (bear.SetBearcliConcurrency, bear.AcquireBearcliForTest,
-// bear.BearcliMetricsSnapshot, bear.ResetBearcliPoolForTest). Tests use
-// the standard-library testing/synctest bubble so goroutine scheduling
-// is deterministic — no real wall-clock sleeps, no flaky timing.
+// Drives the production API (bear.SetBearcliConcurrency,
+// bear.AcquireBearcliForTest, bear.BearcliMetricsSnapshot,
+// bear.ResetBearcliPoolForTest). Tests use the standard-library
+// testing/synctest bubble so goroutine scheduling is deterministic
+// — no real wall-clock sleeps, no flaky timing.
 package bear_test
 
 import (

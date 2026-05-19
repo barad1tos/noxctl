@@ -10,7 +10,7 @@ import (
 
 // uniformShapeRE is the contract the formatter promises: every emitted
 // line starts with `path:line:col: kind: ` where kind is one of the
-// four enumerated classes. See VAL-04.
+// four enumerated classes.
 var uniformShapeRE = regexp.MustCompile(`^[^:]+:\d+:\d+: (parse|type-mismatch|unknown-field|validate): `)
 
 // TestFormatLoadError verifies every leaf error surfaced by config.Load

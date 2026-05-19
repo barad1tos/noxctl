@@ -21,10 +21,11 @@ import (
 //
 // Format mirrors Ansible's PLAY RECAP shape — text/tabwriter elastic
 // tabstops produce aligned columns from tab-separated text. Pipe-safe
-// (no ANSI escapes; padding via spaces only — RESEARCH A6).
+// (no ANSI escapes; padding via spaces only).
 //
-// Map iteration is deterministic via sortedKeys (ACCEPT-04: Go map
-// iteration randomization causes false diffs).
+// Map iteration is deterministic via sortedKeys — Go map iteration
+// randomization would otherwise cause false diffs in the rendered
+// output.
 //
 // Nil result is a no-op: callers may pass result==nil when engine.Apply
 // returned a top-level error before populating any counts.
@@ -64,9 +65,9 @@ func Render(out io.Writer, result *engine.ApplyResult, quiet bool) {
 	_ = rw.Flush()
 }
 
-// sortedKeys returns map keys in sort.Strings ascending order. Used to
-// deterministically iterate ApplyResult maps per ACCEPT-04 (Go map
-// iteration randomization causes false diffs).
+// sortedKeys returns map keys in sort.Strings ascending order. Used
+// to deterministically iterate ApplyResult maps so the rendered diff
+// stays stable across runs.
 func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

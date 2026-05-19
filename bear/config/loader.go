@@ -35,7 +35,7 @@ func Load(path string) ([]*bear.Domain, *Catalog, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		// Preserve fs.ErrNotExist via %w so callers can errors.Is
-		// against it directly (VAL-01 acceptance).
+		// against it directly.
 		return nil, nil, fmt.Errorf("%s: %w", path, err)
 	}
 

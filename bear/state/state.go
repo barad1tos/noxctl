@@ -1,12 +1,10 @@
 // Package state owns the per-project state.json schema + load/save
-// lifecycle for noxctl. Schema is locked at version="1" in.
+// lifecycle for noxctl. Schema is locked at version="1".
 //
-// STATE-04 mandates that a corrupt state.json is RENAMED to
-// state.json.corrupt-<RFC3339> and surfaced via slog.Warn — never
-// silently reset (operator must investigate). layers flock on
-// top; layers plan-cache writes through the same atomic
-// helper. ships only the schema, Load, Save, and the
-// corrupt-recovery branch.
+// A corrupt state.json is RENAMED to state.json.corrupt-<RFC3339>
+// and surfaced via slog.Warn — never silently reset (operator must
+// investigate). The flock and plan-cache helpers compose on top of
+// the same atomic write primitive.
 package state
 
 import (

@@ -11,8 +11,6 @@
 // from BurntSushi/toml's lexer, type-checker, the metadata.Undecoded
 // strict-decode pass, or the post-decode ValidateCatalog / Dispatch
 // chain. errors.Join'd aggregates fan out one line per leaf error.
-//
-// See VAL-04.
 package config
 
 import (
@@ -51,7 +49,7 @@ var wrappedParseRE = regexp.MustCompile(`^.+:(\d+):(\d+): toml: line \d+:`)
 //	validate — anything else from validate/dispatch.
 //
 // errors.Join'd aggregates fan out one line per leaf error. Empty err
-// returns the empty string. See VAL-04.
+// returns the empty string.
 func FormatLoadError(err error, path string) string {
 	if err == nil {
 		return ""
