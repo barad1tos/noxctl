@@ -2,14 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/spf13/cobra"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/cli/lint"
 )
 
 // auditCmd runs a read-only sweep over every managed domain and prints
@@ -38,26 +35,25 @@ non-fixable rows need manual review in Bear.`,
 	RunE: runAudit,
 }
 
-// runAudit is the audit RunE.
+// runAudit is the audit RunE. Audit is lint without --apply; both
+// share runLintSweep which collapses the preflight + signal wiring
+// into one place (and dodges dupl on the otherwise-identical bodies).
 func runAudit(cmd *cobra.Command, _ []string) error {
+	return runLintSweep(cmd, false)
+}
+
+// runLintSweep is the shared body for audit (apply=false) and lint
+// (apply=lintApply). Splits the preflight error path from the
+// sweep itself so the two CLI shims stay trivial.
+func runLintSweep(cmd *cobra.Command, apply bool) error {
 	domains, loadErr := domainsWithPreflight()
 	if loadErr != nil {
 		return loadErr
 	}
-
-	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	findings := bear.AuditDomains(ctx, domains)
-
-	// ctx cancellation maps to exit 130; we still print whatever findings
-	// the partial sweep produced because audit is read-only.
-	bear.PrintFindings(os.Stdout, findings, len(domains))
-
-	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return errInterrupted
-	}
-	return nil
+	return runWithSignalContext(cmd, func(ctx context.Context) error {
+		lint.Run(ctx, os.Stdout, domains, apply)
+		return nil
+	})
 }
 
 func init() { rootCmd.AddCommand(auditCmd) }

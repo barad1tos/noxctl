@@ -1,0 +1,39 @@
+// Package lint implements the noxctl audit + lint subcommand bodies.
+//
+// cmd/noxctl/{audit,lint}.go reduce to cobra-wiring + flag parsing;
+// this package owns the actual sweep — report-only (audit + `lint`
+// without --apply) or auto-fix (lint --apply). Both subcommands
+// share the same domain walk; the apply flag picks the action.
+//
+// Layering note: this package sits in the CLI helper layer, so it
+// imports bear/ but never bear/config/. cmd/noxctl is the only place
+// that owns the Catalog → domains translation.
+package lint
+
+import (
+	"context"
+	"io"
+
+	"github.com/barad1tos/noxctl/bear"
+)
+
+// Run performs the lint sweep. When apply is false (audit mode or
+// `lint` without --apply), it runs bear.AuditDomains read-only and
+// prints the grouped report to stdout. When apply is true, it runs
+// bear.LintApplyDomains which rewrites Fixable rows through bearcli.
+//
+// ctx cancellation aborts the sweep at the next bearcli call. Both
+// AuditDomains and LintApplyDomains are log-and-continue on per-atom
+// failures, so a partial sweep always renders whatever findings
+// completed before the cancellation.
+//
+// stdout is parameterized so tests can capture the rendered findings;
+// production wires os.Stdout in the CLI shim.
+func Run(ctx context.Context, stdout io.Writer, domains []*bear.Domain, apply bool) {
+	if apply {
+		bear.LintApplyDomains(ctx, domains)
+		return
+	}
+	findings := bear.AuditDomains(ctx, domains)
+	bear.PrintFindings(stdout, findings, len(domains))
+}

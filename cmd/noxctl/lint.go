@@ -1,15 +1,7 @@
 package main
 
 import (
-	"context"
-	"errors"
-	"os"
-	"os/signal"
-	"syscall"
-
 	"github.com/spf13/cobra"
-
-	"github.com/barad1tos/noxctl/bear"
 )
 
 var lintApply bool // --apply flag
@@ -42,33 +34,12 @@ no writes.`,
 	RunE: runLint,
 }
 
-// runLint is the lint RunE.
+// runLint is the lint RunE. Body delegates to runLintSweep (shared
+// with audit). The --apply flag picks the path: report-only when
+// false (muscle-memory match with `noxctl audit`); auto-fix
+// orchestrator when true.
 func runLint(cmd *cobra.Command, _ []string) error {
-	domains, loadErr := domainsWithPreflight()
-	if loadErr != nil {
-		return loadErr
-	}
-
-	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	if !lintApply {
-		// Report-only path mirrors auditCmd. Kept inline rather than
-		// delegating to runAudit so the --apply flag stays a single
-		// switch on this command rather than a separate subcommand.
-		findings := bear.AuditDomains(ctx, domains)
-		bear.PrintFindings(os.Stdout, findings, len(domains))
-		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return errInterrupted
-		}
-		return nil
-	}
-
-	bear.LintApplyDomains(ctx, domains)
-	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return errInterrupted
-	}
-	return nil
+	return runLintSweep(cmd, lintApply)
 }
 
 func init() {
