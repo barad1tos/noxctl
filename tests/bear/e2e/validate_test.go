@@ -25,7 +25,7 @@ import (
 )
 
 // TestValidateRomanCorpus is the validate acceptance gate:
-// `noxctl validate ./examples/roman.toml` exits 0 in <1 second
+// `noxctl validate ./examples/personal.toml` exits 0 in <1 second
 // wall-clock with zero bearcli process spawned.
 //
 // Cold-start wall-clock — INCLUDES binary spawn, flag parse, TOML
@@ -41,7 +41,7 @@ func TestValidateRomanCorpus(t *testing.T) {
 	}
 	bin := buildE2EBinary(t)
 	repoRoot := repoRootE2E(t)
-	fixture := filepath.Join(repoRoot, "examples", "roman.toml")
+	fixture := filepath.Join(repoRoot, "examples", "personal.toml")
 
 	// Snapshot bearcli process count before+after. validate must
 	// not spawn bearcli — the static guarantee in
@@ -69,7 +69,7 @@ func TestValidateRomanCorpus(t *testing.T) {
 		t.Errorf("validate took %v on Roman's corpus; budget %v "+
 			"(cold-start wall-clock)", elapsed, budget)
 	}
-	t.Logf("noxctl validate ./examples/roman.toml: %v (budget %v)",
+	t.Logf("noxctl validate ./examples/personal.toml: %v (budget %v)",
 		elapsed, budget)
 
 	// Sanity on the success summary. The success line lands somewhere

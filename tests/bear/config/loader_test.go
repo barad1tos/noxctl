@@ -435,7 +435,7 @@ func TestLoaderValidAllBlueprintsHappyPath(t *testing.T) {
 
 // TestLoaderPerf: 28-stanza fixture parses in well under the 1-second
 // budget. Sanity-checks the loader function in isolation; the
-// user-facing wall-clock against examples/roman.toml is measured
+// user-facing wall-clock against examples/personal.toml is measured
 // separately at the CLI level.
 func TestLoaderPerf(t *testing.T) {
 	dir := t.TempDir()

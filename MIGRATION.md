@@ -3,7 +3,7 @@
 This document records the closed-catalog mapping: every domain that
 previously lived as a `var FooDomain = &bear.Domain{...}` literal in
 Go code was migrated to a `[[domain]]` stanza in
-`examples/roman.toml` (or your own `noxctl.toml`). The original
+`examples/personal.toml` (or your own `noxctl.toml`). The original
 hardcoded packages (`library/`, `llm/`, `it/`, `personal/`,
 `quicknote/`, `registry/`) were deleted in a single atomic commit
 after the daemon ran cleanly on the TOML catalog for the cutover
@@ -51,7 +51,7 @@ in the same commit as the code change.
 
 **Total: 27 leaves + 4 umbrellas = 31 domains.** Every row in this
 table corresponds to exactly one `[[domain]]` stanza in
-`examples/roman.toml`. The leaf tags `claude`, `english`, `health`,
+`examples/personal.toml`. The leaf tags `claude`, `english`, `health`,
 `leisure`, `humor`, `work`, `instagram`, `travel`, and `development`
 are top-level (no `personal/` prefix) — that's how the legacy
 hardcoded `personal/*` package registered them, preserved verbatim in
@@ -118,7 +118,7 @@ scaffolding, and the test files that pinned bridge-only invariants:
 - `quicknote/` — 5 leaf domains (daily, weekly, monthly, yearly, decadal)
 - `registry/` — bridge-window seam (one import-site for hardcoded domains)
 - `cmd/regen-watchd/` — legacy daemon binary, superseded by `noxctl daemon`
-- `cmd/noxctl-codegen/` — one-shot codegen tool used to author `examples/roman.toml`
+- `cmd/noxctl-codegen/` — one-shot codegen tool used to author `examples/personal.toml`
 - `cmd/noxctl/parity_check.go` + `bear/cli/parity/` + `bear/engine/parity.go` — bridge-window parity dispatcher, superseded by `noxctl verify`
 - `tests/bear/codegen_test.go`, `tests/bear/equivalence_test.go`, `tests/bear/config/roman_corpus_test.go`, `tests/bear/engine/parity_test.go`, `tests/bear/engine/plan_parity_test.go`, `tests/registry/`, `tests/bear/cli/parity/`, `tests/cmd/regen-watchd/` — every test that pinned an invariant on the deleted code paths
 
