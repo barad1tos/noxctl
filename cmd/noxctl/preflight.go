@@ -1,13 +1,21 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+
+	"github.com/spf13/cobra"
 
 	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/cli/lint"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/engine"
+	"github.com/barad1tos/noxctl/bear/state"
 )
 
 // pinPaths returns the canonical legacy and target pin-registry
@@ -23,6 +31,79 @@ func pinPaths() (legacy, target string) {
 	legacy = filepath.Join(home, ".cache", "regen-watchd-pins.json")
 	target = filepath.Join(".noxctl", "pins.json")
 	return
+}
+
+// runWithSignalContext wraps a RunE body in the standard
+// SIGINT/SIGTERM-aware context dance: install signal.NotifyContext
+// against cmd.Context() (which Cobra cancels on its own lifecycle),
+// hand the derived ctx to the body, and on body return inspect
+// ctx.Err — context.Canceled / context.DeadlineExceeded map to the
+// shared errInterrupted sentinel that main.go translates into POSIX
+// exit 130.
+//
+// Audit and lint share this exact shape; without the helper each
+// subcommand would re-implement the signal wiring and the post-run
+// ctx-error check, drifting whenever one side adds a new failure
+// mode the other does not.
+//
+// The helper is intentionally minimal: it does not introduce a
+// timeout, does not own the ctx mutation, does not retry — just
+// SIGINT → 130. Adding more behavior here would obscure the
+// per-subcommand control flow.
+func runWithSignalContext(cmd *cobra.Command, fn func(ctx context.Context) error) error {
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := fn(ctx); err != nil {
+		return err
+	}
+	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return errInterrupted
+	}
+	return nil
+}
+
+// runLintSweep is the shared body for `noxctl audit` (apply=false)
+// and `noxctl lint` (apply=lintApply). Splits the preflight error
+// path from the sweep itself so the two CLI shims stay trivial.
+// Lives in preflight.go alongside the other audit/lint helpers
+// (domainsWithPreflight, runWithSignalContext) so a reader following
+// the CLI dispatch chain finds the body where the rest of the
+// shared plumbing lives.
+func runLintSweep(cmd *cobra.Command, apply bool) error {
+	domains, loadErr := domainsWithPreflight()
+	if loadErr != nil {
+		return loadErr
+	}
+	return runWithSignalContext(cmd, func(ctx context.Context) error {
+		lint.Run(ctx, os.Stdout, domains, apply)
+		return nil
+	})
+}
+
+// domainsWithPreflight runs the standard pre-load chore (pin
+// migration) and loads noxctl.toml at cfgPath, wrapping any load
+// error in formattedLoadError so the stderr trace stays uniform
+// across every subcommand.
+//
+// Audit and lint subcommands share this exact shape; without the
+// helper each call site duplicates 6 lines and trips dupl. Apply,
+// daemon, validate, and verify keep their inline preflights because
+// they need extra wiring (catalog metadata for verbose summaries,
+// state resume, pin registry, feature flags) that this helper
+// would either drag along uselessly or obscure.
+func domainsWithPreflight() ([]*bear.Domain, error) {
+	legacyPath, target := pinPaths()
+	if migrationErr := state.MigratePins(legacyPath, target); migrationErr != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "warning: pin migration failed: %v\n", migrationErr)
+	}
+	domains, _, loadErr := config.Load(cfgPath)
+	if loadErr != nil {
+		return nil, &formattedLoadError{
+			inner: loadErr,
+			msg:   config.FormatLoadError(loadErr, cfgPath),
+		}
+	}
+	return domains, nil
 }
 
 // featuresFromCatalog copies `*config.Catalog.Features` (whose fields
