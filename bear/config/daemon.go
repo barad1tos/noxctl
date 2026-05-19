@@ -302,13 +302,19 @@ func applyPathsOverlay(cfg *DaemonConfig, p daemonPathsStanza) {
 // errors short-circuit with a fmt.Errorf mentioning the env-var name
 // so operators can locate the bad value quickly.
 func applyEnvOverlay(cfg *DaemonConfig) error {
-	if err := envOverlayDuration(cfg, EnvDebouncePause, "DebouncePause", &cfg.DebouncePause); err != nil {
+	if err := envOverlayDuration(
+		cfg, EnvDebouncePause, "DebouncePause",
+		&cfg.DebouncePause); err != nil {
 		return err
 	}
-	if err := envOverlayDuration(cfg, EnvMaxBurstWindow, "MaxBurstWindow", &cfg.MaxBurstWindow); err != nil {
+	if err := envOverlayDuration(
+		cfg, EnvMaxBurstWindow, "MaxBurstWindow",
+		&cfg.MaxBurstWindow); err != nil {
 		return err
 	}
-	if err := envOverlayDuration(cfg, EnvMtimePollInterval, "MtimePollInterval", &cfg.MtimePollInterval); err != nil {
+	if err := envOverlayDuration(
+		cfg, EnvMtimePollInterval, "MtimePollInterval",
+		&cfg.MtimePollInterval); err != nil {
 		return err
 	}
 	if cfg.MtimePollInterval < 0 {
@@ -316,7 +322,8 @@ func applyEnvOverlay(cfg *DaemonConfig) error {
 			EnvMtimePollInterval, cfg.MtimePollInterval)
 	}
 	if err := envOverlayDuration(
-		cfg, EnvAutoTagPollInterval, "AutoTagPollInterval", &cfg.AutoTagPollInterval,
+		cfg, EnvAutoTagPollInterval, "AutoTagPollInterval",
+		&cfg.AutoTagPollInterval,
 	); err != nil {
 		return err
 	}
@@ -331,10 +338,10 @@ func applyEnvOverlay(cfg *DaemonConfig) error {
 		cfg.Sources["AuditEnabled"] = SourceEnv
 	}
 	if v := os.Getenv(EnvDomainBootstrap); v != "" {
-		// REGEN_DOMAIN_BOOTSTRAP mirrors REGEN_AUDIT semantics (
-		// ): only "off" disables; anything else enables. Per D-03
-		// env > file > default precedence is enforced by the call order
-		// (file overlay ran above; this env block writes last).
+		// REGEN_DOMAIN_BOOTSTRAP mirrors REGEN_AUDIT semantics: only "off"
+		// disables; anything else enables. env > file > default precedence
+		// is enforced by the call order — the file overlay ran above; this
+		// env block writes last.
 		cfg.DomainBootstrap = v != "off"
 		cfg.Sources["DomainBootstrap"] = SourceEnv
 	}

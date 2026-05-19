@@ -306,10 +306,10 @@ func applyDomainBootstrapOne(
 	if d == nil {
 		return false
 	}
-	// : defensive guard — `matchOwningDomain` MUST have
-	// resolved umbrella → DefaultChild via `ResolveURLDomain`. This
-	// branch is unreachable through that path today; it locks against
-	// future refactors that might drop the resolution OR cases where
+	// Defensive guard: `matchOwningDomain` MUST have resolved
+	// umbrella → DefaultChild via `ResolveURLDomain`. This branch is
+	// unreachable through that path today; it locks against future
+	// refactors that might drop the resolution OR cases where
 	// `domainsByTag` carries a bare umbrella without its child wiring.
 	if d.SkipAtomicsPass {
 		log.Printf("domain-bootstrap: BUG — umbrella %q leaked past matchOwningDomain "+
