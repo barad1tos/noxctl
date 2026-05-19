@@ -13,7 +13,7 @@ import (
 // errDriftDetected is the cmd-level sentinel that main.go's exit
 // mapper recognizes. plan.Run returns plan.ErrDriftDetected; runPlan
 // translates so the rest of the cmd/noxctl error-mapping code stays
-// unchanged (CLI-04 ExitDiffPresent=2 contract).
+// unchanged (Terraform-style detailed-exitcode: 2 = diff present).
 var errDriftDetected = errors.New("noxctl: drift detected")
 
 // CLI-state for plan-specific flags.
@@ -46,7 +46,7 @@ Color override (auto by default):
   --color=always  force ANSI even when piped
   --color=never   plain ASCII
 
-Plan reports the next apply tick's delta only (single-pass per CONTEXT D-06).
+Plan reports the next apply tick's delta only (single-pass).
 On a freshly-edited corpus, expect drift to remain after the first apply;
 rerun 'noxctl plan' after 'noxctl apply' to confirm convergence.
 
@@ -81,7 +81,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	})
 	// Map plan-layer sentinels back to cmd-layer sentinels so main.go's
 	// exit-code dispatch (errors.Is on errDriftDetected, errInterrupted)
-	// continues to fire — keeps the CLI-04 / CLI-08 contracts unchanged.
+	// continues to fire — keeps the detailed-exitcode contract intact.
 	switch {
 	case errors.Is(runErr, plan.ErrDriftDetected):
 		return errDriftDetected

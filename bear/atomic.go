@@ -5,8 +5,8 @@
 // close → rename → fsync(parent dir). On macOS APFS this protects
 // against partial-write corruption from SIGKILL or power loss. Parent
 // dir is created with mode 0o700 if absent. The file is created with
-// the explicit perm parameter — no default; per Pitfall 5
-// (regen-watchd CONCERNS.md back-port).
+// the explicit perm parameter — no default — so callers can't fall
+// back to a wide umask-derived mode for sensitive state files.
 //
 // perm MUST be the actual desired mode (e.g. 0o600 for state.json /
 // pins.json). Concurrent writers using the same path are safe: the tmp

@@ -2,14 +2,15 @@
 // structs and dispatches each stanza into a *bear.Domain via the
 // closed 6-blueprint catalog.
 //
-// Decisions (locked in 01-CONTEXT.md):
+// Architectural constraints:
 //
-//	D-01 lives at bear/config/, the only place BurntSushi/toml is imported
-//	D-07 snake_case TOML tags throughout
-//	D-08 [[domain]] singular array-of-tables form
-//	D-09 single Stanza struct; blueprint-specific fields are pointer types
-//	D-11 aggregate errors via stdlib errors.Join
-//	D-12 closed dispatch map literal — never reflection
+//   - bear/config/ is the only place BurntSushi/toml is imported.
+//   - snake_case TOML tags throughout.
+//   - [[domain]] singular array-of-tables form.
+//   - Single Stanza struct; blueprint-specific fields are pointer types
+//     so the loader can distinguish "omitted" from "set to zero value".
+//   - Errors aggregate via stdlib errors.Join.
+//   - Closed dispatch map literal — never reflection.
 //
 // The pointer-types choice on optional fields is load-bearing.
 // BurntSushi metadata.Undecoded distinguishes "field omitted" from
@@ -22,7 +23,7 @@ package config
 import "time"
 
 // Catalog is the decoded noxctl.toml document. Round-trip safe; no
-// map[string]any anywhere — CFG-01 acceptance criterion.
+// map[string]any anywhere.
 type Catalog struct {
 	Meta       Meta              `toml:"meta"`
 	Domains    []Stanza          `toml:"domain"`
@@ -69,9 +70,9 @@ type Features struct {
 	ForeignTagEscape  *bool `toml:"foreign_tag_escape"`
 	DuplicateRegistry *bool `toml:"duplicate_registry"`
 	// DomainBootstrap opts the universal fast-pass
-	// canonicalization pre-pass on/off. Pointer per D-09 so the loader
-	// can distinguish "omitted" (inherit default ON) from "explicitly
-	// false" (kill-switch). Daemon-side mirror lives at
+	// canonicalization pre-pass on/off. Pointer so the loader can
+	// distinguish "omitted" (inherit default ON) from "explicitly false"
+	// (kill-switch). Daemon-side mirror lives at
 	// `DaemonConfig.DomainBootstrap` and is wired via env > file >
 	// default in `bear/config/daemon.go`.
 	DomainBootstrap *bool `toml:"domain_bootstrap"`
@@ -79,7 +80,7 @@ type Features struct {
 
 // Stanza is a single [[domain]] array-of-tables entry. Required
 // across every blueprint: Tag, IndexTitle, Blueprint. Blueprint-
-// specific optional fields are pointer types (D-09) so dispatch can
+// specific optional fields are pointer types so dispatch can
 // reject a blueprint/field mismatch loudly instead of silently
 // accepting a zero value.
 //

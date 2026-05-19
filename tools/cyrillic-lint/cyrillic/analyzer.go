@@ -2,7 +2,7 @@
 // string literal whose unquoted content carries two or more
 // consecutive Cyrillic letters and whose containing file is NOT
 // under one of the permitted paths. Use bear.T(key) for any
-// user-facing string. See I18N-04.
+// user-facing string.
 package cyrillic
 
 import (
@@ -25,10 +25,9 @@ var cyrillicRE = regexp.MustCompile(`\p{Cyrillic}{2,}`)
 
 // carveOutPaths whitelists directories where Cyrillic literals are
 // legitimate (locale tables, frozen legacy daemon entry, fixture
-// trees, the analyzer sub-module itself). Permanent — sourced from
-// the.golangci.yml carve-out block deleted in Task 3 of plan 01.1-01.
-// Not user-configurable on purpose: a runtime override would defeat
-// the threat-model mitigation T-01.1-02.
+// trees, the analyzer sub-module itself). Permanent and not
+// user-configurable on purpose: a runtime override would defeat the
+// threat-model mitigation that pins user-facing copy to bear.T(key).
 var carveOutPaths = []*regexp.Regexp{
 	regexp.MustCompile(`/bear/locales/`),
 	regexp.MustCompile(`/cmd/regen-watchd/`),
@@ -47,10 +46,10 @@ const permitDirective = "//cyrillic:permit"
 // under one of the permitted paths (bear/locales, cmd/regen-watchd,
 // tests/bear, tools/cyrillic-lint).
 //
-// Use bear.T(key) for any user-facing string. See I18N-04.
+// Use bear.T(key) for any user-facing string.
 var Analyzer = &analysis.Analyzer{
 	Name:     "cyrillicliteral",
-	Doc:      "flags Cyrillic string literals (use bear.T(key) instead). See I18N-04.",
+	Doc:      "flags Cyrillic string literals (use bear.T(key) instead).",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
 }
@@ -84,7 +83,7 @@ func checkLiteral(pass *analysis.Pass, lit *ast.BasicLit) {
 		return
 	}
 	pass.Reportf(lit.Pos(),
-		"cyrillic literal forbidden — use bear.T(key) lookup. See I18N-04.")
+		"cyrillic literal forbidden — use bear.T(key) lookup.")
 }
 
 // isCarvedOut returns true when filename matches any whitelist regex.

@@ -1,6 +1,6 @@
 // Package engine flock helpers — per-cycle exclusive lock at./.noxctl/.lock
 // plus the apply-pending sentinel protocol that lets noxctl apply yield
-// priority over the long-running daemon (D-10, D-11).
+// priority over the long-running daemon.
 //
 // Layering: stdlib + golang.org/x/sys/unix only. Lock fd lifetime is the
 // caller's responsibility — kernel auto-releases on fd close (macOS
@@ -11,10 +11,10 @@
 // blocking flock call so daemon's sentinel check during cycle-start
 // observes it and skips. flock alone guarantees correctness; the
 // sentinel is a best-effort priority hint, NOT a strict ordering
-// primitive (Research Pitfall 3).
+// primitive.
 //
-// Threat: T-2-01 symlink attack on lockPath blocked via O_NOFOLLOW.
-// T-2-02 stale-PID lockfile content is purely informational
+// Threat surface: symlink attacks on lockPath are blocked via
+// O_NOFOLLOW. Stale-PID lockfile content is purely informational
 // (`lsof` diagnostic) — flock auto-release on process death is the
 // actual mutual-exclusion control; we never `kill` based on it.
 package engine
@@ -42,7 +42,7 @@ const SentinelName = ".apply-pending"
 // - O_CREAT — create if absent (first-ever acquire bootstraps the file)
 // - O_RDWR — write PID-only diagnostic content after flock succeeds
 // - O_CLOEXEC — keep the lock fd from leaking into bearcli subprocesses
-// - O_NOFOLLOW — refuse to follow a pre-planted symlink (T-2-01)
+// - O_NOFOLLOW — refuse to follow a pre-planted symlink
 const lockOpenFlags = unix.O_CREAT | unix.O_RDWR | unix.O_CLOEXEC | unix.O_NOFOLLOW
 
 // AcquireApply opens lockPath, writes the sentinel, blocks on LOCK_EX
@@ -64,7 +64,7 @@ func AcquireApply(ctx context.Context, lockPath string, noWait bool, stderr io.W
 	}
 	sentinelPath := filepath.Join(filepath.Dir(lockPath), SentinelName)
 	// Touch sentinel BEFORE blocking flock so daemon's cycle-start
-	// sentinel check observes it and yields (D-11).
+	// sentinel check observes it and yields.
 	if f, terr := os.Create(sentinelPath); terr == nil {
 		_ = f.Close()
 	}
@@ -77,7 +77,7 @@ func AcquireApply(ctx context.Context, lockPath string, noWait bool, stderr io.W
 	if noWait {
 		how |= unix.LOCK_NB
 	} else {
-		// Single-line stderr advisory per Discretion default + RESEARCH Open Q 3 (RESOLVED).
+		// Single-line stderr advisory before the blocking flock call.
 		_, _ = fmt.Fprintf(stderr, "noxctl: waiting for lock at %s\n", lockPath)
 	}
 	if lerr := unix.Flock(fd, how); lerr != nil {
@@ -117,10 +117,10 @@ func AcquireDaemon(ctx context.Context, lockPath string) (release func(), err er
 }
 
 // writeLockPID stamps the lockfile with `<pid>\n` for `lsof`-style
-// diagnostics (D-13). Truncate first in case the lockfile was reused
-// with longer prior content (e.g. a previous run by a higher-PID
-// process). Errors ignored — content is purely informational and the
-// kernel-level flock is the real mutual-exclusion control (T-2-02).
+// diagnostics. Truncate first in case the lockfile was reused with
+// longer prior content (e.g. a previous run by a higher-PID process).
+// Errors ignored — content is purely informational and the
+// kernel-level flock is the real mutual-exclusion control.
 func writeLockPID(fd int) {
 	_ = unix.Ftruncate(fd, 0)
 	_, _ = unix.Write(fd, []byte(strconv.Itoa(os.Getpid())+"\n"))
@@ -128,8 +128,8 @@ func writeLockPID(fd int) {
 
 // IsApplyPending checks for `<dir(lockPath)>/.apply-pending` without
 // opening the lock file. Returns false on any error other than
-// fs.ErrNotExist so a stat hiccup never wedges the daemon (Pitfall 3
-// — better to over-run a cycle than over-yield).
+// fs.ErrNotExist so a stat hiccup never wedges the daemon — better to
+// over-run a cycle than over-yield.
 func IsApplyPending(lockPath string) bool {
 	sentinel := filepath.Join(filepath.Dir(lockPath), SentinelName)
 	_, err := os.Stat(sentinel)

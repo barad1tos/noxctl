@@ -15,7 +15,7 @@ import (
 // noxctl.toml at the resolved path, runs the full strict-mode
 // loader (decode → Undecoded → ValidateCatalog → Dispatch →
 // Domain.Validate, all aggregated through errors.Join), prints a
-// verbose success summary on stderr (D-13), and exits 0/1.
+// verbose success summary on stderr, and exits 0/1.
 //
 // validate has no PersistentPreRunE because validate IS the
 // preflight — running a separate PersistentPreRunE step would
@@ -36,10 +36,9 @@ var validateCmd = &cobra.Command{
 	RunE: func(_ *cobra.Command, args []string) error {
 		start := time.Now()
 
-		// Path resolution: positional arg overrides --config flag
-		// (D-14 keeps the path explicit; no env-var override, no
-		// walk-up). When neither is set, --config's default
-		// "./noxctl.toml" applies.
+		// Path resolution: positional arg overrides --config flag,
+		// which defaults to "./noxctl.toml". No env-var override,
+		// no walk-up — the path is always explicit.
 		path := cfgPath
 		if len(args) == 1 {
 			path = args[0]

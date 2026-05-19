@@ -99,7 +99,7 @@ func TestValidateCatalogDuplicateTag(t *testing.T) {
 }
 
 // TestValidateCatalogThreeLevelTag: tag tree depth limit (max 2
-// segments per / Open Q5).
+// segments per the sidebar-flatness rule).
 func TestValidateCatalogThreeLevelTag(t *testing.T) {
 	err := validateOneStanzaTag(t, "library/poetry/biko")
 	if err == nil {
@@ -273,7 +273,7 @@ func TestValidateCatalogBucketBearURL(t *testing.T) {
 }
 
 // TestLoaderFileNotFound: missing file produces an error wrapping
-// fs.ErrNotExist — VAL-01 acceptance criterion.
+// fs.ErrNotExist.
 func TestLoaderFileNotFound(t *testing.T) {
 	missing := "/nonexistent/path/noxctl.toml.does-not-exist"
 	_, _, err := config.Load(missing)
@@ -346,7 +346,7 @@ func TestLoaderVersionIntRejected(t *testing.T) {
 
 // TestLoaderAggregatesMultipleErrors: a fixture with three
 // independent problems surfaces all three substrings in one
-// errors.Join aggregate (D-11).
+// errors.Join aggregate.
 func TestLoaderAggregatesMultipleErrors(t *testing.T) {
 	path := fixturePath(t, "broken-multiple.toml")
 	_, _, err := config.Load(path)
@@ -434,9 +434,9 @@ func TestLoaderValidAllBlueprintsHappyPath(t *testing.T) {
 }
 
 // TestLoaderPerf: 28-stanza fixture parses in well under the 1-second
-// budget. is the abstraction's first perf gate (D-17 measures
-// the user-facing wall-clock against examples/roman.toml in;
-// here we sanity-check the loader function in isolation).
+// budget. Sanity-checks the loader function in isolation; the
+// user-facing wall-clock against examples/roman.toml is measured
+// separately at the CLI level.
 func TestLoaderPerf(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "perf.toml")
@@ -488,8 +488,8 @@ func itoa(n int) string {
 
 // TestLoaderZeroBearcli: static guarantee — bear/config/ MUST NOT
 // import bearcli helpers, because Load runs without spawning any
-// process (VAL-02). Verified by reading the source files of the
-// package itself.
+// process. Verified by reading the source files of the package
+// itself.
 func TestLoaderZeroBearcli(t *testing.T) {
 	root := configSrcDir(t)
 	entries, err := os.ReadDir(root)
@@ -509,7 +509,7 @@ func TestLoaderZeroBearcli(t *testing.T) {
 		text := string(raw)
 		for _, bad := range forbidden {
 			if strings.Contains(text, bad) {
-				t.Errorf("%s contains forbidden token %q (zero-bearcli guarantee VAL-02)", path, bad)
+				t.Errorf("%s contains forbidden token %q (zero-bearcli guarantee)", path, bad)
 			}
 		}
 	}

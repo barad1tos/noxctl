@@ -2,13 +2,13 @@
 //
 // `bear.T(key)` is the single lookup point for user-visible strings.
 // Catalogs are embedded at compile time via `//go:embed locales/*.toml`
-// (D-10) so a deployed binary always carries the strings it needs;
+// so a deployed binary always carries the strings it needs;
 // future locales drop sibling.toml files with no build-shape change.
 //
 // Missing keys never silently fall back. The default handler is
-// `log.Fatalf` (I18N-03), surfacing typos and missing entries as a fast
-// startup failure. Tests swap `missingKeyHandler` for a buffer-write
-// stub and restore via `t.Cleanup`.
+// `log.Fatalf`, surfacing typos and missing entries as a fast startup
+// failure. Tests swap `missingKeyHandler` for a buffer-write stub and
+// restore via `t.Cleanup`.
 //
 // Init ordering note: `var FooDomain = &bear.Domain{...}` literals in
 // sibling packages call `bear.T(...)` at package init time. Go's init
@@ -71,7 +71,7 @@ func init() {
 
 // T returns the localized string for key in the active locale. Missing
 // keys invoke missingKeyHandler (default: log.Fatalf). Never silently
-// falls back to a different locale — I18N-03.
+// falls back to a different locale.
 func T(key string) string {
 	catalogMu.RLock()
 	m, ok := catalog[activeLocale]

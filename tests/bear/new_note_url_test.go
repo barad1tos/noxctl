@@ -228,8 +228,8 @@ func TestEqualIgnoringNewNoteLinkStrict_DetectsPlaceholderH1Drift(t *testing.T) 
 }
 
 // TestEqualIgnoringNewNoteLinkStrict_FallsBackToBodyCompareWhenURLsMatch
-// verifies the Pitfall 2 fallback: when URLs match position-by-position,
-// the predicate still consults the non-strict body compare.
+// verifies the fallback path: when URLs match position-by-position, the
+// predicate still consults the non-strict body compare.
 func TestEqualIgnoringNewNoteLinkStrict_FallsBackToBodyCompareWhenURLsMatch(t *testing.T) {
 	body := driftBodyWithBacklink(t, "[[✱ Daily]]")
 	if !bear.EqualIgnoringNewNoteLinkStrictForTest(body, body) {

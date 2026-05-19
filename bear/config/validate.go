@@ -11,29 +11,28 @@ import (
 
 // tagFormatRE allows lowercase / uppercase letters, digits, slash,
 // underscore and hyphen. Anything else is rejected as a tag-injection
-// surface (T-1-14: `tag = "foo;rm -rf /"`). The regex anchors to the
+// surface (e.g. `tag = "foo;rm -rf /"`). The regex anchors to the
 // whole string so partial matches don't slip through.
 var tagFormatRE = regexp.MustCompile(`^[a-zA-Z0-9_/-]+$`)
 
 // bucketRejectREs lists patterns that must NOT appear in user-
-// supplied bucket names. T-1-15 mitigates bear://x-callback-url
-// injection that would otherwise produce arbitrary callback wikilinks
-// when a reader clicks the master.
+// supplied bucket names. Blocks bear://x-callback-url injection that
+// would otherwise produce arbitrary callback wikilinks when a reader
+// clicks the master.
 var bucketRejectREs = []*regexp.Regexp{
 	regexp.MustCompile(`://`),
 	regexp.MustCompile(`(?i)^bear:`),
 }
 
 // supportedLocales locks v1 to Ukrainian. Future locales must add
-// both their key here AND ship a `bear/locales/<key>.toml` catalog
-// (/ I18N-01). Empty locale is allowed — caller treats as
-// "use default".
+// both their key here AND ship a `bear/locales/<key>.toml` catalog.
+// Empty locale is allowed — caller treats as "use default".
 var supportedLocales = map[string]struct{}{"uk": {}}
 
 // ValidateCatalog runs catalog-level invariants AFTER successful TOML
 // decode and BEFORE per-stanza dispatch. Aggregates every problem
 // into one errors.Join return — never short-circuits on first
-// failure (D-11).
+// failure.
 //
 // path is included in every nested error so multi-file callers
 // (rare; the loader currently calls with one path) get
@@ -204,7 +203,7 @@ func validateStanzaInvariants(d Stanza, i int, path string) []error {
 		}
 		if strings.Count(d.Tag, "/") > 1 {
 			errs = append(errs, fmt.Errorf(
-				"%s: domain[%d] tag=%q: tag tree depth limit exceeded (max 2 segments per project )",
+				"%s: domain[%d] tag=%q: tag tree depth limit exceeded (max 2 segments)",
 				path, i, d.Tag,
 			))
 		}

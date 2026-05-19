@@ -56,9 +56,9 @@ const (
 	// LintUntracked — atomic note carries a tag whose top-level segment is
 	// NOT in the closed catalog of TOML-managed domains. Emitted by the
 	// residue scan (bear/residue.go,), NOT by per-atom LintAtom.
-	// Informational: noxctl deliberately does not touch unmanaged tags —
-	// CONTEXT D-02 separates residue from drift, and residue does NOT
-	// contribute to plan exit-code 2.
+	// Informational: noxctl deliberately does not touch unmanaged tags;
+	// residue is separated from drift and does NOT contribute to plan
+	// exit-code 2.
 	LintUntracked LintCategory = "untracked"
 )
 

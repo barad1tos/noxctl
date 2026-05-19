@@ -198,9 +198,9 @@ func umbrellaStub(tag, indexTitle, defaultChild string) *bear.Domain {
 }
 
 // poolCapacityForParallelTests is the pool slot count every parallel
-// orchestration test resets to. Eight is the ship default per D-01 and
-// gives every test fixture enough headroom to fan out without the
-// semaphore ever becoming the back-pressure source under observation.
+// orchestration test resets to. Eight is the ship default and gives
+// every test fixture enough headroom to fan out without the semaphore
+// ever becoming the back-pressure source under observation.
 const poolCapacityForParallelTests = 8
 
 // resetPoolForApply resets the bearcli pool capacity to the test-wide

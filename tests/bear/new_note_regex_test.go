@@ -14,11 +14,11 @@ import (
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
-// TestNewNoteURLFile_NoCyrillicLiterals enforces I18N-04 on the SSOT URL
-// module and the H1-stamping cluster. Cyrillic in Go comments is fine
-// (analyzer is *ast.BasicLit based) — only string literals trip the gate.
-// Replaces the legacy TestNewNoteFile_NoCyrillicLiterals which targeted
-// the now-deleted bear/new_note.go.
+// TestNewNoteURLFile_NoCyrillicLiterals enforces the no-Cyrillic-literals
+// rule on the SSOT URL module and the H1-stamping cluster. Cyrillic in Go
+// comments is fine (analyzer is *ast.BasicLit based) — only string
+// literals trip the gate. Replaces the legacy TestNewNoteFile_NoCyrillicLiterals
+// which targeted the now-deleted bear/new_note.go.
 func TestNewNoteURLFile_NoCyrillicLiterals(t *testing.T) {
 	repoRoot := findRepoRootFromTest(t)
 	for _, rel := range []string{"bear/new_note_url.go", "bear/h1_stamp.go"} {

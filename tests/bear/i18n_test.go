@@ -25,7 +25,7 @@ func TestT_KnownKeyReturnsValue(t *testing.T) {
 	}
 }
 
-// TestMissingKeyHandler verifies I18N-03: missing key invokes the swappable
+// TestMissingKeyHandler verifies missing key invokes the swappable
 // handler. Default handler is log.Fatalf which we cannot exercise in-process,
 // so we swap a buffer-write handler and confirm the missing key + locale flow
 // through.
@@ -48,9 +48,9 @@ func TestMissingKeyHandler(t *testing.T) {
 }
 
 // TestSetLocaleRoundTrip verifies SetLocale updates the active locale and
-// ActiveLocale reads it back. (test seam global state): always
-// restore via t.Cleanup so suite-wide tests downstream don't observe leaked
-// locale state.
+// ActiveLocale reads it back. Active locale is a process-global test seam,
+// so always restore via t.Cleanup to keep suite-wide tests downstream from
+// observing leaked locale state.
 func TestSetLocaleRoundTrip(t *testing.T) {
 	prev := bear.ActiveLocale()
 	t.Cleanup(func() { bear.SetLocale(prev) })
@@ -78,9 +78,9 @@ func TestUkTomlWellFormed(t *testing.T) {
 	}
 }
 
-// TestNoSilentFallback verifies I18N-03 boundary: setting a non-existent
-// locale and calling T must invoke the missing-key handler — never silently
-// fall back to uk values.
+// TestNoSilentFallback verifies the missing-key boundary: setting a
+// non-existent locale and calling T must invoke the missing-key handler
+// — never silently fall back to uk values.
 func TestNoSilentFallback(t *testing.T) {
 	t.Cleanup(func() { bear.SetLocale("uk") })
 	var buf bytes.Buffer

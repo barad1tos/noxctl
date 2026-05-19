@@ -196,9 +196,9 @@ func TestScanUntrackedSortStability(t *testing.T) {
 // like "claude/sessions/2026-05-10" stays at its most-specific form
 // in the report — the aggregator must NOT collapse it to the
 // top-level "claude". Preserving hierarchy is the operator-facing
-// affordance per RESEARCH Pattern 6 ("record at the most-specific
-// tag") and is what makes the residue section actionable: the user
-// sees which exact sub-tag was missed.
+// affordance ("record at the most-specific tag") and is what makes
+// the residue section actionable: the user sees which exact sub-tag
+// was missed.
 func TestScanUntrackedSpecificTagPathRecording(t *testing.T) {
 	notes := []noteFixture{
 		{ID: "1", Title: "n1", Tags: []string{"claude/sessions/2026-05-10"}},

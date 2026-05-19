@@ -1,17 +1,17 @@
 // Package bear residue scanner — corpus-level walk that surfaces tags
 // outside the closed catalog of TOML-managed domains. Used by the
 // plan engine (bear/engine/plan.go via wiring) to populate
-// the `⚠ Untracked` section of plan output (CONTEXT D-02).
+// the `⚠ Untracked` section of plan output.
 //
 // Lives in a NEW peer file (NOT bear/lint.go) because lint.go is at
-// its gocognit/dupl ceiling per RESEARCH Pattern 6; this scanner has
-// a different shape (corpus-level aggregate, not per-atom) and would
-// tip lint.go's complexity budget.
+// its gocognit/dupl ceiling; this scanner has a different shape
+// (corpus-level aggregate, not per-atom) and would tip lint.go's
+// complexity budget.
 //
 // The bearcli list call replicates bear/foreign_tag.go:103-115 — same
 // field set, same response shape — but the two are NOT shared at
-// runtime (RESEARCH Pitfall 2: foreign-tag is an apply pre-pass; plan
-// does NOT run pre-passes; runtime overlap is impossible).
+// runtime: foreign-tag is an apply pre-pass; plan does NOT run
+// pre-passes; runtime overlap is impossible.
 package bear
 
 import (
@@ -54,12 +54,10 @@ type UntrackedReport struct {
 // none of their tag-roots are managed. Each tag is recorded at its
 // MOST-SPECIFIC form (e.g. "claude/sessions/2026-05-10" stays as
 // "claude/sessions/2026-05-10", NOT collapsed to "claude") —
-// preserves the operator's hierarchy preference per RESEARCH
-// Pattern 6.
+// preserves the operator's hierarchy preference.
 //
-// Read-only: never writes to bearcli; never mutates any input.
-// Per CONTEXT D-02 the scan is info-only and never contributes to
-// the plan exit-code.
+// Read-only: never writes to bearcli; never mutates any input. The
+// scan is info-only and never contributes to the plan exit-code.
 func ScanUntracked(ctx context.Context, domains []*Domain) (UntrackedReport, error) {
 	managed := managedRoots(domains)
 
@@ -84,9 +82,9 @@ func ScanUntracked(ctx context.Context, domains []*Domain) (UntrackedReport, err
 // aggregation logic. Exposed in production code (rather than via an
 // in-package _test.go) because external tests at tests/bear/ build a
 // separate test binary and cannot reach in-package _test.go symbols —
-// the precedent is documented at bear/engine/export_test.go and was
-// re-confirmed by 's deviation. Returns the same JSON-stable
-// empty report on parse error that ScanUntracked uses on bearcli error.
+// the precedent is documented at bear/engine/export_test.go. Returns
+// the same JSON-stable empty report on parse error that ScanUntracked
+// uses on bearcli error.
 func AggregateUntrackedFromJSON(jsonBytes []byte, managed map[string]struct{}) (UntrackedReport, error) {
 	var notes []autoTagNote
 	if err := json.Unmarshal(jsonBytes, &notes); err != nil {

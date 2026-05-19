@@ -1,14 +1,14 @@
 # noxctl i18n catalog — uk locale.
 #
-# Locked by D-10: catalog format is TOML, single file per locale, embedded
-# via `//go:embed locales/*.toml`. Future locales drop sibling files
+# Catalog format is TOML, single file per locale, embedded via
+# `//go:embed locales/*.toml`. Future locales drop sibling files
 # (en.toml, etc.) without recompile-shape changes.
 #
 # Keys follow `dot.separated.lowercase` convention. Naming is grouped by
 # subsystem then by domain; the lookup function is `bear.T(key)`. Missing
 # keys at runtime invoke the swappable `missingKeyHandler` (default:
 # `log.Fatalf`) so a typo surfaces as a fast failure, never a silent
-# fallback (I18N-03).
+# fallback.
 
 # --- Generic master/hub section labels (bear/defaults.go, bear/factory.go,
 # --- bear/hub_routed_subtag.go) ---
@@ -18,7 +18,7 @@
 "master.section.divisions"        = "Розділи"
 
 # --- Hub markers (bear/domain.go HubMarker — kept as Go const for now;
-# --- catalog ships the value for future Phase-4 migration) ---
+# --- catalog ships the value for a future migration) ---
 "hub.curator-marker"              = "## ✱ Куратор"
 
 # --- New-note link decoration (bear/new_note.go) ---

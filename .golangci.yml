@@ -35,7 +35,7 @@ linters:
     - unparam      # unused function parameters
  # Go ≥1.24 idiom upgrades (slices.Contains, strings.{SplitSeq,FieldsSeq,Cut}, …).
  # Replaces former forbidigo entry; Cyrillic-literal ban now lives in
- # tools/cyrillic-lint (wired through pre-commit, see I18N-04).
+ # tools/cyrillic-lint (wired through pre-commit).
     - modernize
 
   settings:

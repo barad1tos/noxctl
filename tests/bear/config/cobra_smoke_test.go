@@ -4,10 +4,9 @@
 // it via os/exec — exercising the full argv → Cobra → config.Load
 // → exit-code path that a real shell user hits.
 //
-// Coverage targets the seven invariants in 01-SPEC.md acceptance
-// criterion 6 (CLI-01..07): version flag, --help shape, completion
-// shells, validate success, validate failure cases, stub exit-0
-// messages, NO_COLOR honored.
+// Coverage targets the CLI surface invariants: version flag, --help
+// shape, completion shells, validate success, validate failure cases,
+// stub exit-0 messages, NO_COLOR honored.
 //
 // Security note: this file constructs *exec.Cmd values via struct
 // literals (Cmd{Path, Args,...}) rather than exec.Command(bin,
@@ -78,25 +77,22 @@ func TestCobraSmoke(t *testing.T) {
 		{"validate-success", []string{"validate", validFixture}, "validated", true},
 		{"validate-broken", []string{"validate", brokenFixture}, "unknown field", false},
 		{"validate-nonexistent", []string{"validate", "--config", "/nonexistent/x.toml"}, "no such file", false},
-		// : apply and daemon are real subcommands; assert
-		// their flag surface via --help instead of the prior "" stub
-		// message. Real behavior is exercised by the engine-level tests
+		// apply and daemon are real subcommands; assert their flag surface
+		// via --help. Real behavior is exercised by the engine-level tests
 		// at tests/bear/engine/* (no live bearcli in CI).
 		{"apply-help-no-wait", []string{"apply", "--help"}, "--no-wait", true},
 		{"apply-help-auto-approve", []string{"apply", "--help"}, "--auto-approve", true},
 		{"apply-help-bear-db", []string{"apply", "--help"}, "--bear-db", true},
 		{"daemon-help-bear-db", []string{"daemon", "--help"}, "--bear-db", true},
-		// : plan is a real subcommand now; assert flag surface
-		// via --help instead of the prior "" stub message. Real behavior
-		// (engine.Plan + diff renderer + exit codes) lives in engine-level tests
-		// + manual smoke (no live bearcli in CI).
+		// plan is a real subcommand; assert flag surface via --help.
+		// Real behavior (engine.Plan + diff renderer + exit codes) lives
+		// in engine-level tests + manual smoke (no live bearcli in CI).
 		{"plan-help-color", []string{"plan", "--help"}, "--color", true},
 		{"plan-help-output", []string{"plan", "--help"}, "--output", true},
 		{"plan-help-tag-arg", []string{"plan", "--help"}, "[tag]", true},
 		// audit + lint are the operator-facing wrappers around
-		// bear.AuditDomains / bear.LintApplyDomains. They went orphan
-		// after cmd/regen-watchd/ was deleted; smoke their --help so
-		// the flag surface stays visible to future refactors.
+		// bear.AuditDomains / bear.LintApplyDomains. Smoke their --help
+		// so the flag surface stays visible to future refactors.
 		{"audit-help-readonly", []string{"audit", "--help"}, "read-only", true},
 		{"lint-help-apply", []string{"lint", "--help"}, "--apply", true},
 		{"lint-help-default-report", []string{"lint", "--help"}, "Report-only", true},
@@ -120,7 +116,7 @@ func TestCobraSmoke(t *testing.T) {
 			if !strings.Contains(out.String(), tc.wantOut) {
 				t.Errorf("output missing %q\nfull: %s", tc.wantOut, out.String())
 			}
-			// CLI-06: NO_COLOR honored — no ANSI escapes.
+			// NO_COLOR honored — no ANSI escapes.
 			if strings.Contains(out.String(), "\x1b[") {
 				t.Errorf("ANSI escape leaked despite NO_COLOR=1: %q", out.String())
 			}
@@ -129,10 +125,9 @@ func TestCobraSmoke(t *testing.T) {
 }
 
 // TestCobraStubStdoutEmpty asserts stub messages go ONLY to stderr.
-// CLI-05 requires stdout to remain pipe-friendly (reserved for
-// structured output that lands in). The combined-output
-// assertion above can't catch a stdout leak; this test splits the
-// streams.
+// Stdout must stay pipe-friendly (reserved for structured output).
+// The combined-output assertion above can't catch a stdout leak;
+// this test splits the streams.
 func TestCobraStubStdoutEmpty(t *testing.T) {
 	bin := buildBinary(t)
 	root := repoRoot(t)
@@ -142,10 +137,9 @@ func TestCobraStubStdoutEmpty(t *testing.T) {
 		name string
 		args []string
 	}{
-		// : apply + daemon are real subcommands.
-		// : plan is real now too — its stdout is the
-		// rendered diff, not empty. Only init/destroy/import remain
-		// stubbed in v1 (will land them).
+		// apply, daemon, and plan are real subcommands (plan's stdout
+		// is the rendered diff, not empty). Only init/destroy/import
+		// remain stubbed in v1.
 		{"init", []string{"init", "--config", validFixture}},
 		{"destroy", []string{"destroy", "library/poetry", "--config", validFixture}},
 		{"import", []string{"import", "library/poetry", "--config", validFixture}},
@@ -170,15 +164,15 @@ func TestCobraStubStdoutEmpty(t *testing.T) {
 	}
 }
 
-// TestCobraStubsNoConfig asserts stubs print the Phase-X "not yet
-// implemented" message and exit 0 even when invoked from a directory
-// that has no./noxctl.toml. Regression guard for the 01-foundation
-// UAT finding: stubs originally wired PersistentPreRunE preflight,
-// which forced a config-load on every invocation; running the stub
-// in a fresh dir surfaced "open./noxctl.toml: no such file" instead
-// of the helpful Phase-Y notice. The fix detached preflight from
-// stubCmd entirely; this test pins that contract so a future
-// re-introduction of preflight gets caught by CI.
+// TestCobraStubsNoConfig asserts stubs print the "not yet implemented"
+// message and exit 0 even when invoked from a directory that has no
+// ./noxctl.toml. Regression guard: stubs originally wired
+// PersistentPreRunE preflight, which forced a config-load on every
+// invocation; running the stub in a fresh dir surfaced
+// "open ./noxctl.toml: no such file" instead of the helpful notice.
+// The fix detached preflight from stubCmd entirely; this test pins
+// that contract so a future re-introduction of preflight gets caught
+// by CI.
 func TestCobraStubsNoConfig(t *testing.T) {
 	bin := buildBinary(t)
 	freshDir := t.TempDir()
@@ -188,9 +182,8 @@ func TestCobraStubsNoConfig(t *testing.T) {
 		args []string
 		want string
 	}{
-		// : apply + daemon load the config eagerly.
-		// : plan also loads the config eagerly. Only
-		// init/destroy/import remain stubbed in v1 (will land them).
+		// apply, daemon, and plan load the config eagerly. Only
+		// init/destroy/import remain stubbed in v1.
 		{"init", []string{"init"}, ""},
 		{"destroy", []string{"destroy", "library/poetry"}, ""},
 		{"import", []string{"import", "library/poetry"}, ""},
@@ -203,12 +196,12 @@ func TestCobraStubsNoConfig(t *testing.T) {
 	}
 }
 
-// assertStubNoConfig runs a stub from freshDir (no./noxctl.toml) and
+// assertStubNoConfig runs a stub from freshDir (no ./noxctl.toml) and
 // verifies the canonical "not yet implemented" contract: exit 0, empty
 // stdout, stderr containing both the canonical phrase and the
-// stub-specific Phase-X token, and crucially NO config-load error
-// leaking through. Extracted so TestCobraStubsNoConfig stays under the
-// project gocognit ≤ 15 budget.
+// stub-specific token, and crucially NO config-load error leaking
+// through. Extracted so TestCobraStubsNoConfig stays under the project
+// gocognit ≤ 15 budget.
 func assertStubNoConfig(t *testing.T, bin, dir, name string, args []string, want string) {
 	t.Helper()
 	cmd := newCmd(bin, args)
@@ -258,10 +251,10 @@ func TestCobraValidateQuietSuppressesSummary(t *testing.T) {
 }
 
 // TestCobraValidatePerformance asserts validate finishes well under
-// the SPEC < 1s budget on the small all-blueprints fixture.
-// will pin the < 1s gate against Roman's full 28-domain corpus; this
-// test enforces a tighter local budget so a regression here surfaces
-// before the full-corpus gate flags it.
+// the < 1s budget on the small all-blueprints fixture. A separate
+// full-corpus gate pins the < 1s wall-clock against Roman's 28-domain
+// fixture; this test enforces a tighter local budget so a regression
+// here surfaces before the full-corpus gate flags it.
 func TestCobraValidatePerformance(t *testing.T) {
 	bin := buildBinary(t)
 	root := repoRoot(t)

@@ -1,16 +1,16 @@
 // Package bear_test is the external test surface for the bear package
 // (see grouped_vertical_test.go for the package doc-comment rationale).
 //
-// snapshot_test.go locks down 's Wave-0 facade contract:
+// snapshot_test.go locks down the snapshot facade contract:
 //
-// 1. bear.SnapshotDomainRenderInputs returns (DomainRenderInputs{Groups:
-// non-nil empty map}, nil) for a Domain whose tag matches zero notes
-// in the live Bear corpus. Empty-but-non-nil is the contract Plan
-// 03-02 (engine.Plan core) and 03-03 (residue scanner) both depend
-// on — they range over.Groups without nil-checks.
-// 2. bear.LintUntracked exposes the wire value "untracked" — the
-// constant slot 's residue emitter and 's diff
-// renderer both serialize against.
+//  1. bear.SnapshotDomainRenderInputs returns (DomainRenderInputs{Groups:
+//     non-nil empty map}, nil) for a Domain whose tag matches zero notes
+//     in the live Bear corpus. Empty-but-non-nil is the contract the
+//     engine.Plan core and the residue scanner both depend on — they
+//     range over .Groups without nil-checks.
+//  2. bear.LintUntracked exposes the wire value "untracked" — the
+//     constant the residue emitter and the diff renderer both serialize
+//     against.
 //
 // The empty-tag case exercises the live bearcli boundary by design: it
 // is the smallest end-to-end shape that proves the facade calls

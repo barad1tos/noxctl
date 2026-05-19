@@ -1,4 +1,4 @@
-// Package engine_test — tests.
+// Package engine_test — domain-bootstrap fast-pass tests.
 //
 // Validates `bear.ApplyDomainBootstrap` — the new 4th fast-pass that
 // canonicalizes any note whose tags match a managed leaf domain. Covers
@@ -213,7 +213,7 @@ func TestApplyDomainBootstrap_UmbrellaRedirect(t *testing.T) {
 // TestApplyDomainBootstrap_MultipleLeafsMostSpecific — note tagged
 // with both `#claude` and `#llm/agents` routes to `llm/agents` because
 // its tag string (10 chars) is longer than `claude` (6 chars).
-// Most-specific-leaf wins per CONTEXT D-04.1.
+// Most-specific-leaf wins.
 func TestApplyDomainBootstrap_MultipleLeafsMostSpecific(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
@@ -288,9 +288,9 @@ func TestApplyDomainBootstrap_MultipleLeafsTieSkip(t *testing.T) {
 }
 
 // TestApplyDomainBootstrap_AlreadyCanonicalNoOp — when a note's body
-// already matches `RenderCanonicalForBootstrap`, the Phase-10 SSOT
-// predicate `equalIgnoringNewNoteLinkStrict` returns true and the pass
-// MUST skip the bearcli overwrite. Loop-prevention contract.
+// already matches `RenderCanonicalForBootstrap`, the SSOT predicate
+// `equalIgnoringNewNoteLinkStrict` returns true and the pass MUST skip
+// the bearcli overwrite. Loop-prevention contract.
 func TestApplyDomainBootstrap_AlreadyCanonicalNoOp(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
@@ -458,8 +458,8 @@ func TestApplyDomainBootstrap_AlreadyBucketedNoOp(t *testing.T) {
 }
 
 // TestApplyDomainBootstrap_NoManagedTagSkip — note tagged ONLY with
-// an unmanaged tag triggers `matchOwningDomain` → nil → skip. Pattern
-// D explicit nil-gate behavioral lock.
+// an unmanaged tag triggers `matchOwningDomain` → nil → skip.
+// Explicit nil-gate behavioral lock.
 func TestApplyDomainBootstrap_NoManagedTagSkip(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
@@ -538,7 +538,6 @@ func TestApplyDomainBootstrap_DefensiveUmbrellaGuard(t *testing.T) {
 	})
 }
 
-// TestApplyDomainBootstrap_SourceRegexUmbrellaGuard —
 // TestApplyDomainBootstrap_LoopGuard_SkipsAfterCap drives the same
 // non-canonical note through ApplyDomainBootstrap 5+1 times. Each of
 // the first 5 calls fires an overwrite (the fake backend serves the
@@ -602,7 +601,8 @@ func assertOverwriteCount(t *testing.T, fake *fakeAutoTagBackend, want int, labe
 	}
 }
 
-// second leg: source-regex regression lock asserting the defensive
+// TestApplyDomainBootstrap_SourceRegexUmbrellaGuard is a source-regex
+// regression lock asserting the defensive
 // `if d.SkipAtomicsPass` branch literal stays present in
 // bear/auto_tag.go AND that the word "umbrella" appears within 5
 // lines of it (the comment that explains why the branch exists).
@@ -635,7 +635,7 @@ func TestApplyDomainBootstrap_SourceRegexUmbrellaGuard(t *testing.T) {
 		hi := min(len(lines), gl+6)
 		window := strings.Join(lines[lo:hi], "\n")
 		if !umbrellaRE.MatchString(window) {
-			t.Errorf("guard at line %d has no 'umbrella' context in ±5 lines —  rationale lost", gl+1)
+			t.Errorf("guard at line %d has no 'umbrella' context in ±5 lines — rationale lost", gl+1)
 		}
 	}
 }

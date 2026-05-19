@@ -2,35 +2,34 @@
 // FSEvent bursts.
 //
 // On macOS this uses fsnotify's kqueue backend; legacy docs may say
-// "FSEvents" but fsnotify v1.x has always been kqueue-on-Darwin
-// (Pitfall 4 from research). Behavior is identical from the
-// daemon's vantage point — events arrive on `watcher.Events`, debounced
-// + max-burst-windowed before triggering a cycle.
+// "FSEvents" but fsnotify v1.x has always been kqueue-on-Darwin.
+// Behavior is identical from the daemon's vantage point — events
+// arrive on `watcher.Events`, debounced + max-burst-windowed before
+// triggering a cycle.
 //
 // Self-write gate: FSEvents during a regen cycle and within
 // `SelfWriteEpsilon` afterwards are assumed to come from our own
 // bearcli writes. Without this gate, regen writes hub → Bear writes
 // DB → daemon thinks user changed something → new regen → infinite
-// loop. The gate is per-[Daemon] instance (NOT package globals like
-// pre-Phase-2 `cmd/regen-watchd`).
+// loop. The gate is per-[Daemon] instance.
 //
-// Bear-write polling fallback (POLL-01..05): in addition to
-// the FSEvent path, [Daemon.Run] runs an optional polling loop that
-// stats database.sqlite every `MtimePollInterval` and routes detected
-// mtime changes through the same handleEvent path FSEvents use. The
-// poll path is a FALLBACK, not a replacement: it closes the gap when
-// Bear defers SQLite writes (e.g., drag-to-tag UI actions buffer in
-// memory and flush opportunistically — observed delay ~2.5min on a
-// real vault). Set `MtimePollInterval=0` to disable the loop entirely;
-// the daemon then relies exclusively on FSEvents.
+// Bear-write polling fallback: in addition to the FSEvent path,
+// [Daemon.Run] runs an optional polling loop that stats database.sqlite
+// every `MtimePollInterval` and routes detected mtime changes through
+// the same handleEvent path FSEvents use. The poll path is a FALLBACK,
+// not a replacement: it closes the gap when Bear defers SQLite writes
+// (e.g., drag-to-tag UI actions buffer in memory and flush
+// opportunistically — observed delay ~2.5min on a real vault). Set
+// `MtimePollInterval=0` to disable the loop entirely; the daemon then
+// relies exclusively on FSEvents.
 //
-// Auto-tag fast-pass (TAG-01..05): a THIRD trigger source
-// alongside FSEvent + mtime-poll. [Daemon.Run] runs an optional fast-
-// pass loop that ticks every `AutoTagPollInterval` (default 2s) and
-// invokes ONLY bear.ApplyForeignTagEscape + bear.ApplyDailyDefaultTag
-// — NOT the full per-domain regen cycle. The goal: click-then-type
-// quicknotes get `#quicknote/daily` stamped within <= 5s p95 instead
-// of the empirically-measured 13-15s the FSEvent-then-Bear-flush path
+// Auto-tag fast-pass: a THIRD trigger source alongside FSEvent +
+// mtime-poll. [Daemon.Run] runs an optional fast-pass loop that ticks
+// every `AutoTagPollInterval` (default 2s) and invokes ONLY
+// bear.ApplyForeignTagEscape + bear.ApplyDailyDefaultTag — NOT the
+// full per-domain regen cycle. The goal: click-then-type quicknotes
+// get `#quicknote/daily` stamped within <= 5s p95 instead of the
+// empirically-measured 13-15s the FSEvent-then-Bear-flush path
 // delivers. Set `AutoTagPollInterval=0` to disable the fast-pass; the
 // daemon then relies on FSEvent + mtime-poll only.
 //
@@ -72,21 +71,20 @@ const (
 	DefaultSelfWriteEpsilon = 2 * time.Second
 
 	// DefaultMtimePollInterval is the period between database.sqlite
-	// mtime checks (POLL-01 ship default). Zero is the
-	// "disabled" sentinel resolved at bear/config.daemonDefaults — see
+	// mtime checks (ship default). Zero is the "disabled" sentinel
+	// resolved at bear/config.daemonDefaults — see
 	// DaemonOpts.MtimePollInterval for the full semantics.
 	DefaultMtimePollInterval = 30 * time.Second
 
 	// DefaultAutoTagPollInterval is the period between fast-pass ticks
-	// that run ForeignTagEscape + DailyDefaultTag (TAG-01 ship
-	// default). Zero is the "disabled" sentinel resolved at
-	// bear/config.daemonDefaults — see DaemonOpts.AutoTagPollInterval
-	// for the full semantics.
+	// that run ForeignTagEscape + DailyDefaultTag (ship default). Zero
+	// is the "disabled" sentinel resolved at bear/config.daemonDefaults
+	// — see DaemonOpts.AutoTagPollInterval for the full semantics.
 	DefaultAutoTagPollInterval = 2 * time.Second
 
 	// dbFilename is the SQLite main-DB file Bear writes to. Used by the
-	// poll path (POLL-02) and the FSEvent filter
-	// (isWatchedDBEvent). Bear runs in journal_mode=delete, so neither
+	// poll path and the FSEvent filter (isWatchedDBEvent). Bear runs in
+	// journal_mode=delete, so neither
 	// `database.sqlite-wal` nor `database.sqlite-shm` ever exists in
 	// practice — they remain in the FSEvent filter only as defensive
 	// coverage in case Bear changes journal modes in a future release.
@@ -114,27 +112,27 @@ type DaemonOpts struct {
 	SelfWriteEpsilon time.Duration
 
 	// MtimePollInterval is the period between database.sqlite mtime
-	// checks (POLL-01). When > 0, Daemon.Run creates a
-	// time.Ticker that drives a 6th select case. When 0, polling is
-	// disabled entirely — no ticker, no goroutines, no work (Go's nil-
-	// channel idiom: `case <-pollCh:` blocks forever). The 30s default
-	// is applied at the config layer (bear/config.daemonDefaults), NOT
-	// here, because zero must remain meaningful as a "disabled"
-	// sentinel for operators who explicitly opt out.
+	// checks. When > 0, Daemon.Run creates a time.Ticker that drives a
+	// 6th select case. When 0, polling is disabled entirely — no
+	// ticker, no goroutines, no work (Go's nil-channel idiom:
+	// `case <-pollCh:` blocks forever). The 30s default is applied at
+	// the config layer (bear/config.daemonDefaults), NOT here, because
+	// zero must remain meaningful as a "disabled" sentinel for
+	// operators who explicitly opt out.
 	MtimePollInterval time.Duration
 
 	// StatFn is the os.Stat-like seam used by the poll loop. Production
 	// leaves it nil; applyDaemonDefaults wires os.Stat. Tests inject a
 	// scripted fake that returns canned os.FileInfo per call. Narrow
-	// surface (D-01): one function field, no new interface.
-	// Mirrors the test-seam pattern at bear/new_note.go::nowForNewNoteLink.
+	// surface: one function field, no new interface. Mirrors the test-
+	// seam pattern at bear/new_note.go::nowForNewNoteLink.
 	StatFn func(path string) (os.FileInfo, error)
 
 	// AutoTagPollInterval is the period between fast-pass ticks that run
 	// ONLY bear.ApplyForeignTagEscape + bear.ApplyDailyDefaultTag —
-	// independent of the full per-domain regen cycle (TAG-01).
-	// When > 0, Daemon.Run creates a second time.Ticker driving a 7th
-	// select case. When 0, the fast-pass is disabled (nil-channel idiom,
+	// independent of the full per-domain regen cycle. When > 0,
+	// Daemon.Run creates a second time.Ticker driving a 7th select
+	// case. When 0, the fast-pass is disabled (nil-channel idiom,
 	// mirrors MtimePollInterval).
 	//
 	// Default 2s is applied at the config layer
@@ -143,7 +141,7 @@ type DaemonOpts struct {
 	// verbatim; tests / library callers that construct DaemonOpts manually
 	// get a disabled fast-pass on the zero value.
 	//
-	// Test seam (D-01): the fast-pass tick body calls
+	// Test seam: the fast-pass tick body calls
 	// bear.ApplyForeignTagEscape + bear.ApplyDailyDefaultTag, which both
 	// route through bear.runBearcli + BackendFromContext(ctx). DaemonOpts
 	// gains NO parallel field for fake injection — tests stamp the seam
@@ -221,23 +219,21 @@ func applyDaemonDefaults(opts *DaemonOpts) {
 		opts.SelfWriteEpsilon = DefaultSelfWriteEpsilon
 	}
 	// MtimePollInterval intentionally is NOT defaulted here: zero is a
-	// valid "disabled" sentinel from DaemonConfig (POLL-03).
-	// CLI callers (cmd/regen-watchd) thread cfg.MtimePollInterval
-	// through verbatim; tests / library callers that construct
-	// DaemonOpts manually with a zero value get a disabled poll loop,
-	// which is the conservative behavior. The 30s default lives in
-	// bear/config.daemonDefaults at the config layer.
+	// valid "disabled" sentinel from DaemonConfig. CLI callers thread
+	// cfg.MtimePollInterval through verbatim; tests / library callers
+	// that construct DaemonOpts manually with a zero value get a
+	// disabled poll loop, which is the conservative behavior. The 30s
+	// default lives in bear/config.daemonDefaults at the config layer.
 	if opts.StatFn == nil {
 		opts.StatFn = os.Stat
 	}
 }
 
 // formatPollInterval renders a poll-loop interval for the startup log
-// line — used for both MtimePollInterval (D-08) and
-// AutoTagPollInterval (D-07). Zero is reported as "disabled"
-// rather than "0s" so operators can grep for the disabled-state at a
-// glance; any positive value uses [time.Duration.String] (e.g. "30s",
-// "1m0s").
+// line — used for both MtimePollInterval and AutoTagPollInterval.
+// Zero is reported as "disabled" rather than "0s" so operators can
+// grep for the disabled-state at a glance; any positive value uses
+// [time.Duration.String] (e.g. "30s", "1m0s").
 func formatPollInterval(d time.Duration) string {
 	if d == 0 {
 		return "disabled"
@@ -280,9 +276,9 @@ func (d *Daemon) Close() error {
 // Run drives the FSEvents loop until ctx is canceled or the watcher
 // closes. Returns ctx.Err on cancellation, nil on watcher close.
 //
-// Mirrors pre-Phase-2 cmd/regen-watchd/main.go::eventLoop verbatim
-// except triggerRegen is now cycleOnce (with sentinel-yield + flock
-// added). Self-write gate is per-instance.
+// Mirrors the legacy daemon's eventLoop verbatim except triggerRegen
+// is now cycleOnce (with sentinel-yield + flock added). Self-write
+// gate is per-instance.
 func (d *Daemon) Run(ctx context.Context) error {
 	if err := d.watcher.Add(d.opts.BearDBDir); err != nil {
 		return fmt.Errorf("Daemon.Run watcher.Add: %w", err)
@@ -315,26 +311,26 @@ func (d *Daemon) Run(ctx context.Context) error {
 	maxTimer.Stop()
 	burstActive := false
 
-	// Poll-ticker setup (POLL-02). When MtimePollInterval == 0
-	// the pollCh stays nil and `case <-pollCh:` blocks forever — Go's
-	// canonical "disabled select arm" idiom. lastMtime tracks the most
-	// recent ModTime observed; initialized to the zero time.Time so
-	// the FIRST poll tick after daemon startup ALWAYS observes "changed"
-	// and forces a catch-up cycle (per CONTEXT D-04).
+	// Poll-ticker setup. When MtimePollInterval == 0 the pollCh stays
+	// nil and `case <-pollCh:` blocks forever — Go's canonical
+	// "disabled select arm" idiom. lastMtime tracks the most recent
+	// ModTime observed; initialized to the zero time.Time so the FIRST
+	// poll tick after daemon startup ALWAYS observes "changed" and
+	// forces a catch-up cycle.
 	var lastMtime time.Time
 	pollCh, stopPoll := startTickerOrNil(d.opts.MtimePollInterval)
 	defer stopPoll()
 
-	// Auto-tag fast-pass ticker setup (TAG-01/02). Same
-	// nil-channel idiom as pollCh: when AutoTagPollInterval == 0 the
-	// channel stays nil and `case <-autoTagCh:` blocks forever.
+	// Auto-tag fast-pass ticker setup. Same nil-channel idiom as
+	// pollCh: when AutoTagPollInterval == 0 the channel stays nil and
+	// `case <-autoTagCh:` blocks forever.
 	autoTagCh, stopAutoTag := startTickerOrNil(d.opts.AutoTagPollInterval)
 	defer stopAutoTag()
 
 	for {
 		select {
 		case <-ctx.Done():
-			// Drain in-flight regen via regenMu (mirror cmd/regen-watchd:289-291).
+			// Drain in-flight regen via regenMu.
 			d.regenMu.Lock()
 			d.regenMu.Unlock() //nolint:staticcheck // intentional drain barrier — wait for cycleOnce to finish
 			return ctx.Err()
@@ -354,19 +350,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 			burstActive = false
 			quietTimer.Stop()
 		case <-pollCh:
-			// POLL-02: stat database.sqlite, compare ModTime
-			// to lastMtime, route a change through the same handleEvent
-			// path FSEvents use (debounce, burst, self-write-gate all
-			// apply uniformly). Per CONTEXT D-02 — no fast-path for poll.
+			// Stat database.sqlite, compare ModTime to lastMtime, route
+			// a change through the same handleEvent path FSEvents use
+			// (debounce, burst, self-write-gate all apply uniformly) —
+			// no fast-path for poll.
 			d.handlePollTick(quietTimer, maxTimer, &burstActive, &lastMtime)
 		case <-autoTagCh:
-			// TAG-02 +: run ONLY the four fast-passes
-			// (foreign-tag escape, daily-default, domain-bootstrap,
-			// placeholder-refresh — in that order) — NEVER the full
-			// per-domain regen cycle. Skips silently if a regen is
-			// already in progress (TAG-03). Self-write gate is honored
-			// because handleAutoTagTick wraps the work in
-			// markRegenStart/markRegenEnd (TAG-05).
+			// Run ONLY the four fast-passes (foreign-tag escape, daily-
+			// default, domain-bootstrap, placeholder-refresh — in that
+			// order) — NEVER the full per-domain regen cycle. Skips
+			// silently if a regen is already in progress. Self-write
+			// gate is honored because handleAutoTagTick wraps the work
+			// in markRegenStart/markRegenEnd.
 			d.handleAutoTagTick(ctx)
 		case err, ok := <-d.watcher.Errors():
 			if !ok {
@@ -397,13 +392,13 @@ func (d *Daemon) handleEvent(event fsnotify.Event, quietTimer, maxTimer *time.Ti
 	)
 }
 
-// handlePollTick is the 6th-case body of Daemon.Run (POLL-02).
-// Stats database.sqlite via opts.StatFn; on mtime advance, routes a
+// handlePollTick is the 6th-case body of Daemon.Run. Stats
+// database.sqlite via opts.StatFn; on mtime advance, routes a
 // synthetic fsnotify.Event through handleEvent so the debounce +
 // max-burst + self-write-gate path is uniform with the real FSEvent
-// trigger (POLL-02 + POLL-04). Stat errors are non-fatal — they
-// typically mean Bear rotated the file mid-flush, and the next tick
-// recovers. Extracted from Run to keep gocognit ≤15.
+// trigger. Stat errors are non-fatal — they typically mean Bear
+// rotated the file mid-flush, and the next tick recovers. Extracted
+// from Run to keep gocognit ≤15.
 func (d *Daemon) handlePollTick(quietTimer, maxTimer *time.Timer, burstActive *bool, lastMtime *time.Time) {
 	dbPath := filepath.Join(d.opts.BearDBDir, dbFilename)
 	info, err := d.opts.StatFn(dbPath)
@@ -428,32 +423,31 @@ type autoTagPass struct {
 	fn      func(context.Context) (int, error)
 }
 
-// handleAutoTagTick is the 7th-case body of Daemon.Run (TAG-02).
-// Runs the four fast-passes — ApplyForeignTagEscape, ApplyDailyDefaultTag,
-// ApplyDomainBootstrap, then ApplyPlaceholderRefresh —
-// independent of the full per-domain regen cycle. Order matches
-// engine.Apply's prePassSpec loop in apply.go: foreign-tag escape
-// first so a freshly-stamped daily note cannot be misclassified by
-// the escape pass on the same tick; domain-bootstrap third so notes
-// the daily/escape passes just stamped get their destination-canonical
-// body written in the same tick; placeholder refresh last so it
-// can rewrite the H1 marker on notes the daily pass just produced
-// via x-callback bootstrap.
+// handleAutoTagTick is the 7th-case body of Daemon.Run. Runs the four
+// fast-passes — ApplyForeignTagEscape, ApplyDailyDefaultTag,
+// ApplyDomainBootstrap, then ApplyPlaceholderRefresh — independent of
+// the full per-domain regen cycle. Order matches engine.Apply's
+// prePassSpec loop in apply.go: foreign-tag escape first so a freshly-
+// stamped daily note cannot be misclassified by the escape pass on
+// the same tick; domain-bootstrap third so notes the daily/escape
+// passes just stamped get their destination-canonical body written in
+// the same tick; placeholder refresh last so it can rewrite the H1
+// marker on notes the daily pass just produced via x-callback
+// bootstrap.
 //
-// Gate (TAG-03): if a regen cycle is in progress, skip the tick
-// silently — the next AutoTagPollInterval tick retries. No
-// coalescing, no DEBUG log noise.
+// Gate: if a regen cycle is in progress, skip the tick silently — the
+// next AutoTagPollInterval tick retries. No coalescing, no DEBUG log
+// noise.
 //
-// Self-write gate (TAG-05): markRegenStart/markRegenEnd wrap the
-// entire tick so the effectiveSelfWriteEpsilon absorbs the
-// fast-pass's own writes. Accepts a brief FSEvent blackout window
-// (~100-300ms per tick) — the next user keystroke arms the debounce
-// timer normally (CONTEXT D-04).
+// Self-write gate: markRegenStart/markRegenEnd wrap the entire tick
+// so the effectiveSelfWriteEpsilon absorbs the fast-pass's own
+// writes. Accepts a brief FSEvent blackout window (~100-300ms per
+// tick) — the next user keystroke arms the debounce timer normally.
 //
-// Error policy (D-03): all pre-passes run regardless of any prior
-// pass's outcome; log-and-continue. Mirrors apply.go::runPrePass.
+// Error policy: all pre-passes run regardless of any prior pass's
+// outcome; log-and-continue. Mirrors apply.go::runPrePass.
 //
-// Bearcli semaphore (TAG-04): all pre-pass calls route through
+// Bearcli semaphore: all pre-pass calls route through
 // bear.runBearcli → SetBearcliConcurrency pool. No bypass.
 func (d *Daemon) handleAutoTagTick(ctx context.Context) {
 	d.regenMu.Lock()
@@ -552,20 +546,19 @@ func (d *Daemon) updatePollBaseline(lastMtime *time.Time) {
 }
 
 // cycleOnce runs one regen cycle: sentinel skip-check (priority yield
-// to apply per D-11), flock acquire, engine.Apply (with SkipFlock=true
-// to avoid nested flock — see B-flock-deadlock note below), flock
-// release. Errors logged-and-continued; the next FSEvent triggers
-// the next attempt.
+// to apply), flock acquire, engine.Apply (with SkipFlock=true to avoid
+// nested flock — see the deadlock note below), flock release. Errors
+// logged-and-continued; the next FSEvent triggers the next attempt.
 //
-// B-flock-deadlock (Iteration 2 fix): cycleOnce holds the daemon
-// flock via AcquireDaemon. Calling engine.Apply with SkipFlock=false
-// would invoke AcquireApply on the same lockPath from an independent
-// fd; macOS BSD flock semantics deadlock on nested LOCK_EX from
-// separate fds AND flock is not ctx-aware, so cancellation cannot
-// break the deadlock. Setting SkipFlock=true on the inner ApplyOpts
-// tells engine.Apply to bypass BOTH AcquireApply AND the
-// .apply-pending sentinel write (semantic correctness — daemon's
-// internal Apply is not "external apply requesting priority").
+// Nested-flock deadlock note: cycleOnce holds the daemon flock via
+// AcquireDaemon. Calling engine.Apply with SkipFlock=false would
+// invoke AcquireApply on the same lockPath from an independent fd;
+// macOS BSD flock semantics deadlock on nested LOCK_EX from separate
+// fds AND flock is not ctx-aware, so cancellation cannot break the
+// deadlock. Setting SkipFlock=true on the inner ApplyOpts tells
+// engine.Apply to bypass BOTH AcquireApply AND the .apply-pending
+// sentinel write (semantic correctness — daemon's internal Apply is
+// not "external apply requesting priority").
 func (d *Daemon) cycleOnce(ctx context.Context, reason string) {
 	log.Printf("regen trigger: %s", reason)
 	if IsApplyPending(d.opts.LockPath) {
@@ -583,7 +576,7 @@ func (d *Daemon) cycleOnce(ctx context.Context, reason string) {
 	defer d.markRegenEnd()
 
 	// Construct inner ApplyOpts with SkipFlock=true so engine.Apply
-	// bypasses AcquireApply + sentinel (B-flock-deadlock).
+	// bypasses AcquireApply + sentinel — see deadlock note above.
 	applyOpts := d.opts.ApplyOpts
 	applyOpts.SkipFlock = true
 	if _, applyErr := Apply(ctx, applyOpts); applyErr != nil {

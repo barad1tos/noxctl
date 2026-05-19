@@ -116,7 +116,7 @@ func TestAcquireApply_SymlinkRejected(t *testing.T) {
 	}
 	_, err := engine.AcquireApply(context.Background(), lockPath, false, os.Stderr)
 	if err == nil {
-		t.Errorf("expected AcquireApply to refuse symlinked lockPath (T-2-01); got success")
+		t.Errorf("expected AcquireApply to refuse symlinked lockPath; got success")
 	}
 	// Sentinel cleanup on failure: should NOT linger.
 	sentinel := filepath.Join(dir, engine.SentinelName)

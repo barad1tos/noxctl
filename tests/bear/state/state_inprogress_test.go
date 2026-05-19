@@ -12,8 +12,8 @@ import (
 
 // TestState_InProgressRoundTrip seeds a `State` with a populated `InProgress`
 // (Verb + StartedAt), persists via Save, re-reads via Load, and asserts the
-// nested struct round-trips byte-for-byte. Foundation gate for D-14
-// (interrupted-run discrimination).
+// nested struct round-trips byte-for-byte. Foundation gate for
+// interrupted-run discrimination.
 func TestState_InProgressRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
@@ -37,15 +37,15 @@ func TestState_InProgressRoundTrip(t *testing.T) {
 	}
 }
 
-// TestState_LoadPhase1FileNoInProgress writes a Phase-1-vintage state.json
-// (no `in_progress` key) and confirms the Phase-2 loader degrades cleanly:
-// no error, zero-value `InProgress`. Pitfall 6 (RESEARCH.md): backwards
-// compatibility for state files written before this schema bump.
-func TestState_LoadPhase1FileNoInProgress(t *testing.T) {
+// TestState_LoadLegacyFileNoInProgress writes a legacy-vintage state.json
+// (no `in_progress` key) and confirms the loader degrades cleanly: no
+// error, zero-value `InProgress`. Backwards compatibility for state
+// files written before this schema bump.
+func TestState_LoadLegacyFileNoInProgress(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
-	phase1 := `{"version":"1","applied_config_hash":"sha256:abc"}`
-	if err := os.WriteFile(path, []byte(phase1), 0o600); err != nil {
+	legacy := `{"version":"1","applied_config_hash":"sha256:abc"}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	got, err := state.Load(path)
@@ -64,10 +64,10 @@ func TestState_LoadPhase1FileNoInProgress(t *testing.T) {
 // documented for the inner string `Verb` field. Mirrors `LastApply` shape:
 // the encoder still writes the parent `in_progress` key (Go's encoding/json
 // does NOT skip non-pointer nested structs under `omitempty` — same gotcha
-// as `last_apply` on `time.Time` per LEARNINGS), but the inner
-// `verb` string omits cleanly when empty. The schema-clarity contract is
-// that operators reading raw state.json never see a `"verb": ""` artifact
-// for a no-op state.
+// as `last_apply` on `time.Time`), but the inner `verb` string omits
+// cleanly when empty. The schema-clarity contract is that operators
+// reading raw state.json never see a `"verb": ""` artifact for a no-op
+// state.
 func TestState_InProgressEmpty_OmitsVerbFromJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")

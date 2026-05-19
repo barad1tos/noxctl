@@ -311,12 +311,10 @@ func TestLoadDaemon_ExpandsPathsFromEnv(t *testing.T) {
 	}
 }
 
-// === PAR-03 — RED skeletons for DaemonConfig.BearcliConcurrency ===
+// === Tests for DaemonConfig.BearcliConcurrency ===
 //
-// A follow-up landing adds DaemonConfig.BearcliConcurrency + the
-// REGEN_BEARCLI_CONCURRENCY env overlay + the >16 soft-cap WARN. Each
-// test t.Skipf-s with an intent-revealing message naming the future
-// symbol so failures direct the implementer to the precise contract.
+// Covers DaemonConfig.BearcliConcurrency + the REGEN_BEARCLI_CONCURRENCY
+// env overlay + the >16 soft-cap WARN.
 
 // TestLoadDaemon_BearcliConcurrency_Default asserts that when the file
 // has no bearcli_concurrency key (and no env override is set), LoadDaemon
@@ -331,7 +329,7 @@ func TestLoadDaemon_BearcliConcurrency_Default(t *testing.T) {
 		t.Fatalf("LoadDaemon error = %v, want nil", err)
 	}
 	if got, want := cfg.BearcliConcurrency, 8; got != want {
-		t.Errorf("BearcliConcurrency = %d, want %d (D-01 ship default)", got, want)
+		t.Errorf("BearcliConcurrency = %d, want %d (ship default)", got, want)
 	}
 	if got, want := cfg.Sources["BearcliConcurrency"], "default"; got != want {
 		t.Errorf("Sources[BearcliConcurrency] = %q, want %q", got, want)
@@ -433,9 +431,9 @@ func assertLoadDaemonInvalid(t *testing.T, fileContent, envName, envValue, wantS
 }
 
 // TestLoadDaemon_BearcliConcurrency_SoftCap asserts that values >16
-// emit a WARN log line (but DO NOT fail) — a soft cap, not a hard one
-// (D-02). Captures log.Default output into a bytes.Buffer
-// and searches for the substring "soft cap" plus the configured number.
+// emit a WARN log line (but DO NOT fail) — a soft cap, not a hard one.
+// Captures log.Default output into a bytes.Buffer and searches for the
+// substring "soft cap" plus the configured number.
 func TestLoadDaemon_BearcliConcurrency_SoftCap(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "daemon.toml")
@@ -470,12 +468,11 @@ func TestLoadDaemon_BearcliConcurrency_SoftCap(t *testing.T) {
 	}
 }
 
-// === POLL-01 + POLL-03 — RED skeletons for DaemonConfig.MtimePollInterval ===
+// === Tests for DaemonConfig.MtimePollInterval ===
 //
-// lands DaemonConfig.MtimePollInterval + the
-// REGEN_MTIME_POLL_INTERVAL env overlay. Semantic divergence from
-// BearcliConcurrency: zero is VALID (disables polling), only negative
-// is fatal. Tests flip RED -> GREEN when 's Tasks 2/3/4 land.
+// Covers DaemonConfig.MtimePollInterval + the REGEN_MTIME_POLL_INTERVAL
+// env overlay. Semantic divergence from BearcliConcurrency: zero is
+// VALID (disables polling), only negative is fatal.
 
 // TestLoadDaemon_MtimePollInterval_Default asserts that when the file
 // has no mtime_poll_interval key (and no env override is set), LoadDaemon
@@ -490,7 +487,7 @@ func TestLoadDaemon_MtimePollInterval_Default(t *testing.T) {
 		t.Fatalf("LoadDaemon error = %v, want nil", err)
 	}
 	if got, want := cfg.MtimePollInterval, 30*time.Second; got != want {
-		t.Errorf("MtimePollInterval = %v, want %v (POLL-01 ship default)", got, want)
+		t.Errorf("MtimePollInterval = %v, want %v (ship default)", got, want)
 	}
 	if got, want := cfg.Sources["MtimePollInterval"], "default"; got != want {
 		t.Errorf("Sources[MtimePollInterval] = %q, want %q", got, want)
@@ -500,7 +497,7 @@ func TestLoadDaemon_MtimePollInterval_Default(t *testing.T) {
 // TestLoadDaemon_MtimePollInterval_FromFile asserts the
 // [daemon].mtime_poll_interval TOML key parses into the
 // DaemonConfig.MtimePollInterval field with Sources["MtimePollInterval"]
-// = "file". TOML form is a Duration string (mirrors debounce_pause; D-06).
+// = "file". TOML form is a Duration string (mirrors debounce_pause).
 func TestLoadDaemon_MtimePollInterval_FromFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "daemon.toml")
@@ -550,8 +547,8 @@ func TestLoadDaemon_MtimePollInterval_FromEnv(t *testing.T) {
 // mtime_poll_interval = "0s" is a VALID setting that disables the poll
 // loop. Semantic divergence from BearcliConcurrency (where zero is
 // fatal): zero on this knob means "polling disabled, rely on FSEvent
-// only" (POLL-03). Sources reflects "file" because the operator
-// explicitly chose to override the default.
+// only". Sources reflects "file" because the operator explicitly chose
+// to override the default.
 func TestLoadDaemon_MtimePollInterval_ZeroDisables(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "daemon.toml")
@@ -574,7 +571,7 @@ func TestLoadDaemon_MtimePollInterval_ZeroDisables(t *testing.T) {
 
 // TestLoadDaemon_MtimePollInterval_NegativeFatal asserts that negative
 // durations (file OR env) cause LoadDaemon to return a non-nil error
-// mentioning the bad key/env-var name (POLL-03 negative-fatal contract).
+// mentioning the bad key/env-var name (negative-fatal contract).
 // Mirrors TestLoadDaemon_BearcliConcurrency_Invalid table shape; reuses
 // the shared assertLoadDaemonNegativeDurationCases helper.
 func TestLoadDaemon_MtimePollInterval_NegativeFatal(t *testing.T) {
@@ -601,26 +598,22 @@ func assertLoadDaemonNegativeDurationCases(t *testing.T, tomlKey, envName string
 	})
 }
 
-// === TAG-01 — DaemonConfig.AutoTagPollInterval ===
+// === Tests for DaemonConfig.AutoTagPollInterval ===
 //
-// lands DaemonConfig.AutoTagPollInterval + the
-// REGEN_AUTOTAG_POLL_INTERVAL env overlay. Semantic chain identical
-// to MtimePollInterval: env > file > default 2s; zero is a
-// valid "disabled" setting; negative is fatal.
+// Covers DaemonConfig.AutoTagPollInterval + the REGEN_AUTOTAG_POLL_INTERVAL
+// env overlay. Semantic chain identical to MtimePollInterval: env > file
+// > default 2s; zero is a valid "disabled" setting; negative is fatal.
 //
-// Implementation note (deviation from plan): the Phase-9 happy-path
-// cases (Default/FromFile/FromEnv/ZeroDisables) are table-driven
-// against the AutoTagPollInterval field instead of mirroring the five
-// stand-alone Phase-8 MtimePollInterval functions verbatim. The
-// literal copy-rename the plan envisioned trips `dupl` (≥50-token
-// duplicate-block linter) across the two blocks. Table-driven shape
-// preserves every assertion the plan calls out while satisfying the
-// "extract a helper instead of copy-pasting" rule. The
-// NegativeFatal case keeps the shared assertLoadDaemonInvalid helper
-// (introduced in).
+// Implementation note: the happy-path cases (Default/FromFile/FromEnv/
+// ZeroDisables) are table-driven against the AutoTagPollInterval field
+// instead of cloning the stand-alone MtimePollInterval functions. A
+// literal copy-rename trips `dupl` (≥50-token duplicate-block linter)
+// across the two blocks. Table-driven shape preserves every assertion
+// while satisfying the "extract a helper instead of copy-pasting" rule.
+// The NegativeFatal case keeps the shared assertLoadDaemonInvalid helper.
 
 // TestLoadDaemon_AutoTagPollInterval covers the four happy-path legs
-// of the TAG-01 resolution chain in a single table. Each sub-test
+// of the auto-tag-poll resolution chain in a single table. Each sub-test
 // asserts BOTH the parsed duration AND the provenance source. Negative
 // rejection is covered by TestLoadDaemon_AutoTagPollInterval_NegativeFatal.
 func TestLoadDaemon_AutoTagPollInterval(t *testing.T) {
@@ -683,7 +676,7 @@ func runAutoTagPollIntervalCase(t *testing.T, tomlBody, envValue string, wantVal
 
 // TestLoadDaemon_AutoTagPollInterval_NegativeFatal asserts that negative
 // durations (file OR env) cause LoadDaemon to return a non-nil error
-// mentioning the bad key/env-var name (TAG-01 negative-fatal contract).
+// mentioning the bad key/env-var name (negative-fatal contract).
 // Reuses the shared assertLoadDaemonNegativeDurationCases helper.
 func TestLoadDaemon_AutoTagPollInterval_NegativeFatal(t *testing.T) {
 	assertLoadDaemonNegativeDurationCases(t,
@@ -694,7 +687,7 @@ func TestLoadDaemon_AutoTagPollInterval_NegativeFatal(t *testing.T) {
 // resolution chain in a single table. Each sub-test
 // asserts BOTH the resolved bool value AND the provenance source.
 // Env semantics mirror `REGEN_AUDIT`: only "off" disables; anything
-// else enables — matches the D-03 quirk already locked in for
+// else enables — matches the quirk already locked in for
 // `EnvAuditEnabled`.
 func TestLoadDaemon_DomainBootstrap(t *testing.T) {
 	cases := []loadDaemonCase[bool]{

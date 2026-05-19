@@ -1,13 +1,12 @@
 // Package engine apply orchestrator — one-shot wrapper around the
-// existing pre-pass + per-domain RunRegen pipeline that lived in
-// cmd/regen-watchd/main.go::runAllRegens (lines 159-222 of the pre-
-// Phase-2 source). Same pre-pass order, same log-and-continue policy,
-// same self-write-gate discipline (the gate itself moves to
-// engine.Daemon in; Apply is one-shot and needs no gate).
+// pre-pass + per-domain RunRegen pipeline that previously lived in the
+// legacy daemon's runAllRegens routine. Same pre-pass order, same
+// log-and-continue policy, same self-write-gate discipline (the gate
+// itself lives on engine.Daemon; Apply is one-shot and needs no gate).
 //
 // Layering: stdlib + bear + bear/state + golang.org/x/sys/unix.
-// engine never imports bear/config — CLI shims map *config.Catalog.Features
-// into engine.Features at the CLI boundary (D-01).
+// engine never imports bear/config — CLI shims map
+// *config.Catalog.Features into engine.Features at the CLI boundary.
 package engine
 
 import (
@@ -36,8 +35,8 @@ type ApplyOpts struct {
 	Pins      *bear.PinRegistry // REQUIRED — may be empty registry; nil-safe per bear/pins.go
 	StatePath string            // REQUIRED — "./.noxctl/state.json"
 	LockPath  string            // REQUIRED — "./.noxctl/.lock" (used by )
-	Features  Features          // REQUIRED — flat toggles per D-05
-	NoWait    bool              // optional; --no-wait fail-fast on lock contention ()
+	Features  Features          // REQUIRED — flat pre-pass toggles
+	NoWait    bool              // optional; --no-wait fail-fast on lock contention
 	Stderr    io.Writer         // optional; default os.Stderr — used by lock-acquire wait advisory
 	// AuditEnabled, when true, runs the AuditDomains pre-pass. Mirrors
 	// the legacy daemon's REGEN_AUDIT != "off" gate. Default false.
@@ -47,12 +46,12 @@ type ApplyOpts struct {
 	// engine.Daemon.cycleOnce, which already holds the daemon flock and
 	// must not nest-acquire (would deadlock on macOS BSD flock semantics
 	// — flock is not ctx-aware, so a nested LOCK_EX on an independent fd
-	// blocks indefinitely). wires the gate; sets
-	// SkipFlock=true on the inner ApplyOpts inside cycleOnce.
+	// blocks indefinitely). Daemon sets SkipFlock=true on the inner
+	// ApplyOpts inside cycleOnce.
 	SkipFlock bool
 
 	// BearcliConcurrency is the operator-tuned cap for concurrent bearcli
-	// subprocesses (D-01). Zero or negative => engine default
+	// subprocesses. Zero or negative => engine default
 	// DefaultBearcliConcurrency. When > 0, Apply calls
 	// bear.SetBearcliConcurrency(n) once at entry before any pre-pass
 	// fires. The sync.Once gate inside SetBearcliConcurrency means
@@ -100,18 +99,16 @@ const DefaultBearcliConcurrency = 8
 // calling RunRegen, persists state.json incrementally per-domain,
 // releases flock.
 //
-// State.LastApply is set ONLY on successful completion (D-09); SIGINT
-// or per-domain failure leaves it at the prior value. State.InProgress
-// is set on entry, cleared on success — plan engine uses both
+// State.LastApply is set ONLY on successful completion; SIGINT or
+// per-domain failure leaves it at the prior value. State.InProgress
+// is set on entry, cleared on success — the plan engine uses both
 // markers to discriminate completed-vs-interrupted runs.
 //
-// Stateless: owns no gate. Daemon (bear/engine/daemon.go,)
-// carries the regenMu/regenInProgress/regenEndTime state for FSEvents
-// loops.
+// Stateless: owns no gate. Daemon (bear/engine/daemon.go) carries the
+// regenMu/regenInProgress/regenEndTime state for FSEvents loops.
 //
-// Per-atom ctx.Err injection inside pre-pass loops is delegated to
-// ; this orchestrator preserves the existing per-DOMAIN
-// ctx.Err check (mirrors cmd/regen-watchd/main.go:217).
+// This orchestrator preserves the per-DOMAIN ctx.Err check mirrored
+// from the legacy daemon.
 func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	result := &ApplyResult{
 		PrePasses: make(map[string]PrePassCounts),
@@ -122,7 +119,7 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 		opts.Stderr = os.Stderr
 	}
 
-	// Step -1 (D-01): initialize the global bearcli subprocess
+	// Step -1: initialize the global bearcli subprocess
 	// pool. SetBearcliConcurrency is sync.Once-gated inside package bear,
 	// so a second Apply in the same process is a no-op. Bench-mode
 	// (--sweep) drives ResetBearcliPoolForTest between cycles to re-arm
@@ -132,12 +129,11 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	}
 	bear.SetBearcliConcurrency(opts.BearcliConcurrency)
 
-	// Step 0: acquire flock + write apply-pending sentinel (D-10..D-13).
-	// Gated on !opts.SkipFlock so engine.Daemon.cycleOnce can call
-	// engine.Apply without nesting flock (deadlock avoidance per
-	// B-flock-deadlock — macOS BSD flock is not ctx-aware, so a nested
-	// LOCK_EX on an independent fd from the same process blocks
-	// indefinitely). When SkipFlock=true: skip BOTH the flock acquire
+	// Step 0: acquire flock + write apply-pending sentinel. Gated on
+	// !opts.SkipFlock so engine.Daemon.cycleOnce can call engine.Apply
+	// without nesting flock — macOS BSD flock is not ctx-aware, so a
+	// nested LOCK_EX on an independent fd from the same process blocks
+	// indefinitely. When SkipFlock=true: skip BOTH the flock acquire
 	// AND the sentinel write (semantic correctness — the daemon's
 	// internal Apply is not an external apply requesting priority).
 	release := func() { /* no-op default; reassigned when !SkipFlock acquires lock */ }
@@ -168,7 +164,7 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 		return result, fmt.Errorf("engine.Apply state.Save(InProgress): %w", err)
 	}
 
-	// Step 3: pre-passes (gated by opts.Features per D-05).
+	// Step 3: pre-passes (gated by opts.Features).
 	applyPrePasses(ctx, opts, result)
 
 	// Step 4: per-domain loop.
@@ -311,7 +307,7 @@ func runPrePass(spec prePassSpec, result *ApplyResult) {
 }
 
 // applyPerDomain orchestrates the per-domain RunRegen pipeline using a
-// per-umbrella errgroup dependency graph (D-03).
+// per-umbrella errgroup dependency graph.
 //
 // Structure:
 // - Top-level errgroup.WithContext(ctx) — each of the N umbrella
@@ -322,7 +318,7 @@ func runPrePass(spec prePassSpec, result *ApplyResult) {
 // umbrella domain's own RunRegen executes on the same goroutine.
 // - Independent families fan out in parallel; back-pressure on actual
 // bearcli subprocesses lives in the bear.SetBearcliConcurrency
-// semaphore (/), NOT at the errgroup layer.
+// semaphore, NOT at the errgroup layer.
 //
 // State serialization: state.State map writes + st.Save calls happen
 // under stateMu. The mutex is held strictly around the map mutation +
@@ -384,9 +380,9 @@ func runFamily(
 }
 
 // runDomainAndSave is the per-domain unit of work inside the errgroup
-// orchestrator. The ctx.Err pre-check at entry implements Pitfall 5
-// defense (errgroup.Go does NOT respect cancellation pre-emptively per
-// pkg.go.dev/golang.org/x/sync/errgroup).
+// orchestrator. The ctx.Err pre-check at entry guards against
+// errgroup.Go not honoring cancellation pre-emptively (per the
+// pkg.go.dev/golang.org/x/sync/errgroup docs).
 //
 // stateMu is held strictly around the map mutation + st.Save call.
 // Holding it across RunRegen would serialize the orchestrator and
@@ -417,14 +413,14 @@ func runDomainAndSave(
 	// Compute content hash from fresh master + hubs read. RunRegen has
 	// already written the master + hubs through bearcli; the snapshot
 	// re-read captures the canonical post-write state. Returns "" on
-	// read failure — caller preserves prior hash (D-09).
+	// read failure — caller preserves prior hash.
 	hash := computeDomainHash(ctx, d)
 	stateMu.Lock()
 	defer stateMu.Unlock()
 	if hash != "" {
 		st.Domains[d.Tag] = state.DomainState{ContentHash: hash}
 	}
-	result.Domains[d.Tag] = DomainCounts{Unchanged: 1} // detail-counts polish stays in  scope
+	result.Domains[d.Tag] = DomainCounts{Unchanged: 1}
 	if err := st.Save(opts.StatePath); err != nil {
 		log.Printf("apply: state.Save(domain=%s) failed: %v (continuing)", d.Tag, err)
 	}
@@ -446,7 +442,7 @@ func runDomainAndSave(
 //
 // Iteration order of the returned map is intentionally non-deterministic
 // (standard Go map semantics). Independent families have no ordering
-// requirement per D-03.
+// requirement.
 //
 // Orphan leaves — a leaf whose ParentMaster does not match any
 // umbrella present in the slice — are placed in the nil-key bucket so
@@ -533,8 +529,8 @@ func applyFinalize(ctx context.Context, opts ApplyOpts, st *state.State, result 
 
 // computeDomainHash reads the freshest master + hub bytes from Bear
 // for one domain and returns sha256(strip(master) || NUL ||
-// sorted-by-title strip(hubs[i])) per D-06/D-07. Returns "" on read
-// failure (logged but non-fatal — caller preserves prior hash).
+// sorted-by-title strip(hubs[i])). Returns "" on read failure
+// (logged but non-fatal — caller preserves prior hash).
 func computeDomainHash(ctx context.Context, domain *bear.Domain) string {
 	master, hubs, err := snapshotDomainContent(ctx, domain)
 	if err != nil {
@@ -570,16 +566,16 @@ func snapshotDomainContent(
 }
 
 // ComputeContentHash returns sha256(strip(master) || NUL || sorted-by-title strip(hub_i)).
-// Inputs are already stripped of new-note-link drift by snapshotDomainContent
-// (D-07) — this function is pure: same input, same output.
+// Inputs are already stripped of new-note-link drift by
+// snapshotDomainContent — this function is pure: same input, same
+// output.
 //
-// Exported (rather than the originally-planned `computeContentHash`
-// + `export_test.go` test seam) because the project's test-location
+// Exported (rather than relying on a `computeContentHash` + in-package
+// `export_test.go` test seam) because the project's test-location
 // convention places external tests at `tests/bear/engine/`, a different
 // directory from the package source — which means an in-package
-// `_test.go` file cannot bridge unexported symbols across the directory
-// gap. Exporting is the pragmatic resolution; downstream plans
-// 02-04..02-07 can call it directly without a parallel test-seam shim.
+// `_test.go` file cannot bridge unexported symbols across the
+// directory gap. Exporting is the pragmatic resolution.
 func ComputeContentHash(master string, hubs map[string]string) string {
 	h := sha256.New()
 	_, _ = h.Write([]byte(master))
@@ -589,7 +585,7 @@ func ComputeContentHash(master string, hubs map[string]string) string {
 	}
 	sort.Strings(titles)
 	for _, t := range titles {
-		_, _ = h.Write([]byte{0}) // NUL separator per D-06
+		_, _ = h.Write([]byte{0}) // NUL separator
 		_, _ = h.Write([]byte(hubs[t]))
 	}
 	return hex.EncodeToString(h.Sum(nil))

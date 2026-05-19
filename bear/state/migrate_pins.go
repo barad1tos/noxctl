@@ -22,11 +22,10 @@ import (
 // O_EXCL create; the loser observes fs.ErrExist and returns
 // nil (idempotent shape of case b).
 //
-// MIGRATE-06 mandates: legacy file is NEVER deleted. Operator keeps it
-// for manual recovery. Threat T-1-10 (symlink attack at targetPath)
-// is mitigated by O_EXCL refusing to follow an existing symlink — the
-// helper would fail the create, observe fs.ErrExist, and treat as
-// case (b).
+// The legacy file is NEVER deleted. Operator keeps it for manual
+// recovery. Symlink attacks at targetPath are mitigated by O_EXCL
+// refusing to follow an existing symlink — the helper would fail the
+// create, observe fs.ErrExist, and treat as case (b).
 func MigratePins(legacyPath, targetPath string) error {
 	// case (b) — target already exists.
 	if _, err := os.Stat(targetPath); err == nil {

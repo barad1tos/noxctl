@@ -1,11 +1,9 @@
 // Package engine_test — Plan-engine table tests for `noxctl plan`.
 //
-// deliverable. Tests grow across the plan's three
-// task stages:
-//
-//	Task 1 — PlanResult schema (this file's initial three tests).
-//	Task 2 — ColorMode + ParseColorMode + RenderJSON ANSI-leak guard.
-//	Task 3 — Plan + RenderText drift-rendering + read-only contract.
+// Covers three groups of behavior:
+//   - PlanResult schema (JSON-stable shape, never-null slice fields).
+//   - ColorMode + ParseColorMode + RenderJSON ANSI-leak guard.
+//   - Plan + RenderText drift-rendering + read-only contract.
 //
 // External `engine_test` package per the project convention documented
 // in tests/bear/snapshot_test.go and bear/engine/export_test.go.
@@ -46,7 +44,7 @@ func cleanDomainResult(tag string) *engine.PlanResult {
 	return r
 }
 
-// ---------- Task 1 — PlanResult schema -------------------------------------
+// ---------- PlanResult schema ----------------------------------------------
 
 func TestPlanResultEmptyMarshalsFullShape(t *testing.T) {
 	r := emptyPlanResult()
@@ -66,7 +64,9 @@ func TestPlanResultEmptyMarshalsFullShape(t *testing.T) {
 		}
 	}
 
-	// RESEARCH Pitfall 6 — none of the slice fields may marshal to null.
+	// None of the slice fields may marshal to null — JSON consumers
+	// expect a stable empty-array shape so downstream tooling can use
+	// `len(...)` checks without nil-vs-empty branching.
 	for _, forbidden := range []string{
 		`"domains":null`,
 		`"errors":null`,
@@ -115,7 +115,7 @@ func TestDiffKindWireValues(t *testing.T) {
 	}
 }
 
-// ---------- Task 2 — ColorMode + ParseColorMode + RenderJSON ---------------
+// ---------- ColorMode + ParseColorMode + RenderJSON -----------------------
 
 func TestParseColorModeKnownValues(t *testing.T) {
 	cases := []struct {
@@ -194,7 +194,7 @@ func TestRenderJSONEmitsValidJSON(t *testing.T) {
 	}
 }
 
-// ---------- Task 3 — Plan + RenderText drift-rendering --------------------
+// ---------- Plan + RenderText drift-rendering ------------------------------
 
 func TestPlanZeroDomainsCleanShape(t *testing.T) {
 	res, err := engine.Plan(context.Background(), engine.PlanOpts{Domains: nil})

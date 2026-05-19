@@ -1,15 +1,14 @@
 // Package engine plan — read-only "what would Apply do" preview.
 //
-// Sibling of engine.Apply, explicitly NOT a dryRun flag
-// (CONTEXT D-05 + RESEARCH Pattern 1: pre-pass set is structurally
-// different; threading dryRun through every pre-pass would not match
-// plan's actual behavior — plan does not invoke foreign-tag escape,
-// auto-tag, cross-domain, or time-promotion).
+// Sibling of engine.Apply, explicitly NOT a dryRun flag: the pre-pass
+// set is structurally different; threading dryRun through every
+// pre-pass would not match plan's actual behavior — plan does not
+// invoke foreign-tag escape, auto-tag, cross-domain, or
+// time-promotion.
 //
 // Layering: stdlib + bear (read-only). engine.Plan never imports
 // bear/config and never calls overwriteWithRetry / state.Save /
-// AcquireApply (PLAN-03 / PLAN-06 hard contract — verified by grep
-// gate in 03-VALIDATION.md).
+// AcquireApply.
 package engine
 
 import (
@@ -78,11 +77,11 @@ func planSinglePath(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
 			_, _ = fmt.Fprintf(opts.Stderr, "▶ %s — %s (%d change(s))\n", d.Tag, dp.Status, len(dp.Changes))
 		}
 	}
-	// Residue scan — corpus-level, NOT per-domain (CONTEXT D-02). Failure
-	// is non-fatal: log into Errors with empty Tag (corpus-scope) and
-	// continue. Skipped on zero-domain TOML (every tag would be untracked
-	// trivially — invalid config per schema D-09) and on
-	// interrupt (don't add bearcli round-trip on top of a canceled ctx).
+	// Residue scan — corpus-level, NOT per-domain. Failure is non-fatal:
+	// log into Errors with empty Tag (corpus-scope) and continue. Skipped
+	// on zero-domain TOML (every tag would be untracked trivially —
+	// invalid config) and on interrupt (don't add bearcli round-trip on
+	// top of a canceled ctx).
 	if !result.Interrupted && len(opts.Domains) > 0 {
 		if scan, scanErr := bear.ScanUntracked(ctx, opts.Domains); scanErr != nil {
 			result.Errors = append(result.Errors, PlanError{Tag: "", Msg: scanErr.Error()})
@@ -147,11 +146,11 @@ func seedDuplicateRegistry(ctx context.Context, domains []*bear.Domain, stderr i
 // surfaces as a real diff). Mirrors bear/core.go::upsertMasterIndex
 // with overwriteWithRetry calls replaced by Diff{} appends.
 //
-// Hub layer is summary-only per CONTEXT D-01 — full per-hub diff
-// fidelity requires re-rendering each hub via d.RenderHub, which needs
-// helpers (parseHubBulletIdentifiers) currently unexported. The
-// master-level diff is the user-visible signal CONTEXT D-01 designs
-// around; per-hub fidelity is a documented gap in 03-02-SUMMARY.md.
+// Hub layer is summary-only — full per-hub diff fidelity requires
+// re-rendering each hub via d.RenderHub, which needs helpers
+// (parseHubBulletIdentifiers) currently unexported. The master-level
+// diff is the user-visible signal we design around; per-hub fidelity
+// is a documented gap.
 func computeDomainDelta(ctx context.Context, d *bear.Domain, verbose bool) (DomainPlan, error) {
 	dp := DomainPlan{Tag: d.Tag, Status: StatusClean, Changes: make([]Diff, 0)}
 
@@ -165,11 +164,11 @@ func computeDomainDelta(ctx context.Context, d *bear.Domain, verbose bool) (Doma
 		return dp, fmt.Errorf("computeDomainDelta(%s) master read: %w", d.Tag, err)
 	}
 	// `FetchMasterContent` pre-strips `bear://` new-note URLs from
-	// the vault read (`bear/snapshot.go::FetchMasterContent` → D-07
-	// idempotency-hash convention). The renderer emits them. Strip
-	// the desired side too so both halves are URL-free before the
-	// strict comparator's URL count check — otherwise every domain
-	// surfaces as false drift (1 vs 0 URLs in the header).
+	// the vault read so the bytes are idempotency-hash stable. The
+	// renderer emits them. Strip the desired side too so both halves
+	// are URL-free before the strict comparator's URL count check —
+	// otherwise every domain surfaces as false drift (1 vs 0 URLs in
+	// the header).
 	desiredAuto = bear.StripNewNoteURLsFromBody(desiredAuto)
 	// Preserve the curator zone (below `## ✱ Куратор`) before
 	// comparing. `upsertMasterIndex` in `bear/core.go` composes the

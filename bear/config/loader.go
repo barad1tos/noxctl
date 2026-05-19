@@ -3,19 +3,19 @@
 // Load is a single-pass strict decoder + dispatcher. Order of
 // operations:
 //
-// 1. Read file → fs.ErrNotExist surfaces unwrapped (VAL-01).
+// 1. Read file → fs.ErrNotExist surfaces unwrapped.
 // 2. toml.Decode → ParseError emits `path:line:col: msg`.
 // Type-mismatch errors (e.g. `version = 1` int vs string field)
 // do NOT route through ParseError; they surface as plain
 // wrapped errors with the field path embedded.
-// 3. metadata.Undecoded — flag every unknown key (LOAD-02).
+// 3. metadata.Undecoded — flag every unknown key.
 // 4. ValidateCatalog — catalog-level invariants.
 // 5. Two-pass dispatch: leaf domains first, then umbrellas.
 // 6. Domain.Validate per built domain.
 //
-// Aggregation via errors.Join (D-11). On any error path we still
-// return the partially-built []*bear.Domain so tooling can introspect
-// what DID parse cleanly.
+// Errors aggregate via errors.Join. On any error path we still return
+// the partially-built []*bear.Domain so tooling can introspect what
+// DID parse cleanly.
 package config
 
 import (

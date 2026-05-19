@@ -14,11 +14,10 @@ import (
 	"github.com/barad1tos/noxctl/bear/engine"
 )
 
-// Render writes the PRE-PASSES + PLAY RECAP blocks to out per CLI-05
-// (structured output to stdout). When quiet is true, the section
+// Render writes the PRE-PASSES + PLAY RECAP blocks to out as
+// structured stdout output. When quiet is true, the section
 // headers and OK rows are suppressed but FAILURE rows still emit so
-// the operator never misses a non-zero failed=N count (see
-// 02-CONTEXT.md "PLAY RECAP shape" Discretion default).
+// the operator never misses a non-zero failed=N count.
 //
 // Format mirrors Ansible's PLAY RECAP shape — text/tabwriter elastic
 // tabstops produce aligned columns from tab-separated text. Pipe-safe

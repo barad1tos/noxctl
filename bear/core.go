@@ -751,7 +751,7 @@ func equalIgnoringNewNoteLink(a, b string) bool {
 // the the URL-emission SSOT contract that ends the recurring-bug pattern.
 //
 // The non-strict body compare runs as a fallback so trailing-whitespace
-// drift on otherwise-identical bodies doesn't loop-rewrite (Pitfall 2).
+// drift on otherwise-identical bodies doesn't loop-rewrite.
 func equalIgnoringNewNoteLinkStrict(a, b string) bool {
 	urlsA := FindAllNewNoteURLsInBody(a)
 	urlsB := FindAllNewNoteURLsInBody(b)
@@ -1210,7 +1210,7 @@ func (d *Domain) RunRegen(ctx context.Context) {
 // unexported equalIgnoringNewNoteLink predicate (non-strict, atomic
 // flavor). plan engine and parity check read this from outside
 // package bear. Internal callers continue using the lowercase original
-// (RESEARCH Pitfall 8 — minimal export footprint).
+// to keep the export footprint minimal.
 //
 // Non-strict semantics: URL-shape drift (legacy title= vs current
 // no-title=) is ignored. Master/hub diffs should call

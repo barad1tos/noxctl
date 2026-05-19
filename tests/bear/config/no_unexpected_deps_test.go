@@ -1,31 +1,21 @@
 // Package config_test guards the runtime dependency budget.
 //
-// dep-budget gate (CFG-08). Direct deps grow incrementally as
-// real importers land:
-//
-// : {fsnotify}
-// : + BurntSushi/toml — bear/config/loader.go and
-//
-//	tests/bear/config/* round-trip decode
-//
-// : + spf13/cobra — cmd/noxctl/root.go and
-//
-//	friends wire the Cobra subcommand surface
-//
-// : + golang.org/x/sys — anchored via
-//
-//	`tools.go` (//go:build tools) so the macOS flock surface
-//	imported by 's `bear/lock.go` lands without
-//	tripping this drift gate.
-//	(this commit): + golang.org/x/sync — anchored via
-//	`tools.go` (//go:build tools) so the per-umbrella
-//	errgroup orchestrator clears this drift gate ahead
-//	of time. D-07.
+// Direct runtime deps:
+//   - github.com/fsnotify/fsnotify — FSEvents watcher.
+//   - github.com/BurntSushi/toml — bear/config/loader.go and
+//     tests/bear/config/* round-trip decode.
+//   - github.com/spf13/cobra — cmd/noxctl/root.go and friends wire
+//     the Cobra subcommand surface.
+//   - golang.org/x/sys — anchored via `tools.go` (//go:build tools)
+//     so the macOS flock surface imported by `bear/lock.go` lands
+//     without tripping this drift gate.
+//   - golang.org/x/sync — anchored via `tools.go` (//go:build tools)
+//     so the per-umbrella errgroup orchestrator clears this drift
+//     gate.
 //
 // Adding a new runtime dependency MUST update `want` here as part of the
-// same PR with explicit reviewer ack. The minimalism culture is locked
-// by SKELETON.md "Direct Dependency Budget" and "single
-// non-stdlib runtime dep" baseline.
+// same PR with explicit reviewer ack. The "single non-stdlib runtime
+// dep" minimalism baseline is documented in the project README.
 package config_test
 
 import (
@@ -56,7 +46,7 @@ func TestNoUnexpectedDirectDeps(t *testing.T) {
 		t.Fatalf(
 			"direct dependencies drift\n  want: %v\n  got:  %v\n\n"+
 				"Growing the runtime-dep budget requires updating this test\n"+
-				"in the same commit. See CFG-08 / SKELETON.md.",
+				"in the same commit.",
 			want, got,
 		)
 	}

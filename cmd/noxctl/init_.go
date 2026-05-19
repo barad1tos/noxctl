@@ -1,8 +1,9 @@
 package main
 
-// initSubCmd is the `noxctl init` stub. ships an interactive
-// wizard that scaffolds a starter noxctl.toml. Filename `init_.go`
-// (trailing underscore) avoids the Go keyword collision per D-03.
+// initSubCmd is the `noxctl init` stub for an interactive wizard
+// that scaffolds a starter noxctl.toml. Filename `init_.go`
+// (trailing underscore) avoids the Go keyword collision with the
+// per-file `init()` declaration.
 var initSubCmd = stubCmd(
 	"init",
 	"Generate a starter noxctl.toml interactively",

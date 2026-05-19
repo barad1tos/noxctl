@@ -28,7 +28,7 @@ const errFmtNoxctlDaemon = "noxctl daemon: %w"
 // daemonCmd is the real `noxctl daemon` subcommand. Replaces the
 // stub. Loads noxctl.toml, constructs `engine.NewDaemon`, and runs the
 // FSEvents-driven watcher until SIGINT/SIGTERM triggers graceful
-// shutdown (exit 0 per CLI-08 narrowed-to-apply contract).
+// shutdown (exit 0; SIGINT-as-error is apply-only).
 var daemonCmd = &cobra.Command{
 	Use:   "daemon",
 	Short: "Run the FSEvents-driven background watcher",
@@ -110,9 +110,9 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 
-	// Daemon SIGINT is graceful shutdown, NOT an error per CLI-08
-	// narrowed to apply-only. Run returns ctx.Err on cancel; we
-	// squash that to nil for exit 0.
+	// Daemon SIGINT is graceful shutdown, NOT an error — the
+	// SIGINT-as-error policy applies only to `apply`. Run returns
+	// ctx.Err on cancel; squash to nil for exit 0.
 	if runErr := d.Run(ctx); runErr != nil && !errors.Is(runErr, context.Canceled) {
 		return fmt.Errorf(errFmtNoxctlDaemon, runErr)
 	}

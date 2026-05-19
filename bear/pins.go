@@ -79,9 +79,8 @@ func (r *PinRegistry) RecordPinAt(atomID, domain string, pinnedAt time.Time) {
 
 // Save persists the registry to disk if anything changed since the last
 // load or save. Delegates to bear.AtomicWriteJSON (tmp + rename +
-// fsync(file) + fsync(parent dir)) so the call is crash-safe on APFS
-// — closes the CONCERNS.md fsync gap. No-op when in-memory state is
-// clean.
+// fsync(file) + fsync(parent dir)) so the call is crash-safe on APFS.
+// No-op when in-memory state is clean.
 func (r *PinRegistry) Save() error {
 	if r == nil {
 		return nil
