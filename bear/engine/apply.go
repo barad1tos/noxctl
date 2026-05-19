@@ -70,6 +70,19 @@ type ApplyOpts struct {
 	// from worker goroutines — implementations MUST be concurrency-safe
 	// (atomic/mutex).
 	DomainTimingHook func(tag string, elapsed time.Duration)
+
+	// DailyDefaultTag binds the operator-chosen tag for untagged-on-
+	// create notes (e.g. Bear's compose-from-Notes-view). Empty disables
+	// the auto-tag fast-pass entirely so a fork with no notion of a
+	// "daily" tag stays silent. Wired from [meta].daily_default_tag in
+	// the TOML catalog.
+	DailyDefaultTag string
+
+	// PromotionRules drives the time-based promotion fast-pass. Empty
+	// disables time-promotion entirely. Each rule names a source tag,
+	// a target tag, and the calendar boundary that triggers the move.
+	// Wired from [[promotion]] blocks in the TOML catalog.
+	PromotionRules []bear.PromotionRule
 }
 
 // DefaultBearcliConcurrency is the ship-default capacity for
@@ -188,7 +201,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 		{opts.Features.ForeignTagEscape, "foreign_tag", "foreign-tag escape",
 			func() error { _, err := bear.ApplyForeignTagEscape(ctx, domainsByTag); return err }},
 		{opts.Features.AutoTagDefault, "auto_tag", "auto-tag",
-			func() error { _, err := bear.ApplyDailyDefaultTag(ctx, domainsByTag["quicknote/daily"]); return err }},
+			func() error { _, err := bear.ApplyDailyDefaultTag(ctx, domainsByTag[opts.DailyDefaultTag]); return err }},
 		{opts.Features.DomainBootstrap, "domain_bootstrap", "domain-bootstrap canonicalize",
 			func() error { _, err := bear.ApplyDomainBootstrap(ctx, domainsByTag); return err }},
 		{opts.Features.AutoTagDefault, "placeholder_refresh", "placeholder refresh",
@@ -196,7 +209,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 		{opts.Features.CrossDomainMoves, "cross_domain", "cross-domain moves",
 			func() error { return bear.ApplyCrossDomainMoves(ctx, opts.Domains, opts.Pins) }},
 		{opts.Features.TimePromotion, "time_promotion", "time-promotion",
-			func() error { return bear.ApplyTimeBasedPromotion(ctx, opts.Domains, opts.Pins) }},
+			func() error { return bear.ApplyTimeBasedPromotion(ctx, opts.Domains, opts.Pins, opts.PromotionRules) }},
 	}
 	for _, spec := range specs {
 		runPrePass(spec, result)

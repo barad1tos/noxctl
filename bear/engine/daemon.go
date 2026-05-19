@@ -477,7 +477,7 @@ func (d *Daemon) handleAutoTagTick(ctx context.Context) {
 	// once per tick so both pre-pass paths can write destination-canonical
 	// form in a single bearcli call.
 	domainsByTag := bear.DomainsByTag(d.opts.Domains)
-	dailyDomain := domainsByTag["quicknote/daily"]
+	dailyDomain := domainsByTag[d.opts.DailyDefaultTag]
 	autoTagOn := d.opts.Features.AutoTagDefault
 	feats := d.opts.Features
 	mkPass := func(name string, enabled bool, fn func(context.Context) (int, error)) autoTagPass {

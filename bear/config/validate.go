@@ -40,10 +40,61 @@ func ValidateCatalog(cat *Catalog, path string) error {
 	var errs []error
 	errs = append(errs, validateMeta(cat, path)...)
 	errs = append(errs, validateDomains(cat, path)...)
+	errs = append(errs, validatePromotions(cat, path)...)
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
 	return nil
+}
+
+// validBoundaries lists the calendar windows the time-promotion fast-
+// pass understands. Empty / unset boundary defaults to "day" — the
+// most common operator case (daily inbox rolling forward) writes no
+// explicit value.
+var validBoundaries = map[string]struct{}{
+	"":      {},
+	"day":   {},
+	"week":  {},
+	"month": {},
+	"year":  {},
+}
+
+// validatePromotions checks the [[promotion]] block for the two
+// regressions that the rules-driven promoter can't recover from at
+// runtime: an unknown `boundary` (typos silently produce a no-op
+// rule) and a duplicate `from` tag (the index map would keep only
+// one rule and the operator would never see the rest of their
+// ladder applied). Aggregated like every other catalog-level check.
+func validatePromotions(cat *Catalog, path string) []error {
+	if len(cat.Promotions) == 0 {
+		return nil
+	}
+	var errs []error
+	seen := make(map[string]int, len(cat.Promotions))
+	for i, p := range cat.Promotions {
+		if p.From == "" {
+			errs = append(errs, fmt.Errorf("%s: promotion[%d]: from is required", path, i))
+		}
+		if p.To == "" {
+			errs = append(errs, fmt.Errorf("%s: promotion[%d] from=%q: to is required", path, i, p.From))
+		}
+		if _, ok := validBoundaries[p.Boundary]; !ok {
+			errs = append(errs, fmt.Errorf(
+				"%s: promotion[%d] from=%q: unknown boundary %q (valid: day|week|month|year, empty = day)",
+				path, i, p.From, p.Boundary))
+		}
+		if p.From == "" {
+			continue
+		}
+		if prev, dup := seen[p.From]; dup {
+			errs = append(errs, fmt.Errorf(
+				"%s: promotion[%d] from=%q: duplicate; first declared at promotion[%d]",
+				path, i, p.From, prev))
+		} else {
+			seen[p.From] = i
+		}
+	}
+	return errs
 }
 
 // validateMeta covers [meta].version + [meta].locale. Extracted to

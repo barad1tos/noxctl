@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/engine"
 )
@@ -66,6 +67,35 @@ func featuresFromCatalog(cat *config.Catalog) engine.Features {
 		f.DuplicateRegistry = *cat.Features.DuplicateRegistry
 	}
 	return f
+}
+
+// dailyDefaultTagFromCatalog returns the operator-chosen "untagged-on-
+// create" tag bound by `[meta].daily_default_tag`. Empty string when
+// the operator omitted the field — engine.Apply treats empty as
+// "auto-tag fast-pass disabled".
+func dailyDefaultTagFromCatalog(cat *config.Catalog) string {
+	if cat == nil {
+		return ""
+	}
+	return cat.Meta.DailyDefaultTag
+}
+
+// promotionRulesFromCatalog maps `[[promotion]]` stanzas onto the
+// engine-side `bear.PromotionRule` slice. Empty input or nil catalog
+// yields a nil slice — time-promotion fast-pass treats nil as disabled.
+//
+// CLI boundary helper (D-01): `bear/` never imports `bear/config/`, so
+// the TOML-to-Domain bridge lives in `cmd/noxctl/` alongside the rest
+// of the catalog wiring.
+func promotionRulesFromCatalog(cat *config.Catalog) []bear.PromotionRule {
+	if cat == nil || len(cat.Promotions) == 0 {
+		return nil
+	}
+	out := make([]bear.PromotionRule, 0, len(cat.Promotions))
+	for _, p := range cat.Promotions {
+		out = append(out, bear.PromotionRule{From: p.From, To: p.To, Boundary: p.Boundary})
+	}
+	return out
 }
 
 // resolveBearDB picks the Bear DB watch directory for the daemon.

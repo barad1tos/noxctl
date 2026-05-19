@@ -2,6 +2,28 @@
   version = "1"
   locale = "uk"
   bear_db = ""
+  daily_default_tag = "quicknote/daily"
+  placeholder_h1 = "Quicknote"
+
+[[promotion]]
+  from = "quicknote/daily"
+  to = "quicknote/weekly"
+  boundary = "day"
+
+[[promotion]]
+  from = "quicknote/weekly"
+  to = "quicknote/monthly"
+  boundary = "week"
+
+[[promotion]]
+  from = "quicknote/monthly"
+  to = "quicknote/yearly"
+  boundary = "month"
+
+[[promotion]]
+  from = "quicknote/yearly"
+  to = "quicknote/decadal"
+  boundary = "year"
 
 [[domain]]
   tag = "library/poetry"

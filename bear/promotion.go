@@ -4,26 +4,44 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 )
 
-// PromoteByCalendar returns (newTag, true) when an atom currently tagged
-// `currentTag` should be promoted given its creation date and the current
-// wall-clock `now`. Loops the rule table top-to-bottom so a single call
-// chains daily → weekly → monthly → yearly → decadal in one shot
-// (aggressive catch-up).
+// PromotionRule binds a source tag to a target tag, gated by a
+// calendar boundary the atom's creation date must predate. The
+// operator declares one rule per `[[promotion]]` block in the TOML
+// catalog; `bear/config` ferries the structs onto `engine.ApplyOpts.
+// PromotionRules`.
 //
-// Non-quicknote tags pass through unchanged — the function only knows
-// about the five quicknote children. Decadal is terminal.
-func PromoteByCalendar(currentTag string, created, now time.Time) (string, bool) {
-	if !strings.HasPrefix(currentTag, "quicknote/") {
+// Boundary is one of "day", "week", "month", "year". An empty
+// boundary defaults to "day" so the most common case (daily inbox
+// rolling forward) needs no explicit value. Unknown boundaries make
+// the rule a no-op; load-time validation catches typos before they
+// reach the promoter.
+type PromotionRule struct {
+	From     string
+	To       string
+	Boundary string
+}
+
+// PromoteByCalendar returns (newTag, true) when an atom currently
+// tagged `currentTag` should be promoted given its creation date,
+// the current wall-clock `now`, and the operator-declared rule
+// chain. Loops the rule table top-to-bottom so a single call chains
+// every applicable rule in one shot (aggressive catch-up).
+//
+// Tags that don't appear as any rule's From pass through unchanged.
+// An empty rules slice disables promotion entirely — the function
+// returns (currentTag, false) immediately.
+func PromoteByCalendar(currentTag string, created, now time.Time, rules []PromotionRule) (string, bool) {
+	if len(rules) == 0 {
 		return currentTag, false
 	}
+	index := indexPromotionRules(rules)
 	tag := currentTag
 	moved := false
 	for {
-		next, advanced := stepPromoteByCalendar(tag, created, now)
+		next, advanced := stepPromoteByCalendar(tag, created, now, index)
 		if !advanced {
 			return tag, moved
 		}
@@ -32,33 +50,54 @@ func PromoteByCalendar(currentTag string, created, now time.Time) (string, bool)
 	}
 }
 
-// stepPromoteByCalendar applies a single rule step. Returns (newTag, true)
-// if the atom advances one tier, (currentTag, false) otherwise.
+// stepPromoteByCalendar applies a single rule step against the
+// already-indexed rules map. Returns (newTag, true) if the atom
+// advances one tier, (currentTag, false) otherwise.
 //
-// Each tier promotes when `created` predates the START of the current
-// period for that tier — strict thresholds, no grace window. Top-down
-// loop in PromoteByCalendar chains moves so a single tick can advance
-// an atom multiple tiers (aggressive catch-up).
-func stepPromoteByCalendar(currentTag string, created, now time.Time) (string, bool) {
-	switch currentTag {
-	case "quicknote/daily":
-		if created.Before(CalendarStartOfDay(now)) {
-			return "quicknote/weekly", true
-		}
-	case "quicknote/weekly":
-		if created.Before(CalendarStartOfWeek(now)) {
-			return "quicknote/monthly", true
-		}
-	case "quicknote/monthly":
-		if created.Before(CalendarStartOfMonth(now)) {
-			return "quicknote/yearly", true
-		}
-	case "quicknote/yearly":
-		if created.Before(CalendarStartOfYear(now)) {
-			return "quicknote/decadal", true
-		}
+// Promotion fires when `created` predates the START of the current
+// period for the rule's boundary — strict thresholds, no grace
+// window. PromoteByCalendar's outer loop chains moves so a single
+// tick can advance an atom across multiple tiers.
+func stepPromoteByCalendar(currentTag string, created, now time.Time, rules map[string]PromotionRule) (string, bool) {
+	rule, ok := rules[currentTag]
+	if !ok {
+		return currentTag, false
+	}
+	if created.Before(boundaryStart(rule.Boundary, now)) {
+		return rule.To, true
 	}
 	return currentTag, false
+}
+
+// indexPromotionRules turns the operator-declared rule slice into a
+// from-tag lookup map. Duplicate `from` keys are not validated here
+// — the catalog loader catches them at load time. The map is built
+// per PromoteByCalendar invocation; the cost is negligible against
+// the bearcli I/O the surrounding loop performs.
+func indexPromotionRules(rules []PromotionRule) map[string]PromotionRule {
+	out := make(map[string]PromotionRule, len(rules))
+	for _, r := range rules {
+		out[r.From] = r
+	}
+	return out
+}
+
+// boundaryStart maps the rule's Boundary string to the matching
+// calendar-start helper. Unknown boundaries return a zero Time so
+// the comparison in stepPromoteByCalendar never fires — load-time
+// validation catches typos before they reach this path.
+func boundaryStart(boundary string, now time.Time) time.Time {
+	switch boundary {
+	case "", "day":
+		return CalendarStartOfDay(now)
+	case "week":
+		return CalendarStartOfWeek(now)
+	case "month":
+		return CalendarStartOfMonth(now)
+	case "year":
+		return CalendarStartOfYear(now)
+	}
+	return time.Time{}
 }
 
 // ApplyTimeBasedPromotion walks every quicknote/* atom across `domains`,
@@ -82,9 +121,15 @@ func stepPromoteByCalendar(currentTag string, created, now time.Time) (string, b
 // Failures per atom are logged and skipped so one bad note doesn't stall
 // the whole sweep. Pins observed during the pass are NOT recorded — only
 // user-driven cross-domain moves create pins.
-func ApplyTimeBasedPromotion(ctx context.Context, domains []*Domain, pins *PinRegistry) error {
+//
+// An empty `rules` slice short-circuits — no rules declared in the
+// catalog means time-promotion is disabled.
+func ApplyTimeBasedPromotion(ctx context.Context, domains []*Domain, pins *PinRegistry, rules []PromotionRule) error {
+	if len(rules) == 0 {
+		return nil
+	}
 	now := time.Now()
-	domainByTag := indexQuicknoteDomains(domains)
+	domainByTag := indexPromotionDomains(domains, rules)
 
 	type atomToProcess struct {
 		atom   Note
@@ -112,7 +157,7 @@ func ApplyTimeBasedPromotion(ctx context.Context, domains []*Domain, pins *PinRe
 		if err := CheckCtx(ctx); err != nil {
 			return err
 		}
-		processAtomForPromotion(ctx, item.atom, item.source, domainByTag, pins, now)
+		processAtomForPromotion(ctx, item.atom, item.source, domainByTag, pins, now, rules)
 	}
 	return nil
 }
@@ -128,6 +173,7 @@ func processAtomForPromotion(
 	domainByTag map[string]*Domain,
 	pins *PinRegistry,
 	now time.Time,
+	rules []PromotionRule,
 ) {
 	if source.skipNote(atom) {
 		return
@@ -139,7 +185,7 @@ func processAtomForPromotion(
 	if pins.IsPinned(atom.ID, now) {
 		return
 	}
-	newTag, shouldMove := PromoteByCalendar(source.Tag, atom.Created, now)
+	newTag, shouldMove := PromoteByCalendar(source.Tag, atom.Created, now, rules)
 	if !shouldMove {
 		return
 	}
@@ -153,16 +199,25 @@ func processAtomForPromotion(
 	}
 }
 
-// indexQuicknoteDomains returns a map keyed by Tag of every quicknote/*
-// domain in `all`. Skip-atomics-pass domains (umbrellas) are excluded so
-// listNotes doesn't pull child atoms via Bear's hierarchical tag query.
-func indexQuicknoteDomains(all []*Domain) map[string]*Domain {
-	out := make(map[string]*Domain)
+// indexPromotionDomains returns a map keyed by Tag of every domain
+// that appears as either the From or To of a promotion rule. Skip-
+// atomics-pass domains (umbrellas) are excluded so listNotes doesn't
+// pull child atoms via Bear's hierarchical tag query. The set is
+// catalog-driven now — no hardcoded "quicknote/" prefix — so an
+// operator with their own ladder ("fleeting/inbox" → "fleeting/week"
+// → …) gets the same indexing for free.
+func indexPromotionDomains(all []*Domain, rules []PromotionRule) map[string]*Domain {
+	wanted := make(map[string]struct{}, len(rules)*2)
+	for _, r := range rules {
+		wanted[r.From] = struct{}{}
+		wanted[r.To] = struct{}{}
+	}
+	out := make(map[string]*Domain, len(wanted))
 	for _, d := range all {
 		if d.SkipAtomicsPass {
 			continue
 		}
-		if !strings.HasPrefix(d.Tag, "quicknote/") {
+		if _, ok := wanted[d.Tag]; !ok {
 			continue
 		}
 		out[d.Tag] = d

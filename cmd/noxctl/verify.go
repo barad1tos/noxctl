@@ -123,11 +123,13 @@ func buildVerifyApplyTemplate() (engine.ApplyOpts, error) {
 	_, pinTarget := pinPaths()
 	pins, _ := bear.LoadPinRegistry(pinTarget)
 	return engine.ApplyOpts{
-		Pins:         pins,
-		StatePath:    "./.noxctl/state.json",
-		LockPath:     "./.noxctl/.lock",
-		Features:     featuresFromCatalog(cat),
-		AuditEnabled: false,
+		Pins:            pins,
+		StatePath:       "./.noxctl/state.json",
+		LockPath:        "./.noxctl/.lock",
+		Features:        featuresFromCatalog(cat),
+		AuditEnabled:    false,
+		DailyDefaultTag: dailyDefaultTagFromCatalog(cat),
+		PromotionRules:  promotionRulesFromCatalog(cat),
 	}, nil
 }
 

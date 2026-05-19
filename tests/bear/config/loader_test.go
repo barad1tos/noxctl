@@ -122,6 +122,67 @@ func TestValidateCatalogTagInjection(t *testing.T) {
 	}
 }
 
+// validatePromotionsCat builds a minimal v=1 catalog with the given
+// promotion block and runs ValidateCatalog against it. Shared by the
+// "promotion-shape" assertions so the loader_test.go body stays under
+// the dupl threshold.
+func validatePromotionsCat(t *testing.T, promos []config.Promotion) error {
+	t.Helper()
+	cat := &config.Catalog{
+		Meta:       config.Meta{Version: "1", Locale: "uk"},
+		Promotions: promos,
+	}
+	return config.ValidateCatalog(cat, "test.toml")
+}
+
+// TestValidatePromotions_UnknownBoundary: catalog with a [[promotion]]
+// block carrying a typo in `boundary` fails at load with the accepted
+// set in the message. Without this guard the rules-driven promoter
+// would silently treat the rule as a no-op.
+func TestValidatePromotions_UnknownBoundary(t *testing.T) {
+	err := validatePromotionsCat(t, []config.Promotion{
+		{From: "a", To: "b", Boundary: "fortnight"},
+	})
+	if err == nil {
+		t.Fatal("unknown boundary: expected error")
+	}
+	if !strings.Contains(err.Error(), "unknown boundary") {
+		t.Errorf("err should mention 'unknown boundary': %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "day|week|month|year") {
+		t.Errorf("err should list accepted boundaries: %q", err.Error())
+	}
+}
+
+// TestValidatePromotions_DuplicateFrom: two [[promotion]] blocks with
+// the same `from` tag fail loudly. Otherwise the catalog-driven index
+// would keep only one rule and the operator would never see the rest
+// of their ladder applied.
+func TestValidatePromotions_DuplicateFrom(t *testing.T) {
+	err := validatePromotionsCat(t, []config.Promotion{
+		{From: "inbox", To: "week", Boundary: "day"},
+		{From: "inbox", To: "year", Boundary: "month"},
+	})
+	if err == nil {
+		t.Fatal("duplicate from: expected error")
+	}
+	if !strings.Contains(err.Error(), "duplicate") {
+		t.Errorf("err should mention 'duplicate': %q", err.Error())
+	}
+}
+
+// TestValidatePromotions_EmptyBoundaryAccepted: empty boundary defaults
+// to "day" — the most common operator case writes no explicit value.
+// Guards against a regression where the validator gets stricter than
+// the runtime and rejects the documented shorthand.
+func TestValidatePromotions_EmptyBoundaryAccepted(t *testing.T) {
+	if err := validatePromotionsCat(t, []config.Promotion{
+		{From: "a", To: "b", Boundary: ""},
+	}); err != nil {
+		t.Errorf("empty boundary: expected no error, got %v", err)
+	}
+}
+
 // validateOneStanzaTag builds a minimal v=1 catalog with a single
 // flat-list stanza carrying the given tag and runs ValidateCatalog
 // against it. Shared by every "single-stanza tag-shape" assertion.
