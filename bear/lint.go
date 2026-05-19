@@ -230,9 +230,19 @@ func SortFindings(findings []Finding) {
 // returns the consolidated finding set sorted by domain → category → title.
 // Listing failures are logged but don't abort the pass — caller gets every
 // reachable domain's findings.
+//
+// SIGINT/SIGTERM honors the operator's cancel intent: the ctx.Err check
+// at the top of each iteration short-circuits before any bearcli I/O,
+// so cancellation produces a deterministic zero-list-call exit instead
+// of racing the bearcli pool semaphore. Without the explicit guard the
+// per-domain listNotes call would still acquire the pool slot on the
+// ~50% of select-races where the slot wins over ctx.Done().
 func AuditDomains(ctx context.Context, domains []*Domain) []Finding {
 	var findings []Finding
 	for _, domain := range domains {
+		if err := CheckCtx(ctx); err != nil {
+			return findings
+		}
 		notes, err := domain.listNotes(ctx)
 		if err != nil {
 			log.Printf("audit: %s: list failed: %v", domain.Tag, err)
@@ -302,8 +312,16 @@ func LogAuditFindings(findings []Finding, logf func(format string, args ...any))
 // its atomics, and applies AutoFixAtom + bearcli overwrite for the fixable
 // findings. Idempotent — re-running on a clean corpus is a no-op. Listing
 // failures are logged but don't abort the pass.
+//
+// Honors SIGINT/SIGTERM the same way AuditDomains does — the ctx.Err
+// guard at the top of each iteration short-circuits before any bearcli
+// I/O, so a canceled sweep stops deterministically instead of racing the
+// pool semaphore for one more list+overwrite round.
 func LintApplyDomains(ctx context.Context, domains []*Domain) {
 	for _, domain := range domains {
+		if err := CheckCtx(ctx); err != nil {
+			return
+		}
 		notes, err := domain.listNotes(ctx)
 		if err != nil {
 			log.Printf("lint --apply: %s: list failed: %v", domain.Tag, err)
