@@ -68,6 +68,12 @@ func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 		StatePath: filepath.Join(dir, "state.json"),
 		LockPath:  filepath.Join(dir, ".lock"),
 		Features:  engine.AllFeaturesOn(),
+		// Auto-tag fast-pass is now gated on a non-empty
+		// DailyDefaultTag in addition to the feature flag — empty
+		// tag means "operator omitted [meta].daily_default_tag" and
+		// the spec is treated as disabled. Set a synthetic value so
+		// AllFeaturesOn actually exercises every pre-pass row here.
+		DailyDefaultTag: "stub/daily",
 	}
 	result, err := engine.Apply(context.Background(), opts)
 	if err != nil {
@@ -76,6 +82,32 @@ func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 	for _, name := range []string{"foreign_tag", "auto_tag", "cross_domain", "time_promotion", "duplicate_registry"} {
 		if _, ok := result.PrePasses[name]; !ok {
 			t.Errorf("pre-pass %q missing from result.PrePasses", name)
+		}
+	}
+}
+
+// TestApply_AutoTagGatedOnDailyDefaultTag pins the "empty tag = silent
+// disable" contract. With Features.AutoTagDefault=true and
+// DailyDefaultTag="" the auto-tag and placeholder-refresh specs must
+// be skipped entirely — earlier wiring called ApplyDailyDefaultTag
+// with a nil domain (map lookup on empty key) which returned an
+// error and stamped a spurious Failed=1 in the result.
+func TestApply_AutoTagGatedOnDailyDefaultTag(t *testing.T) {
+	dir := t.TempDir()
+	opts := engine.ApplyOpts{
+		Domains:   nil,
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.AllFeaturesOn(),
+		// DailyDefaultTag deliberately empty.
+	}
+	result, err := engine.Apply(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	for _, name := range []string{"auto_tag", "placeholder_refresh"} {
+		if _, ok := result.PrePasses[name]; ok {
+			t.Errorf("pre-pass %q ran despite empty DailyDefaultTag", name)
 		}
 	}
 }

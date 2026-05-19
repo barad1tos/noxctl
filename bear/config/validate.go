@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/barad1tos/noxctl/bear"
 )
 
 // tagFormatRE allows lowercase / uppercase letters, digits, slash,
@@ -47,42 +49,30 @@ func ValidateCatalog(cat *Catalog, path string) error {
 	return nil
 }
 
-// validBoundaries lists the calendar windows the time-promotion fast-
-// pass understands. Empty / unset boundary defaults to "day" — the
-// most common operator case (daily inbox rolling forward) writes no
-// explicit value.
-var validBoundaries = map[string]struct{}{
-	"":      {},
-	"day":   {},
-	"week":  {},
-	"month": {},
-	"year":  {},
-}
-
-// validatePromotions checks the [[promotion]] block for the two
-// regressions that the rules-driven promoter can't recover from at
-// runtime: an unknown `boundary` (typos silently produce a no-op
-// rule) and a duplicate `from` tag (the index map would keep only
-// one rule and the operator would never see the rest of their
-// ladder applied). Aggregated like every other catalog-level check.
+// validatePromotions checks the [[promotion]] block for regressions the
+// rules-driven promoter can't recover from at runtime:
+//
+//   - unknown `boundary` (typos silently produce a no-op rule),
+//   - duplicate `from` (the index map keeps only one rule, the rest
+//     of the operator's ladder is silently dropped),
+//   - self-loop (`From == To`) — PromoteByCalendar's chain loop
+//     advances `tag = next` and re-enters with the same rule, the
+//     boundary check stays satisfied, and the function hangs,
+//   - unreachable `To` — a typo'd target points at a tag no domain
+//     owns and no other rule chains from, so promoted notes land
+//     under a tag with no master/hub and silently disappear from the
+//     regen pipeline.
+//
+// Aggregated like every other catalog-level check.
 func validatePromotions(cat *Catalog, path string) []error {
 	if len(cat.Promotions) == 0 {
 		return nil
 	}
 	var errs []error
 	seen := make(map[string]int, len(cat.Promotions))
+	knownTargets := promotionTargetSet(cat)
 	for i, p := range cat.Promotions {
-		if p.From == "" {
-			errs = append(errs, fmt.Errorf("%s: promotion[%d]: from is required", path, i))
-		}
-		if p.To == "" {
-			errs = append(errs, fmt.Errorf("%s: promotion[%d] from=%q: to is required", path, i, p.From))
-		}
-		if _, ok := validBoundaries[p.Boundary]; !ok {
-			errs = append(errs, fmt.Errorf(
-				"%s: promotion[%d] from=%q: unknown boundary %q (valid: day|week|month|year, empty = day)",
-				path, i, p.From, p.Boundary))
-		}
+		errs = append(errs, validatePromotionShape(p, i, path, knownTargets)...)
 		if p.From == "" {
 			continue
 		}
@@ -95,6 +85,63 @@ func validatePromotions(cat *Catalog, path string) []error {
 		}
 	}
 	return errs
+}
+
+// validatePromotionShape collects every per-rule defect: missing
+// from/to, unknown boundary, self-loop, unknown destination tag.
+// Extracted from validatePromotions to keep the outer loop under the
+// gocognit budget.
+func validatePromotionShape(p Promotion, i int, path string, knownTargets map[string]struct{}) []error {
+	var errs []error
+	if p.From == "" {
+		errs = append(errs, fmt.Errorf("%s: promotion[%d]: from is required", path, i))
+		// from-less rule can't meaningfully report the rest with a
+		// useful identifier — return early so error stream stays
+		// readable.
+		return errs
+	}
+	if p.To == "" {
+		errs = append(errs, fmt.Errorf("%s: promotion[%d] from=%q: to is required", path, i, p.From))
+	}
+	if _, ok := bear.ValidPromotionBoundaries[p.Boundary]; !ok {
+		errs = append(errs, fmt.Errorf(
+			"%s: promotion[%d] from=%q: unknown boundary %q (valid: day|week|month|year, empty = day)",
+			path, i, p.From, p.Boundary))
+	}
+	if p.To != "" && p.From == p.To {
+		errs = append(errs, fmt.Errorf(
+			"%s: promotion[%d] from=%q: self-loop (from == to); time-promotion would advance forever",
+			path, i, p.From))
+	}
+	if p.To != "" && p.From != p.To {
+		if _, ok := knownTargets[p.To]; !ok {
+			errs = append(errs, fmt.Errorf(
+				"%s: promotion[%d] from=%q: to=%q does not match any declared domain tag or another promotion's from",
+				path, i, p.From, p.To))
+		}
+	}
+	return errs
+}
+
+// promotionTargetSet returns the universe of tags a `[[promotion]]
+// .to` field may legitimately reference: every declared domain Tag
+// plus every promotion's From (chained ladders are valid even if the
+// intermediate hop isn't a top-level domain — the engine simply
+// keeps rewriting the canonical tag-line). Used by validation to
+// catch typos in `to` at load time, not at first sweep.
+func promotionTargetSet(cat *Catalog) map[string]struct{} {
+	out := make(map[string]struct{}, len(cat.Domains)+len(cat.Promotions))
+	for _, d := range cat.Domains {
+		if d.Tag != "" {
+			out[d.Tag] = struct{}{}
+		}
+	}
+	for _, p := range cat.Promotions {
+		if p.From != "" {
+			out[p.From] = struct{}{}
+		}
+	}
+	return out
 }
 
 // validateMeta covers [meta].version + [meta].locale. Extracted to

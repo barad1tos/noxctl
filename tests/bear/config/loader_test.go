@@ -123,16 +123,40 @@ func TestValidateCatalogTagInjection(t *testing.T) {
 }
 
 // validatePromotionsCat builds a minimal v=1 catalog with the given
-// promotion block and runs ValidateCatalog against it. Shared by the
-// "promotion-shape" assertions so the loader_test.go body stays under
-// the dupl threshold.
+// promotion block and runs ValidateCatalog against it. The catalog
+// declares two synthetic flat-list domains ("a" and "b") so the
+// promotion-target validator has known tags to resolve against —
+// without these stanzas the new unreachable-`to` check would taint
+// otherwise-clean test cases. Shared by every "promotion-shape"
+// assertion to keep the body under the dupl threshold.
 func validatePromotionsCat(t *testing.T, promos []config.Promotion) error {
 	t.Helper()
 	cat := &config.Catalog{
-		Meta:       config.Meta{Version: "1", Locale: "uk"},
+		Meta: config.Meta{Version: "1", Locale: "uk"},
+		Domains: []config.Stanza{
+			{Tag: "a", IndexTitle: "A", Blueprint: "flat-list"},
+			{Tag: "b", IndexTitle: "B", Blueprint: "flat-list"},
+		},
 		Promotions: promos,
 	}
 	return config.ValidateCatalog(cat, "test.toml")
+}
+
+// assertPromotionsRejected runs validatePromotionsCat against the
+// given promotion table and asserts the aggregated error mentions
+// every required substring. Centralizes the rejection-shape boilerplate
+// so the per-defect tests stay under the dupl threshold.
+func assertPromotionsRejected(t *testing.T, label string, promos []config.Promotion, mustContain ...string) {
+	t.Helper()
+	err := validatePromotionsCat(t, promos)
+	if err == nil {
+		t.Fatalf("%s: expected error, got nil", label)
+	}
+	for _, want := range mustContain {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err should mention %q: %q", label, want, err.Error())
+		}
+	}
 }
 
 // TestValidatePromotions_UnknownBoundary: catalog with a [[promotion]]
@@ -140,18 +164,9 @@ func validatePromotionsCat(t *testing.T, promos []config.Promotion) error {
 // set in the message. Without this guard the rules-driven promoter
 // would silently treat the rule as a no-op.
 func TestValidatePromotions_UnknownBoundary(t *testing.T) {
-	err := validatePromotionsCat(t, []config.Promotion{
-		{From: "a", To: "b", Boundary: "fortnight"},
-	})
-	if err == nil {
-		t.Fatal("unknown boundary: expected error")
-	}
-	if !strings.Contains(err.Error(), "unknown boundary") {
-		t.Errorf("err should mention 'unknown boundary': %q", err.Error())
-	}
-	if !strings.Contains(err.Error(), "day|week|month|year") {
-		t.Errorf("err should list accepted boundaries: %q", err.Error())
-	}
+	assertPromotionsRejected(t, "unknown boundary",
+		[]config.Promotion{{From: "a", To: "b", Boundary: "fortnight"}},
+		"unknown boundary", "day|week|month|year")
 }
 
 // TestValidatePromotions_DuplicateFrom: two [[promotion]] blocks with
@@ -159,16 +174,12 @@ func TestValidatePromotions_UnknownBoundary(t *testing.T) {
 // would keep only one rule and the operator would never see the rest
 // of their ladder applied.
 func TestValidatePromotions_DuplicateFrom(t *testing.T) {
-	err := validatePromotionsCat(t, []config.Promotion{
-		{From: "inbox", To: "week", Boundary: "day"},
-		{From: "inbox", To: "year", Boundary: "month"},
-	})
-	if err == nil {
-		t.Fatal("duplicate from: expected error")
-	}
-	if !strings.Contains(err.Error(), "duplicate") {
-		t.Errorf("err should mention 'duplicate': %q", err.Error())
-	}
+	assertPromotionsRejected(t, "duplicate from",
+		[]config.Promotion{
+			{From: "inbox", To: "week", Boundary: "day"},
+			{From: "inbox", To: "year", Boundary: "month"},
+		},
+		"duplicate")
 }
 
 // TestValidatePromotions_EmptyBoundaryAccepted: empty boundary defaults
@@ -180,6 +191,49 @@ func TestValidatePromotions_EmptyBoundaryAccepted(t *testing.T) {
 		{From: "a", To: "b", Boundary: ""},
 	}); err != nil {
 		t.Errorf("empty boundary: expected no error, got %v", err)
+	}
+}
+
+// TestValidatePromotions_RejectedShapes pins every shape the
+// validator must catch at load time so the runtime never hits the
+// matching footgun. Each row is one rule plus the substring the
+// aggregated error must mention.
+//
+//   - self-loop (From == To): would hang PromoteByCalendar's chain
+//     loop because the boundary check stays satisfied forever.
+//   - unknown target: typo'd `to` (e.g. "weeky") points at a tag no
+//     domain owns and no rule chains from — promoted notes silently
+//     disappear from the regen pipeline.
+func TestValidatePromotions_RejectedShapes(t *testing.T) {
+	cases := []struct {
+		label string
+		rule  config.Promotion
+		want  string
+	}{
+		{"self-loop", config.Promotion{From: "a", To: "a", Boundary: "day"}, "self-loop"},
+		{"unknown target", config.Promotion{From: "a", To: "weeky", Boundary: "day"},
+			"does not match any declared domain"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			assertPromotionsRejected(t, tc.label, []config.Promotion{tc.rule}, tc.want)
+		})
+	}
+}
+
+// TestValidatePromotions_ChainedFromCountsAsTarget: a multi-step
+// ladder is valid when the target tag is either a declared domain or
+// another rule's `from`. Here "b → orphan" is reachable because the
+// next rule's `from = "orphan"` claims it, even though "orphan" is
+// not a declared domain. Pins the chain-aware target check so future
+// tightening doesn't break legitimate ladders.
+func TestValidatePromotions_ChainedFromCountsAsTarget(t *testing.T) {
+	err := validatePromotionsCat(t, []config.Promotion{
+		{From: "a", To: "orphan", Boundary: "day"},
+		{From: "orphan", To: "b", Boundary: "week"},
+	})
+	if err != nil {
+		t.Errorf("chained ladder: expected no error, got %v", err)
 	}
 }
 

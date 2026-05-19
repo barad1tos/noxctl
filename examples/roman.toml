@@ -3,7 +3,6 @@
   locale = "uk"
   bear_db = ""
   daily_default_tag = "quicknote/daily"
-  placeholder_h1 = "Quicknote"
 
 [[promotion]]
   from = "quicknote/daily"

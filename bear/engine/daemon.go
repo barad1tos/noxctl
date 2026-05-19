@@ -478,7 +478,12 @@ func (d *Daemon) handleAutoTagTick(ctx context.Context) {
 	// form in a single bearcli call.
 	domainsByTag := bear.DomainsByTag(d.opts.Domains)
 	dailyDomain := domainsByTag[d.opts.DailyDefaultTag]
-	autoTagOn := d.opts.Features.AutoTagDefault
+	// autoTagOn folds the catalog gate: an operator who omitted
+	// `[meta].daily_default_tag` gets a silently disabled fast-pass
+	// instead of `daily-default failed: dailyDomain is nil` log spam
+	// every poll tick (default 2s). Mirror of the apply.go pre-pass
+	// gate so daemon and one-shot paths agree.
+	autoTagOn := d.opts.Features.AutoTagDefault && d.opts.DailyDefaultTag != ""
 	feats := d.opts.Features
 	mkPass := func(name string, enabled bool, fn func(context.Context) (int, error)) autoTagPass {
 		return autoTagPass{name: name, enabled: enabled, fn: fn}

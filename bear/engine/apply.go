@@ -197,14 +197,21 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 	// in a single bearcli call instead of relying on the next regen
 	// cycle to restructure.
 	domainsByTag := bear.DomainsByTag(opts.Domains)
+	// autoTagOn folds the catalog-driven "operator declared a daily
+	// default tag" gate into the feature toggle. With AutoTagDefault on
+	// but DailyDefaultTag empty the fast-pass is treated as disabled —
+	// otherwise the spec calls ApplyDailyDefaultTag with a nil domain
+	// (lookup miss on empty key) and the pre-pass loop stamps a
+	// spurious Failed=1 for a feature the operator never opted into.
+	autoTagOn := opts.Features.AutoTagDefault && opts.DailyDefaultTag != ""
 	specs := []prePassSpec{
 		{opts.Features.ForeignTagEscape, "foreign_tag", "foreign-tag escape",
 			func() error { _, err := bear.ApplyForeignTagEscape(ctx, domainsByTag); return err }},
-		{opts.Features.AutoTagDefault, "auto_tag", "auto-tag",
+		{autoTagOn, "auto_tag", "auto-tag",
 			func() error { _, err := bear.ApplyDailyDefaultTag(ctx, domainsByTag[opts.DailyDefaultTag]); return err }},
 		{opts.Features.DomainBootstrap, "domain_bootstrap", "domain-bootstrap canonicalize",
 			func() error { _, err := bear.ApplyDomainBootstrap(ctx, domainsByTag); return err }},
-		{opts.Features.AutoTagDefault, "placeholder_refresh", "placeholder refresh",
+		{autoTagOn, "placeholder_refresh", "placeholder refresh",
 			func() error { _, err := bear.ApplyPlaceholderRefresh(ctx, domainsByTag); return err }},
 		{opts.Features.CrossDomainMoves, "cross_domain", "cross-domain moves",
 			func() error { return bear.ApplyCrossDomainMoves(ctx, opts.Domains, opts.Pins) }},

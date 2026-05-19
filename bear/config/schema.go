@@ -34,14 +34,12 @@ type Catalog struct {
 // Meta is the [meta] table. version is required; locale defaults to
 // "uk"; bear_db is optional override of Bear's default DB directory;
 // daily_default_tag binds the operator's "untagged-on-create" tag
-// for the auto-tag fast-pass; placeholder_h1 sets the bootstrap-URL
-// H1 marker the same fast-pass swaps for a real timestamp on click.
+// for the auto-tag fast-pass.
 type Meta struct {
 	Version         string `toml:"version"`
 	Locale          string `toml:"locale"`
 	BearDB          string `toml:"bear_db"`
 	DailyDefaultTag string `toml:"daily_default_tag"`
-	PlaceholderH1   string `toml:"placeholder_h1"`
 }
 
 // Promotion is a single rule in the time-based promotion ladder.

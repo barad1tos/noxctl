@@ -37,12 +37,27 @@ func PromoteByCalendar(currentTag string, created, now time.Time, rules []Promot
 	if len(rules) == 0 {
 		return currentTag, false
 	}
-	index := indexPromotionRules(rules)
+	return promoteByCalendarIndexed(currentTag, created, now, indexPromotionRules(rules))
+}
+
+// promoteByCalendarIndexed is the hot-path body of PromoteByCalendar
+// driven by a pre-built rules map. ApplyTimeBasedPromotion builds the
+// map once per sweep and threads it through every atom — without
+// this extraction the same map would be rebuilt N times per cycle
+// (per Sourcery review feedback on PR #11).
+func promoteByCalendarIndexed(currentTag string, created, now time.Time, index map[string]PromotionRule) (string, bool) {
 	tag := currentTag
 	moved := false
 	for {
 		next, advanced := stepPromoteByCalendar(tag, created, now, index)
-		if !advanced {
+		if !advanced || next == tag {
+			// next == tag is the defense-in-depth guard against a
+			// `From == To` self-loop sneaking past validation —
+			// without it PromoteByCalendar hangs forever on a
+			// malformed rule. validatePromotions rejects self-loops
+			// at load time, but defensive coding keeps the runtime
+			// safe if a programmatic catalog ever bypasses the
+			// validator.
 			return tag, moved
 		}
 		tag = next
@@ -82,10 +97,25 @@ func indexPromotionRules(rules []PromotionRule) map[string]PromotionRule {
 	return out
 }
 
+// ValidPromotionBoundaries is the single source of truth for the
+// boundary strings the time-promotion fast-pass understands. The
+// catalog validator (bear/config/validate.go) and the runtime
+// promoter (boundaryStart below) both consult this set so the two
+// can't drift — adding a fifth boundary requires exactly one edit
+// here and one new arm in boundaryStart.
+var ValidPromotionBoundaries = map[string]struct{}{
+	"":      {},
+	"day":   {},
+	"week":  {},
+	"month": {},
+	"year":  {},
+}
+
 // boundaryStart maps the rule's Boundary string to the matching
 // calendar-start helper. Unknown boundaries return a zero Time so
 // the comparison in stepPromoteByCalendar never fires — load-time
-// validation catches typos before they reach this path.
+// validation (against ValidPromotionBoundaries) catches typos before
+// they reach this path.
 func boundaryStart(boundary string, now time.Time) time.Time {
 	switch boundary {
 	case "", "day":
@@ -130,6 +160,10 @@ func ApplyTimeBasedPromotion(ctx context.Context, domains []*Domain, pins *PinRe
 	}
 	now := time.Now()
 	domainByTag := indexPromotionDomains(domains, rules)
+	// Build the from-tag → rule lookup once per sweep; ApplyTimeBased
+	// Promotion fans the same set across every atom, so rebuilding it
+	// in each PromoteByCalendar call is pure waste (Sourcery PR #11).
+	ruleIndex := indexPromotionRules(rules)
 
 	type atomToProcess struct {
 		atom   Note
@@ -157,7 +191,7 @@ func ApplyTimeBasedPromotion(ctx context.Context, domains []*Domain, pins *PinRe
 		if err := CheckCtx(ctx); err != nil {
 			return err
 		}
-		processAtomForPromotion(ctx, item.atom, item.source, domainByTag, pins, now, rules)
+		processAtomForPromotion(ctx, item.atom, item.source, domainByTag, pins, now, ruleIndex)
 	}
 	return nil
 }
@@ -173,7 +207,7 @@ func processAtomForPromotion(
 	domainByTag map[string]*Domain,
 	pins *PinRegistry,
 	now time.Time,
-	rules []PromotionRule,
+	ruleIndex map[string]PromotionRule,
 ) {
 	if source.skipNote(atom) {
 		return
@@ -185,7 +219,7 @@ func processAtomForPromotion(
 	if pins.IsPinned(atom.ID, now) {
 		return
 	}
-	newTag, shouldMove := PromoteByCalendar(source.Tag, atom.Created, now, rules)
+	newTag, shouldMove := promoteByCalendarIndexed(source.Tag, atom.Created, now, ruleIndex)
 	if !shouldMove {
 		return
 	}
