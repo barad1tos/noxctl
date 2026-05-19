@@ -173,3 +173,31 @@ func TestPromoteByCalendar_CustomLadder(t *testing.T) {
 			gotTag, gotMove)
 	}
 }
+
+// TestPromoteByCalendar_BoundaryParity pins the validator-vs-runtime
+// agreement on the boundary string set. `bear.ValidPromotionBoundaries`
+// is the catalog-level allow-list; the rules-driven promoter routes
+// each key through a calendar-start helper. A boundary that passes
+// validation but produces a zero `time.Time` at runtime is a silent
+// no-op rule — exactly the regression the shared map was introduced
+// to prevent. Iterating the map and asserting every key yields a
+// non-zero promotion outcome catches future drift in either
+// direction.
+func TestPromoteByCalendar_BoundaryParity(t *testing.T) {
+	// Pick a `created` far enough in the past to predate every
+	// supported boundary window; the only valid response for any
+	// non-empty key is "promote to target".
+	now := time.Date(2026, 5, 7, 14, 0, 0, 0, time.Local)
+	created := time.Date(2020, 1, 1, 0, 0, 0, 0, time.Local)
+	for boundary := range bear.ValidPromotionBoundaries {
+		rules := []bear.PromotionRule{
+			{From: "src", To: "dst", Boundary: boundary},
+		}
+		gotTag, gotMove := bear.PromoteByCalendar("src", created, now, rules)
+		if gotTag != "dst" || !gotMove {
+			t.Errorf("boundary=%q: got (%q, %v), want (\"dst\", true) — "+
+				"validator accepts this key but boundaryStart returned zero Time",
+				boundary, gotTag, gotMove)
+		}
+	}
+}

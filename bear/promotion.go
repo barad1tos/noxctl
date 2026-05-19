@@ -33,6 +33,11 @@ type PromotionRule struct {
 // Tags that don't appear as any rule's From pass through unchanged.
 // An empty rules slice disables promotion entirely — the function
 // returns (currentTag, false) immediately.
+// PromoteByCalendar is the public testing seam for the rules-driven
+// promoter. Production hot paths use promoteByCalendarIndexed
+// directly with a pre-built map so the per-atom work stays
+// allocation-free; this wrapper exists so test cases can spell their
+// rule tables as a flat slice.
 func PromoteByCalendar(currentTag string, created, now time.Time, rules []PromotionRule) (string, bool) {
 	if len(rules) == 0 {
 		return currentTag, false
@@ -42,9 +47,8 @@ func PromoteByCalendar(currentTag string, created, now time.Time, rules []Promot
 
 // promoteByCalendarIndexed is the hot-path body of PromoteByCalendar
 // driven by a pre-built rules map. ApplyTimeBasedPromotion builds the
-// map once per sweep and threads it through every atom — without
-// this extraction the same map would be rebuilt N times per cycle
-// (per Sourcery review feedback on PR #11).
+// map once per sweep and threads it through every atom; without this
+// extraction the same map would be rebuilt N times per cycle.
 func promoteByCalendarIndexed(currentTag string, created, now time.Time, index map[string]PromotionRule) (string, bool) {
 	tag := currentTag
 	moved := false
@@ -162,7 +166,7 @@ func ApplyTimeBasedPromotion(ctx context.Context, domains []*Domain, pins *PinRe
 	domainByTag := indexPromotionDomains(domains, rules)
 	// Build the from-tag → rule lookup once per sweep; ApplyTimeBased
 	// Promotion fans the same set across every atom, so rebuilding it
-	// in each PromoteByCalendar call is pure waste (Sourcery PR #11).
+	// in each PromoteByCalendar call would be pure waste.
 	ruleIndex := indexPromotionRules(rules)
 
 	type atomToProcess struct {
