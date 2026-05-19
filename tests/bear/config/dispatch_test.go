@@ -21,13 +21,12 @@ func noResolver() func([]string) ([]*bear.Domain, error) {
 	return nil
 }
 
-// TestDispatchMapSize: the closed catalog has EXACTLY 7 entries — the
-// 6 declarative blueprints plus the closed "custom" registry added in
-// D-06. Adding/removing a blueprint requires explicit map edit
-// plus a new builder (D-12); this test is the canary.
+// TestDispatchMapSize: the closed catalog has EXACTLY 6 declarative
+// blueprints. Adding or removing one requires an explicit map edit
+// plus a new builder; this test is the canary.
 func TestDispatchMapSize(t *testing.T) {
-	if got := config.DispatchSize(); got != 7 {
-		t.Fatalf("dispatch map size = %d, want 7 (D-12 closed catalog +  D-06 custom)", got)
+	if got := config.DispatchSize(); got != 6 {
+		t.Fatalf("dispatch map size = %d, want 6 (closed catalog)", got)
 	}
 }
 
@@ -132,7 +131,6 @@ func TestDispatchUnknownBlueprintSentinel(t *testing.T) {
 	for _, want := range []string{
 		"flat-list", "flat-table", "grouped-vertical",
 		"hub-routed", "hub-routed-with-subtag", "umbrella",
-		"custom", //  D-06 — closed Go renderer registry
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("err message missing %q (helps users copy-paste valid value); got %q", want, err.Error())

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/barad1tos/noxctl/bear"
-	"github.com/barad1tos/noxctl/bear/custom"
 )
 
 // buildFunc constructs a *bear.Domain from a stanza. The
@@ -12,15 +11,10 @@ import (
 // builders ignore it.
 type buildFunc func(s Stanza, resolveChildren func([]string) ([]*bear.Domain, error)) (*bear.Domain, error)
 
-// dispatch is the closed 7-entry catalog that maps a blueprint string
-// to the corresponding bear.New*Domain factory. Adding an 8th
+// dispatch is the closed 6-entry catalog that maps a blueprint string
+// to the corresponding bear.New*Domain factory. Adding a seventh
 // blueprint requires an explicit map entry plus a new builder; there
-// is intentionally no reflection or struct-tag-driven grammar (D-12).
-//
-// The "custom" entry (D-06) is itself a closed registry: the
-// renderer name picks one of the Go-side renderers in bear/custom/.
-// Adding a new custom renderer requires Go code + test, same gate as
-// adding a new blueprint — NOT a scripting hatch.
+// is intentionally no reflection or struct-tag-driven grammar.
 //
 // The map is unexported so the loader is the only caller — Dispatch
 // is the public entry point. DispatchSize is exported for tests.
@@ -31,7 +25,6 @@ var dispatch = map[string]buildFunc{
 	"hub-routed":             buildHubRouted,
 	"hub-routed-with-subtag": buildHubRoutedSubTag,
 	"umbrella":               buildUmbrella,
-	"custom":                 buildCustom,
 }
 
 // bucketedBuilder returns a buildFunc bound to the given blueprint
@@ -57,7 +50,7 @@ func DispatchSize() int { return len(dispatch) }
 // ErrUnknownBlueprint messages. Keep in sync with the dispatch map
 // keys (the test enforces this).
 const validBlueprints = "flat-list, flat-table, grouped-vertical, " +
-	"hub-routed, hub-routed-with-subtag, umbrella, custom"
+	"hub-routed, hub-routed-with-subtag, umbrella"
 
 // Dispatch maps a stanza's blueprint string to a *bear.Domain via the
 // closed catalog. Returns an error wrapping ErrUnknownBlueprint when
@@ -95,7 +88,7 @@ const (
 	optSubtag        optKey = "subtag"
 	optLegacyAuthor  optKey = "legacy_author_fallback"
 	optStripAuthorH2 optKey = "strip_legacy_author_h2"
-	optRenderer      optKey = "renderer"
+	optMasterSection optKey = "master_section"
 	optQuickPlaceH1  optKey = "quick_placeholder_h1"
 )
 
@@ -105,7 +98,7 @@ var allOptKeys = []optKey{
 	optBuckets, optUnknownBucket, optOwnGroup, optOwnAliases,
 	optHubH2Prefix, optHubH2Legacy, optChildren, optDefaultChild, optSubtag,
 	optLegacyAuthor, optStripAuthorH2,
-	optRenderer,
+	optMasterSection,
 	optQuickPlaceH1,
 }
 
@@ -136,8 +129,8 @@ func stanzaHas(s Stanza, k optKey) bool {
 		return s.LegacyAuthorFallback != nil
 	case optStripAuthorH2:
 		return s.StripLegacyAuthorH2 != nil
-	case optRenderer:
-		return s.Renderer != nil
+	case optMasterSection:
+		return s.MasterSections != nil
 	case optQuickPlaceH1:
 		return s.QuickPlaceholderH1 != nil
 	}
@@ -207,19 +200,118 @@ func buildBucketed(blueprint string, s Stanza,
 }
 
 // buildHubRouted: REQUIRES unknown_bucket + hub_h2_prefix. Allows
-// own_group / own_aliases / legacy flags. always wires
-// DefaultRenderMaster3Tier; renderer identity is concern.
+// own_group / own_aliases / legacy flags + master_section blocks.
+// When [[domain.master_section]] is present the domain swaps its
+// master from the default 3-tier layout to the generic vertical-
+// sections renderer driven by the predicates the operator declared.
 func buildHubRouted(s Stanza, _ func([]string) ([]*bear.Domain, error)) (*bear.Domain, error) {
 	if err := validateBlueprintFields("hub-routed", s,
 		[]optKey{optUnknownBucket, optHubH2Prefix},
 		[]optKey{optUnknownBucket, optHubH2Prefix, optHubH2Legacy,
 			optOwnGroup, optOwnAliases,
-			optLegacyAuthor, optStripAuthorH2}); err != nil {
+			optLegacyAuthor, optStripAuthorH2,
+			optMasterSection}); err != nil {
+		return nil, err
+	}
+	if err := validateMasterSections(s); err != nil {
 		return nil, err
 	}
 	d := bear.NewHubRoutedDomain(s.Tag, s.IndexTitle, *s.UnknownBucket, *s.HubH2Prefix, bear.DefaultRenderMaster3Tier)
 	applyHubRoutedOptionals(d, s)
+	applyMasterSections(d, s)
 	return d, nil
+}
+
+// validateMasterSections enforces the per-section selection-rule
+// constraints up-front so dispatch errors surface at load time, not
+// at first render. An empty `master_section = []` block is rejected
+// because it produces a silent blank master at render time; each
+// section must set at most one of Buckets / Script; an unknown
+// script or count_mode string is rejected with the accepted set in
+// the error message; sections must carry a non-empty Title because
+// empty headers would render as `(N)` which is operator-confusing.
+func validateMasterSections(s Stanza) error {
+	if s.MasterSections == nil {
+		return nil
+	}
+	if len(*s.MasterSections) == 0 {
+		return fmt.Errorf("hub-routed %q: master_section block is present but empty; "+
+			"remove the block to keep the default 3-tier master, or add at least one section", s.Tag)
+	}
+	validScripts := map[string]struct{}{"latin": {}, "non-latin": {}}
+	validCounts := map[string]struct{}{"": {}, "notes": {}, "buckets": {}}
+	for i, sec := range *s.MasterSections {
+		if sec.Title == "" {
+			return fmt.Errorf("hub-routed %q: master_section[%d] is missing required `title`", s.Tag, i)
+		}
+		if len(sec.Buckets) > 0 && sec.Script != "" {
+			return fmt.Errorf("hub-routed %q: master_section[%d] %q sets both `buckets` and `script`; pick exactly one selection rule",
+				s.Tag, i, sec.Title)
+		}
+		if sec.Script != "" {
+			if _, ok := validScripts[sec.Script]; !ok {
+				return fmt.Errorf("hub-routed %q: master_section[%d] %q has unknown script %q (valid: latin|non-latin)",
+					s.Tag, i, sec.Title, sec.Script)
+			}
+		}
+		if _, ok := validCounts[sec.CountMode]; !ok {
+			return fmt.Errorf("hub-routed %q: master_section[%d] %q has unknown count_mode %q (valid: notes|buckets, empty = notes)",
+				s.Tag, i, sec.Title, sec.CountMode)
+		}
+	}
+	return nil
+}
+
+// applyMasterSections copies the TOML master_section blocks onto the
+// domain and swaps RenderMaster to the generic sectioned renderer.
+// No-op when MasterSections is unset — the default 3-tier master
+// stays in place.
+func applyMasterSections(d *bear.Domain, s Stanza) {
+	if s.MasterSections == nil {
+		return
+	}
+	sections := make([]bear.MasterSection, len(*s.MasterSections))
+	for i, sec := range *s.MasterSections {
+		sections[i] = bear.MasterSection{
+			Title:            sec.Title,
+			Buckets:          sec.Buckets,
+			Script:           sec.Script,
+			CountMode:        countModeFromString(sec.CountMode),
+			ShowBulletCounts: showBulletCountsDefault(sec.ShowBulletCounts),
+		}
+	}
+	d.MasterSections = sections
+	d.RenderMaster = bear.SectionedMasterRenderer()
+}
+
+// countModeFromString maps the TOML enum string to the bear.CountMode
+// constant. Empty → CountModeNotes (the renderer-friendly default).
+// validateMasterSections rejects unknown strings before this runs.
+func countModeFromString(s string) bear.CountMode {
+	if s == "buckets" {
+		return bear.CountModeBuckets
+	}
+	return bear.CountModeNotes
+}
+
+// ApplyMasterSectionsForTest exposes applyMasterSections to the
+// external test package. Production callers reach the same logic
+// through buildHubRouted; this seam lets a test drive two consecutive
+// applies on the same *bear.Domain to pin the "no append on repeat"
+// idempotency contract without going through full Dispatch (which
+// constructs a fresh Domain each call and can't catch the regression).
+func ApplyMasterSectionsForTest(d *bear.Domain, s Stanza) {
+	applyMasterSections(d, s)
+}
+
+// showBulletCountsDefault resolves the *bool pointer to a plain bool.
+// Unset → true so the common case (`[[bucket]] (N)` bullets) needs
+// zero config; operators wanting plain wikilinks set false explicitly.
+func showBulletCountsDefault(p *bool) bool {
+	if p == nil {
+		return true
+	}
+	return *p
 }
 
 // applyHubRoutedOptionals stamps the optional pointer-typed fields on
@@ -295,79 +387,4 @@ func safeNewUmbrellaDomain(tag, indexTitle, defaultChild string, kids []*bear.Do
 		}
 	}()
 	return bear.NewUmbrellaDomain(tag, indexTitle, defaultChild, kids), nil
-}
-
-// buildCustom dispatches "custom" stanzas (D-06). The renderer
-// name picks one of the closed Go-side renderers in bear/custom/; the
-// registered Apply func stamps non-default callbacks (and, for agents,
-// extra primitive flags) onto a base hub-routed Domain.
-//
-// All three current custom renderers (lyrics, quotes, agents) are
-// hub-routed-shaped at the Domain level — they require unknown_bucket
-// + hub_h2_prefix and accept the standard hub-routed optional fields.
-// If a future custom renderer needs a fundamentally different base,
-// the right move is a separate base-builder, not a switch in here.
-//
-// ErrUnknownRenderer flows out as a wrap chain so callers test via
-// errors.Is(err, custom.ErrUnknownRenderer) — never string-match
-// (from the recurring-pitfalls catalog).
-func buildCustom(s Stanza, _ func([]string) ([]*bear.Domain, error)) (*bear.Domain, error) {
-	if s.Renderer == nil {
-		return nil, fmt.Errorf("custom %q: renderer is required for blueprint \"custom\"", s.Tag)
-	}
-	if err := validateBlueprintFields("custom", s,
-		[]optKey{optRenderer, optUnknownBucket, optHubH2Prefix},
-		[]optKey{
-			optRenderer, optUnknownBucket, optHubH2Prefix, optHubH2Legacy,
-			optOwnGroup, optOwnAliases,
-			optLegacyAuthor, optStripAuthorH2,
-		}); err != nil {
-		return nil, err
-	}
-	// RENDERER INVARIANT GUARD (WR-01): certain custom renderers fix
-	// flags that are otherwise hub-routed optionals. Because the order
-	// below is `c.Apply(d) → applyHubRoutedOptionals(d, s)`, a TOML
-	// stanza that overrode one of those flags would silently win over
-	// the renderer's invariant — surfacing later as corpus corruption
-	// at runtime (e.g. agents body has `## Metadata` H2;
-	// LegacyAuthorFallback=true would misread it as the bucket name).
-	// Fail loudly at validate-time instead.
-	if err := rejectCustomFlagConflicts(s); err != nil {
-		return nil, err
-	}
-	c, err := custom.Lookup(*s.Renderer)
-	if err != nil {
-		return nil, fmt.Errorf("custom %q: %w", s.Tag, err)
-	}
-	d := bear.NewHubRoutedDomain(s.Tag, s.IndexTitle, *s.UnknownBucket, *s.HubH2Prefix,
-		bear.DefaultRenderMaster3Tier)
-	c.Apply(d)
-	applyHubRoutedOptionals(d, s)
-	return d, nil
-}
-
-// rejectCustomFlagConflicts surfaces a validate-time error when a TOML
-// stanza tries to override a flag the custom renderer's Apply func
-// explicitly stamps. agents flips both legacy flags to false (see
-// bear/custom/agents.go::applyAgents); any TOML-side override on those
-// fields would silently win because applyHubRoutedOptionals runs AFTER
-// c.Apply. Returns nil for unrestricted renderers (lyrics, quotes).
-//
-// from the recurring-pitfalls catalog: callers test the disposition
-// via the returned error message, not by string-matching on the
-// surfaced fields elsewhere in the pipeline.
-func rejectCustomFlagConflicts(s Stanza) error {
-	if s.Renderer == nil {
-		return nil
-	}
-	switch *s.Renderer {
-	case "agents":
-		if s.LegacyAuthorFallback != nil || s.StripLegacyAuthorH2 != nil {
-			return fmt.Errorf("custom %q renderer=%q forbids "+
-				"legacy_author_fallback / strip_legacy_author_h2 overrides "+
-				"(renderer enforces both=false; see bear/custom/agents.go)",
-				s.Tag, *s.Renderer)
-		}
-	}
-	return nil
 }
