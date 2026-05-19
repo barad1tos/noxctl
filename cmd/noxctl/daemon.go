@@ -80,13 +80,15 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 	}
 	opts := engine.DaemonOpts{
 		ApplyOpts: engine.ApplyOpts{
-			Domains:      domains,
-			Pins:         pins,
-			StatePath:    "./.noxctl/state.json",
-			LockPath:     "./.noxctl/.lock",
-			Features:     featuresFromCatalog(cat),
-			AuditEnabled: false,
-			Stderr:       os.Stderr,
+			Domains:         domains,
+			Pins:            pins,
+			StatePath:       "./.noxctl/state.json",
+			LockPath:        "./.noxctl/.lock",
+			Features:        featuresFromCatalog(cat),
+			AuditEnabled:    false,
+			Stderr:          os.Stderr,
+			DailyDefaultTag: dailyDefaultTagFromCatalog(cat),
+			PromotionRules:  promotionRulesFromCatalog(cat),
 		},
 		BearDBDir: bearDBDir,
 	}

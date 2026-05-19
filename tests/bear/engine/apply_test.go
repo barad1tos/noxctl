@@ -68,6 +68,12 @@ func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 		StatePath: filepath.Join(dir, "state.json"),
 		LockPath:  filepath.Join(dir, ".lock"),
 		Features:  engine.AllFeaturesOn(),
+		// Auto-tag fast-pass is now gated on a non-empty
+		// DailyDefaultTag in addition to the feature flag — empty
+		// tag means "operator omitted [meta].daily_default_tag" and
+		// the spec is treated as disabled. Set a synthetic value so
+		// AllFeaturesOn actually exercises every pre-pass row here.
+		DailyDefaultTag: "stub/daily",
 	}
 	result, err := engine.Apply(context.Background(), opts)
 	if err != nil {
@@ -77,6 +83,42 @@ func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 		if _, ok := result.PrePasses[name]; !ok {
 			t.Errorf("pre-pass %q missing from result.PrePasses", name)
 		}
+	}
+}
+
+// TestApply_AutoTagGatedOnDailyDefaultTag pins the "empty tag = silent
+// disable" contract for the daily-default fast-pass while preserving
+// placeholder-refresh independence:
+//
+//   - auto_tag is skipped when DailyDefaultTag is empty — earlier
+//     wiring called ApplyDailyDefaultTag with a nil domain (map
+//     lookup on empty key) which returned an error and stamped a
+//     spurious Failed=1 in the result.
+//   - placeholder_refresh must still run because ApplyPlaceholder
+//     Refresh has no dependency on the daily tag — it iterates every
+//     domain with a non-empty QuickPlaceholderH1. Folding the daily
+//     gate into both passes would silently disable placeholder
+//     refresh for catalogs that set `quick_placeholder_h1` on a
+//     domain without declaring `[meta].daily_default_tag`.
+func TestApply_AutoTagGatedOnDailyDefaultTag(t *testing.T) {
+	dir := t.TempDir()
+	opts := engine.ApplyOpts{
+		Domains:   nil,
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.AllFeaturesOn(),
+		// DailyDefaultTag deliberately empty.
+	}
+	result, err := engine.Apply(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if _, ok := result.PrePasses["auto_tag"]; ok {
+		t.Error("pre-pass \"auto_tag\" ran despite empty DailyDefaultTag")
+	}
+	if _, ok := result.PrePasses["placeholder_refresh"]; !ok {
+		t.Error("pre-pass \"placeholder_refresh\" was skipped; it must stay on " +
+			"Features.AutoTagDefault alone (independent of DailyDefaultTag)")
 	}
 }
 

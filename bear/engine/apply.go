@@ -32,14 +32,16 @@ import (
 // no defaults; caller supplies every field per "Accept interfaces,
 // return structs".
 type ApplyOpts struct {
-	Domains      []*bear.Domain    // REQUIRED — engine iterates and calls RunRegen
-	Pins         *bear.PinRegistry // REQUIRED — may be empty registry; nil-safe per bear/pins.go
-	StatePath    string            // REQUIRED — "./.noxctl/state.json"
-	LockPath     string            // REQUIRED — "./.noxctl/.lock" (used by )
-	Features     Features          // REQUIRED — flat toggles per D-05
-	NoWait       bool              // optional; --no-wait fail-fast on lock contention ()
-	Stderr       io.Writer         // optional; default os.Stderr — used by lock-acquire wait advisory
-	AuditEnabled bool              // optional; default false. Set true to run AuditDomains pre-pass (regen-watchd parity: REGEN_AUDIT != "off").
+	Domains   []*bear.Domain    // REQUIRED — engine iterates and calls RunRegen
+	Pins      *bear.PinRegistry // REQUIRED — may be empty registry; nil-safe per bear/pins.go
+	StatePath string            // REQUIRED — "./.noxctl/state.json"
+	LockPath  string            // REQUIRED — "./.noxctl/.lock" (used by )
+	Features  Features          // REQUIRED — flat toggles per D-05
+	NoWait    bool              // optional; --no-wait fail-fast on lock contention ()
+	Stderr    io.Writer         // optional; default os.Stderr — used by lock-acquire wait advisory
+	// AuditEnabled, when true, runs the AuditDomains pre-pass. Mirrors
+	// the legacy daemon's REGEN_AUDIT != "off" gate. Default false.
+	AuditEnabled bool
 	// SkipFlock — optional; when true, Apply skips both the AcquireApply
 	// flock acquire AND the.apply-pending sentinel write. Used by
 	// engine.Daemon.cycleOnce, which already holds the daemon flock and
@@ -70,6 +72,19 @@ type ApplyOpts struct {
 	// from worker goroutines — implementations MUST be concurrency-safe
 	// (atomic/mutex).
 	DomainTimingHook func(tag string, elapsed time.Duration)
+
+	// DailyDefaultTag binds the operator-chosen tag for untagged-on-
+	// create notes (e.g. Bear's compose-from-Notes-view). Empty disables
+	// the auto-tag fast-pass entirely so a fork with no notion of a
+	// "daily" tag stays silent. Wired from [meta].daily_default_tag in
+	// the TOML catalog.
+	DailyDefaultTag string
+
+	// PromotionRules drives the time-based promotion fast-pass. Empty
+	// disables time-promotion entirely. Each rule names a source tag,
+	// a target tag, and the calendar boundary that triggers the move.
+	// Wired from [[promotion]] blocks in the TOML catalog.
+	PromotionRules []bear.PromotionRule
 }
 
 // DefaultBearcliConcurrency is the ship-default capacity for
@@ -184,19 +199,79 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 	// in a single bearcli call instead of relying on the next regen
 	// cycle to restructure.
 	domainsByTag := bear.DomainsByTag(opts.Domains)
+	// dailyTagOn folds the catalog-driven "operator declared a daily
+	// default tag" gate into the feature toggle. With AutoTagDefault on
+	// but DailyDefaultTag empty the daily-default fast-pass is treated
+	// as disabled — otherwise the spec calls ApplyDailyDefaultTag with
+	// a nil domain (lookup miss on empty key) and stamps a spurious
+	// Failed=1 for a feature the operator never opted into.
+	//
+	// placeholder-refresh stays gated on AutoTagDefault alone: it
+	// iterates every domain with a non-empty QuickPlaceholderH1 and
+	// has no dependency on the daily tag. Folding DailyDefaultTag
+	// into its gate would silently disable placeholder refresh for
+	// any catalog that declares `quick_placeholder_h1` on a domain
+	// without also setting `[meta].daily_default_tag`.
+	dailyTagOn := opts.Features.AutoTagDefault && opts.DailyDefaultTag != ""
+	// dupl: keyed-fields layout makes the 6 entries look similar by
+	// shape, but each closure dispatches a distinct pre-pass with
+	// different inputs. The repetition is the cost of the readable
+	// vertical structure; collapsing into a helper hides the dispatch
+	// list and makes the order harder to audit.
+	//nolint:dupl
 	specs := []prePassSpec{
-		{opts.Features.ForeignTagEscape, "foreign_tag", "foreign-tag escape",
-			func() error { _, err := bear.ApplyForeignTagEscape(ctx, domainsByTag); return err }},
-		{opts.Features.AutoTagDefault, "auto_tag", "auto-tag",
-			func() error { _, err := bear.ApplyDailyDefaultTag(ctx, domainsByTag["quicknote/daily"]); return err }},
-		{opts.Features.DomainBootstrap, "domain_bootstrap", "domain-bootstrap canonicalize",
-			func() error { _, err := bear.ApplyDomainBootstrap(ctx, domainsByTag); return err }},
-		{opts.Features.AutoTagDefault, "placeholder_refresh", "placeholder refresh",
-			func() error { _, err := bear.ApplyPlaceholderRefresh(ctx, domainsByTag); return err }},
-		{opts.Features.CrossDomainMoves, "cross_domain", "cross-domain moves",
-			func() error { return bear.ApplyCrossDomainMoves(ctx, opts.Domains, opts.Pins) }},
-		{opts.Features.TimePromotion, "time_promotion", "time-promotion",
-			func() error { return bear.ApplyTimeBasedPromotion(ctx, opts.Domains, opts.Pins) }},
+		{
+			enabled: opts.Features.ForeignTagEscape,
+			name:    "foreign_tag",
+			label:   "foreign-tag escape",
+			fn: func() error {
+				_, err := bear.ApplyForeignTagEscape(ctx, domainsByTag)
+				return err
+			},
+		},
+		{
+			enabled: dailyTagOn,
+			name:    "auto_tag",
+			label:   "auto-tag",
+			fn: func() error {
+				_, err := bear.ApplyDailyDefaultTag(ctx, domainsByTag[opts.DailyDefaultTag])
+				return err
+			},
+		},
+		{
+			enabled: opts.Features.DomainBootstrap,
+			name:    "domain_bootstrap",
+			label:   "domain-bootstrap canonicalize",
+			fn: func() error {
+				_, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+				return err
+			},
+		},
+		{
+			enabled: opts.Features.AutoTagDefault,
+			name:    "placeholder_refresh",
+			label:   "placeholder refresh",
+			fn: func() error {
+				_, err := bear.ApplyPlaceholderRefresh(ctx, domainsByTag)
+				return err
+			},
+		},
+		{
+			enabled: opts.Features.CrossDomainMoves,
+			name:    "cross_domain",
+			label:   "cross-domain moves",
+			fn: func() error {
+				return bear.ApplyCrossDomainMoves(ctx, opts.Domains, opts.Pins)
+			},
+		},
+		{
+			enabled: opts.Features.TimePromotion,
+			name:    "time_promotion",
+			label:   "time-promotion",
+			fn: func() error {
+				return bear.ApplyTimeBasedPromotion(ctx, opts.Domains, opts.Pins, opts.PromotionRules)
+			},
+		},
 	}
 	for _, spec := range specs {
 		runPrePass(spec, result)
@@ -479,7 +554,10 @@ func computeDomainHash(ctx context.Context, domain *bear.Domain) string {
 // (transient state during initial setup); caller treats this as
 // "skip the hash update, preserve prior" rather than overwriting
 // with "".
-func snapshotDomainContent(ctx context.Context, domain *bear.Domain) (master string, hubs map[string]string, err error) {
+func snapshotDomainContent(
+	ctx context.Context,
+	domain *bear.Domain,
+) (master string, hubs map[string]string, err error) {
 	master, mErr := bear.FetchMasterContent(ctx, domain)
 	if mErr != nil {
 		return "", nil, fmt.Errorf("snapshotDomainContent(%s) master: %w", domain.Tag, mErr)

@@ -10,6 +10,17 @@ import (
 func TestPromoteByCalendar(t *testing.T) {
 	now := time.Date(2026, 5, 7, 14, 0, 0, 0, time.Local) // Thu
 
+	// Promotion ladder used in tests mirrors the catalog form an
+	// operator would write in TOML. PromoteByCalendar's contract is
+	// rules-driven now: an empty slice short-circuits, and unknown
+	// source tags pass through unchanged.
+	rules := []bear.PromotionRule{
+		{From: "quicknote/daily", To: "quicknote/weekly", Boundary: "day"},
+		{From: "quicknote/weekly", To: "quicknote/monthly", Boundary: "week"},
+		{From: "quicknote/monthly", To: "quicknote/yearly", Boundary: "month"},
+		{From: "quicknote/yearly", To: "quicknote/decadal", Boundary: "year"},
+	}
+
 	cases := []struct {
 		name           string
 		currentTag     string
@@ -122,10 +133,71 @@ func TestPromoteByCalendar(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotTag, gotMove := bear.PromoteByCalendar(tc.currentTag, tc.created, now)
+			gotTag, gotMove := bear.PromoteByCalendar(tc.currentTag, tc.created, now, rules)
 			if gotTag != tc.wantNewTag || gotMove != tc.wantShouldMove {
 				t.Errorf("got (%q, %v), want (%q, %v)", gotTag, gotMove, tc.wantNewTag, tc.wantShouldMove)
 			}
 		})
+	}
+}
+
+// TestPromoteByCalendar_EmptyRules — the rules-driven short-circuit:
+// an operator with no `[[promotion]]` blocks should see every tag pass
+// through unchanged regardless of creation date. Pins the contract
+// because empty-rules-disables time-promotion is what makes the
+// catalog-driven design opt-in.
+func TestPromoteByCalendar_EmptyRules(t *testing.T) {
+	now := time.Date(2026, 5, 7, 14, 0, 0, 0, time.Local)
+	created := time.Date(2020, 1, 1, 0, 0, 0, 0, time.Local) // ancient
+	gotTag, gotMove := bear.PromoteByCalendar("quicknote/daily", created, now, nil)
+	if gotTag != "quicknote/daily" || gotMove {
+		t.Errorf("empty rules: got (%q, %v), want (\"quicknote/daily\", false)",
+			gotTag, gotMove)
+	}
+}
+
+// TestPromoteByCalendar_CustomLadder — operator-defined ladder using
+// non-quicknote tags chains correctly. Confirms the rules-driven
+// promoter is fully decoupled from the legacy quicknote/* hardcode.
+func TestPromoteByCalendar_CustomLadder(t *testing.T) {
+	now := time.Date(2026, 5, 7, 14, 0, 0, 0, time.Local)
+	rules := []bear.PromotionRule{
+		{From: "fleeting/inbox", To: "fleeting/week", Boundary: "day"},
+		{From: "fleeting/week", To: "fleeting/archive", Boundary: "week"},
+	}
+	// Created last month → ladder runs to terminal `fleeting/archive`.
+	created := time.Date(2026, 4, 1, 14, 0, 0, 0, time.Local)
+	gotTag, gotMove := bear.PromoteByCalendar("fleeting/inbox", created, now, rules)
+	if gotTag != "fleeting/archive" || !gotMove {
+		t.Errorf("custom ladder: got (%q, %v), want (\"fleeting/archive\", true)",
+			gotTag, gotMove)
+	}
+}
+
+// TestPromoteByCalendar_BoundaryParity pins the validator-vs-runtime
+// agreement on the boundary string set. `bear.ValidPromotionBoundaries`
+// is the catalog-level allow-list; the rules-driven promoter routes
+// each key through a calendar-start helper. A boundary that passes
+// validation but produces a zero `time.Time` at runtime is a silent
+// no-op rule — exactly the regression the shared map was introduced
+// to prevent. Iterating the map and asserting every key yields a
+// non-zero promotion outcome catches future drift in either
+// direction.
+func TestPromoteByCalendar_BoundaryParity(t *testing.T) {
+	// Pick a `created` far enough in the past to predate every
+	// supported boundary window; the only valid response for any
+	// non-empty key is "promote to target".
+	now := time.Date(2026, 5, 7, 14, 0, 0, 0, time.Local)
+	created := time.Date(2020, 1, 1, 0, 0, 0, 0, time.Local)
+	for boundary := range bear.ValidPromotionBoundaries {
+		rules := []bear.PromotionRule{
+			{From: "src", To: "dst", Boundary: boundary},
+		}
+		gotTag, gotMove := bear.PromoteByCalendar("src", created, now, rules)
+		if gotTag != "dst" || !gotMove {
+			t.Errorf("boundary=%q: got (%q, %v), want (\"dst\", true) — "+
+				"validator accepts this key but boundaryStart returned zero Time",
+				boundary, gotTag, gotMove)
+		}
 	}
 }

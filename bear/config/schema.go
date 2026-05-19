@@ -24,19 +24,38 @@ import "time"
 // Catalog is the decoded noxctl.toml document. Round-trip safe; no
 // map[string]any anywhere — CFG-01 acceptance criterion.
 type Catalog struct {
-	Meta     Meta              `toml:"meta"`
-	Domains  []Stanza          `toml:"domain"`
-	Features Features          `toml:"features"`
-	I18N     map[string]string `toml:"i18n"`
+	Meta       Meta              `toml:"meta"`
+	Domains    []Stanza          `toml:"domain"`
+	Promotions []Promotion       `toml:"promotion"`
+	Features   Features          `toml:"features"`
+	I18N       map[string]string `toml:"i18n"`
 }
 
 // Meta is the [meta] table. version is required; locale defaults to
-// "uk" (CFG-03); bear_db is optional override of Bear's default DB
-// directory.
+// "uk"; bear_db is optional override of Bear's default DB directory;
+// daily_default_tag binds the operator's "untagged-on-create" tag
+// for the auto-tag fast-pass.
 type Meta struct {
-	Version string `toml:"version"`
-	Locale  string `toml:"locale"`
-	BearDB  string `toml:"bear_db"`
+	Version         string `toml:"version"`
+	Locale          string `toml:"locale"`
+	BearDB          string `toml:"bear_db"`
+	DailyDefaultTag string `toml:"daily_default_tag"`
+}
+
+// Promotion is a single rule in the time-based promotion ladder.
+// When an atomic note tagged `From` has a creation date older than
+// the calendar boundary named by `Boundary`, the daemon rewrites
+// its canonical tag-line to `To`. Operators define their own chain
+// (daily→weekly→monthly→…) or leave the array empty to disable
+// time-promotion entirely.
+//
+// Valid Boundary values: "day", "week", "month", "year". The
+// matching helper functions in bear/calendar.go drive the actual
+// threshold check.
+type Promotion struct {
+	From     string `toml:"from"`
+	To       string `toml:"to"`
+	Boundary string `toml:"boundary"`
 }
 
 // Features is the optional [features] toggle table. All toggles are

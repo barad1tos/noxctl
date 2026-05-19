@@ -97,7 +97,10 @@ func newUmbrellaDomainStrict(tag, indexTitle, defaultChild string, children []*D
 		return nil, fmt.Errorf("DefaultChild %q does not match any registered child of umbrella %q", defaultChild, tag)
 	}
 	if matched.SkipAtomicsPass {
-		return nil, fmt.Errorf("DefaultChild %q points at a nested umbrella (umbrellas of umbrellas not allowed) for umbrella %q", defaultChild, tag)
+		return nil, fmt.Errorf(
+			"DefaultChild %q points at a nested umbrella "+
+				"(umbrellas of umbrellas not allowed) for umbrella %q",
+			defaultChild, tag)
 	}
 	frozen := append([]*Domain(nil), children...)
 	// Wire the upward parent-master backlink on each child so its master's
@@ -129,7 +132,11 @@ func newUmbrellaDomainStrict(tag, indexTitle, defaultChild string, children []*D
 // The `t` parameter is constrained to the `Helper` method only — keeps
 // the bear package free of the `testing` import while letting tests pass a
 // *testing.T at the call site.
-func NewUmbrellaDomainForTest(t interface{ Helper() }, tag, indexTitle, defaultChild string, children []*Domain) *Domain {
+func NewUmbrellaDomainForTest(
+	t interface{ Helper() },
+	tag, indexTitle, defaultChild string,
+	children []*Domain,
+) *Domain {
 	t.Helper()
 	d, err := newUmbrellaDomainStrict(tag, indexTitle, defaultChild, children)
 	if err != nil {

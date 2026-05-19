@@ -41,7 +41,8 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.SetVersionTemplate(fmt.Sprintf(
-		"noxctl {{.Version}} (commit %s, built %s)\n", commit, date))
+		"noxctl {{.Version}} (commit %s, built %s)\n", commit, date,
+	))
 	rootCmd.PersistentFlags().StringVar(&cfgPath, "config", "./noxctl.toml",
 		"path to noxctl.toml (no walk-up; explicit only)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false,
@@ -70,8 +71,10 @@ const (
 // returned error from rootCmd.Execute. The blank-assignment below
 // keeps the variable referenced until / wires it
 // from the apply / plan diff-exit paths.
-var exitWith = os.Exit
-var _ = exitWith
+var (
+	exitWith = os.Exit
+	_        = exitWith
+)
 
 // Keeper for the Terraform-style exit-code quartet. declared
 // the original trio (ExitSuccess/ExitError/ExitDiffPresent);

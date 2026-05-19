@@ -181,17 +181,29 @@ func LoadDaemon(path string) (DaemonConfig, error) {
 // strings are validated here so a bad value in the file produces a
 // clear error mentioning the field name.
 func applyFileOverlay(cfg *DaemonConfig, s daemonStanza) error {
-	if err := setDurationFromFile(s.DebouncePause, "debounce_pause", "DebouncePause", &cfg.DebouncePause, cfg.Sources); err != nil {
+	if err := setDurationFromFile(
+		s.DebouncePause, "debounce_pause", "DebouncePause",
+		&cfg.DebouncePause, cfg.Sources,
+	); err != nil {
 		return err
 	}
-	if err := setDurationFromFile(s.MaxBurstWindow, "max_burst_window", "MaxBurstWindow", &cfg.MaxBurstWindow, cfg.Sources); err != nil {
+	if err := setDurationFromFile(
+		s.MaxBurstWindow, "max_burst_window", "MaxBurstWindow",
+		&cfg.MaxBurstWindow, cfg.Sources,
+	); err != nil {
 		return err
 	}
-	if err := setDurationFromFile(s.MtimePollInterval, "mtime_poll_interval", "MtimePollInterval", &cfg.MtimePollInterval, cfg.Sources); err != nil {
+	if err := setDurationFromFile(
+		s.MtimePollInterval, "mtime_poll_interval", "MtimePollInterval",
+		&cfg.MtimePollInterval, cfg.Sources,
+	); err != nil {
 		return err
 	}
 	if cfg.MtimePollInterval < 0 {
-		return fmt.Errorf("mtime_poll_interval = %s: must be >= 0 (0 disables polling)", cfg.MtimePollInterval)
+		return fmt.Errorf(
+			"mtime_poll_interval = %s: must be >= 0 (0 disables polling)",
+			cfg.MtimePollInterval,
+		)
 	}
 	if err := setDurationFromFile(
 		s.AutoTagPollInterval, "auto_tag_poll_interval", "AutoTagPollInterval",
@@ -200,7 +212,9 @@ func applyFileOverlay(cfg *DaemonConfig, s daemonStanza) error {
 		return err
 	}
 	if cfg.AutoTagPollInterval < 0 {
-		return fmt.Errorf("auto_tag_poll_interval = %s: must be >= 0 (0 disables fast-pass)", cfg.AutoTagPollInterval)
+		return fmt.Errorf("auto_tag_poll_interval = %s: must be >= 0 (0 disables fast-pass)",
+			cfg.AutoTagPollInterval,
+		)
 	}
 	if s.AuditEnabled != nil {
 		cfg.AuditEnabled = *s.AuditEnabled
@@ -288,23 +302,34 @@ func applyPathsOverlay(cfg *DaemonConfig, p daemonPathsStanza) {
 // errors short-circuit with a fmt.Errorf mentioning the env-var name
 // so operators can locate the bad value quickly.
 func applyEnvOverlay(cfg *DaemonConfig) error {
-	if err := envOverlayDuration(cfg, EnvDebouncePause, "DebouncePause", &cfg.DebouncePause); err != nil {
+	if err := envOverlayDuration(
+		cfg, EnvDebouncePause, "DebouncePause",
+		&cfg.DebouncePause); err != nil {
 		return err
 	}
-	if err := envOverlayDuration(cfg, EnvMaxBurstWindow, "MaxBurstWindow", &cfg.MaxBurstWindow); err != nil {
+	if err := envOverlayDuration(
+		cfg, EnvMaxBurstWindow, "MaxBurstWindow",
+		&cfg.MaxBurstWindow); err != nil {
 		return err
 	}
-	if err := envOverlayDuration(cfg, EnvMtimePollInterval, "MtimePollInterval", &cfg.MtimePollInterval); err != nil {
+	if err := envOverlayDuration(
+		cfg, EnvMtimePollInterval, "MtimePollInterval",
+		&cfg.MtimePollInterval); err != nil {
 		return err
 	}
 	if cfg.MtimePollInterval < 0 {
-		return fmt.Errorf("env %s %s: must be >= 0 (0 disables polling)", EnvMtimePollInterval, cfg.MtimePollInterval)
+		return fmt.Errorf("env %s %s: must be >= 0 (0 disables polling)",
+			EnvMtimePollInterval, cfg.MtimePollInterval)
 	}
-	if err := envOverlayDuration(cfg, EnvAutoTagPollInterval, "AutoTagPollInterval", &cfg.AutoTagPollInterval); err != nil {
+	if err := envOverlayDuration(
+		cfg, EnvAutoTagPollInterval, "AutoTagPollInterval",
+		&cfg.AutoTagPollInterval,
+	); err != nil {
 		return err
 	}
 	if cfg.AutoTagPollInterval < 0 {
-		return fmt.Errorf("env %s %s: must be >= 0 (0 disables fast-pass)", EnvAutoTagPollInterval, cfg.AutoTagPollInterval)
+		return fmt.Errorf("env %s %s: must be >= 0 (0 disables fast-pass)",
+			EnvAutoTagPollInterval, cfg.AutoTagPollInterval)
 	}
 	if v := os.Getenv(EnvAuditEnabled); v != "" {
 		// REGEN_AUDIT quirk: only "off" disables; anything else enables.
@@ -313,10 +338,10 @@ func applyEnvOverlay(cfg *DaemonConfig) error {
 		cfg.Sources["AuditEnabled"] = SourceEnv
 	}
 	if v := os.Getenv(EnvDomainBootstrap); v != "" {
-		// REGEN_DOMAIN_BOOTSTRAP mirrors REGEN_AUDIT semantics (
-		//): only "off" disables; anything else enables. Per D-03
-		// env > file > default precedence is enforced by the call order
-		// (file overlay ran above; this env block writes last).
+		// REGEN_DOMAIN_BOOTSTRAP mirrors REGEN_AUDIT semantics: only "off"
+		// disables; anything else enables. env > file > default precedence
+		// is enforced by the call order — the file overlay ran above; this
+		// env block writes last.
 		cfg.DomainBootstrap = v != "off"
 		cfg.Sources["DomainBootstrap"] = SourceEnv
 	}

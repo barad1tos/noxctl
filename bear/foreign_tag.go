@@ -213,7 +213,9 @@ func processForeignTagEscape(ctx context.Context, note autoTagNote, domainsByTag
 	if destDomain := domainsByTag[strings.TrimPrefix(foreignTag, "#")]; destDomain != nil {
 		newContent = destDomain.RenderCanonicalForBootstrap(stripped)
 	} else {
-		log.Printf("foreign-tag escape %q: %s has no registered domain, writing stripped body without canonical bootstrap", note.Title, foreignTag)
+		log.Printf("foreign-tag escape %q: %s has no registered domain, "+
+			"writing stripped body without canonical bootstrap",
+			note.Title, foreignTag)
 	}
 	if writeErr := overwriteWithRetry(ctx, note.ID, newContent); writeErr != nil {
 		log.Printf("foreign-tag escape %q failed: %v", note.Title, writeErr)

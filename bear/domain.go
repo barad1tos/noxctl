@@ -37,6 +37,10 @@ const (
 	flagBase      = "--base"
 	formatJSON    = "json"
 	fieldsIDTitle = "id,title"
+	// fieldsAutoTag is the bearcli --fields list every auto-tag fast-
+	// pass needs: ID + title + tag set + body. Three call sites in
+	// bear/auto_tag.go used the same literal string before extraction.
+	fieldsAutoTag = "id,title,tags,content"
 
 	// HubMarker splits a Hub note's auto-zone (above) from the curator-managed
 	// zone (below). Same convention is reused across all domains' hubs and
@@ -115,8 +119,10 @@ type Domain struct {
 	HubH2Legacy []string // ["Поезії"] for one-off transition
 
 	// Behavior toggles
-	LegacyAuthorFallback bool // poetry=true (firstNonSectionH2 fallback); aphorisms=false (quote H2s would be misread)
-	StripLegacyAuthorH2  bool // poetry=true (parseAtomicContent strips "## <author>"); aphorisms=false (preserve content H2s)
+	// poetry=true (firstNonSectionH2 fallback); aphorisms=false (quote H2s would be misread).
+	LegacyAuthorFallback bool
+	// poetry=true (parseAtomicContent strips "## <author>"); aphorisms=false (preserve content H2s).
+	StripLegacyAuthorH2 bool
 
 	// Pluggable callbacks (REQUIRED unless explicitly marked optional)
 	ParseMeta func(d *Domain, body string) AtomicMeta    // REQUIRED

@@ -4,27 +4,66 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 )
 
-// PromoteByCalendar returns (newTag, true) when an atom currently tagged
-// `currentTag` should be promoted given its creation date and the current
-// wall-clock `now`. Loops the rule table top-to-bottom so a single call
-// chains daily → weekly → monthly → yearly → decadal in one shot
-// (aggressive catch-up).
+// PromotionRule binds a source tag to a target tag, gated by a
+// calendar boundary the atom's creation date must predate. The
+// operator declares one rule per `[[promotion]]` block in the TOML
+// catalog; `bear/config` ferries the structs onto `engine.ApplyOpts.
+// PromotionRules`.
 //
-// Non-quicknote tags pass through unchanged — the function only knows
-// about the five quicknote children. Decadal is terminal.
-func PromoteByCalendar(currentTag string, created, now time.Time) (string, bool) {
-	if !strings.HasPrefix(currentTag, "quicknote/") {
+// Boundary is one of "day", "week", "month", "year". An empty
+// boundary defaults to "day" so the most common case (daily inbox
+// rolling forward) needs no explicit value. Unknown boundaries make
+// the rule a no-op; load-time validation catches typos before they
+// reach the promoter.
+type PromotionRule struct {
+	From     string
+	To       string
+	Boundary string
+}
+
+// PromoteByCalendar is the public testing seam for the rules-driven
+// promoter. Returns (newTag, true) when an atom currently tagged
+// `currentTag` should be promoted given its creation date, the
+// current wall-clock `now`, and the operator-declared rule chain;
+// returns (currentTag, false) when no rule applies or the rules
+// slice is empty. Chains the table top-to-bottom so one call moves
+// an atom across every applicable tier (aggressive catch-up).
+//
+// Production hot paths use promoteByCalendarIndexed directly with a
+// pre-built rules map so per-atom work stays allocation-free; this
+// wrapper exists so test cases can spell their rule tables as a flat
+// slice.
+func PromoteByCalendar(currentTag string, created, now time.Time, rules []PromotionRule) (string, bool) {
+	if len(rules) == 0 {
 		return currentTag, false
 	}
+	return promoteByCalendarIndexed(currentTag, created, now, indexPromotionRules(rules))
+}
+
+// promoteByCalendarIndexed is the hot-path body of PromoteByCalendar
+// driven by a pre-built rules map. ApplyTimeBasedPromotion builds the
+// map once per sweep and threads it through every atom; without this
+// extraction the same map would be rebuilt N times per cycle.
+func promoteByCalendarIndexed(
+	currentTag string,
+	created, now time.Time,
+	index map[string]PromotionRule,
+) (string, bool) {
 	tag := currentTag
 	moved := false
 	for {
-		next, advanced := stepPromoteByCalendar(tag, created, now)
-		if !advanced {
+		next, advanced := stepPromoteByCalendar(tag, created, now, index)
+		if !advanced || next == tag {
+			// next == tag is the defense-in-depth guard against a
+			// `From == To` self-loop sneaking past validation —
+			// without it PromoteByCalendar hangs forever on a
+			// malformed rule. validatePromotions rejects self-loops
+			// at load time, but defensive coding keeps the runtime
+			// safe if a programmatic catalog ever bypasses the
+			// validator.
 			return tag, moved
 		}
 		tag = next
@@ -32,48 +71,85 @@ func PromoteByCalendar(currentTag string, created, now time.Time) (string, bool)
 	}
 }
 
-// stepPromoteByCalendar applies a single rule step. Returns (newTag, true)
-// if the atom advances one tier, (currentTag, false) otherwise.
+// stepPromoteByCalendar applies a single rule step against the
+// already-indexed rules map. Returns (newTag, true) if the atom
+// advances one tier, (currentTag, false) otherwise.
 //
-// Each tier promotes when `created` predates the START of the current
-// period for that tier — strict thresholds, no grace window. Top-down
-// loop in PromoteByCalendar chains moves so a single tick can advance
-// an atom multiple tiers (aggressive catch-up).
-func stepPromoteByCalendar(currentTag string, created, now time.Time) (string, bool) {
-	switch currentTag {
-	case "quicknote/daily":
-		if created.Before(CalendarStartOfDay(now)) {
-			return "quicknote/weekly", true
-		}
-	case "quicknote/weekly":
-		if created.Before(CalendarStartOfWeek(now)) {
-			return "quicknote/monthly", true
-		}
-	case "quicknote/monthly":
-		if created.Before(CalendarStartOfMonth(now)) {
-			return "quicknote/yearly", true
-		}
-	case "quicknote/yearly":
-		if created.Before(CalendarStartOfYear(now)) {
-			return "quicknote/decadal", true
-		}
+// Promotion fires when `created` predates the START of the current
+// period for the rule's boundary — strict thresholds, no grace
+// window. PromoteByCalendar's outer loop chains moves so a single
+// tick can advance an atom across multiple tiers.
+func stepPromoteByCalendar(currentTag string, created, now time.Time, rules map[string]PromotionRule) (string, bool) {
+	rule, ok := rules[currentTag]
+	if !ok {
+		return currentTag, false
+	}
+	if created.Before(boundaryStart(rule.Boundary, now)) {
+		return rule.To, true
 	}
 	return currentTag, false
 }
 
-// ApplyTimeBasedPromotion walks every quicknote/* atom across `domains`,
-// computes the calendar-correct destination via PromoteByCalendar, and
-// rewrites canonical tag-lines for atoms that need to move. Skips atoms
-// with a valid pin in `pins`.
+// indexPromotionRules turns the operator-declared rule slice into a
+// from-tag lookup map. Duplicate `from` keys are not validated here
+// — the catalog loader catches them at load time. The map is built
+// per PromoteByCalendar invocation; the cost is negligible against
+// the bearcli I/O the surrounding loop performs.
+func indexPromotionRules(rules []PromotionRule) map[string]PromotionRule {
+	out := make(map[string]PromotionRule, len(rules))
+	for _, r := range rules {
+		out[r.From] = r
+	}
+	return out
+}
+
+// ValidPromotionBoundaries is the single source of truth for the
+// boundary strings the time-promotion fast-pass understands. The
+// catalog validator (bear/config/validate.go) and the runtime
+// promoter (boundaryStart below) both consult this set so the two
+// can't drift — adding a fifth boundary requires exactly one edit
+// here and one new arm in boundaryStart.
+var ValidPromotionBoundaries = map[string]struct{}{
+	"":      {},
+	"day":   {},
+	"week":  {},
+	"month": {},
+	"year":  {},
+}
+
+// boundaryStart maps the rule's Boundary string to the matching
+// calendar-start helper. Unknown boundaries return a zero Time so
+// the comparison in stepPromoteByCalendar never fires — load-time
+// validation (against ValidPromotionBoundaries) catches typos before
+// they reach this path.
+func boundaryStart(boundary string, now time.Time) time.Time {
+	switch boundary {
+	case "", "day":
+		return CalendarStartOfDay(now)
+	case "week":
+		return CalendarStartOfWeek(now)
+	case "month":
+		return CalendarStartOfMonth(now)
+	case "year":
+		return CalendarStartOfYear(now)
+	}
+	return time.Time{}
+}
+
+// ApplyTimeBasedPromotion walks every atom whose source tag appears
+// as a rule's `From` across `domains`, computes the calendar-correct
+// destination via the rule chain, and rewrites canonical tag-lines
+// for atoms that need to move. Skips atoms with a valid pin in
+// `pins`.
 //
-// Two-phase design: snapshot all quicknote atoms once across every
-// domain (deduped by ID), then process each atom exactly once with
-// PromoteByCalendar's chained destination. Without the snapshot, a
-// daily→weekly rewrite mid-sweep re-surfaces the moved atom under
-// weekly's listNotes call, then monthly's, etc. — yielding up to four
-// writes for an atom that crosses all five tiers. PromoteByCalendar
-// already returns the FINAL destination via internal loop, so a single
-// rewrite per atom suffices.
+// Two-phase design: snapshot all promotion-eligible atoms once
+// across every domain (deduped by ID), then process each atom
+// exactly once with the chained destination. Without the snapshot,
+// a tier-1→tier-2 rewrite mid-sweep re-surfaces the moved atom
+// under tier-2's listNotes call, then tier-3's, etc. — yielding one
+// extra write per tier crossed. The chained promoter already
+// returns the FINAL destination, so a single rewrite per atom
+// suffices.
 //
 // Idempotency comparison strips the trailing new-note link before
 // equality (same helper used by cross-domain) so the embedded title
@@ -82,9 +158,19 @@ func stepPromoteByCalendar(currentTag string, created, now time.Time) (string, b
 // Failures per atom are logged and skipped so one bad note doesn't stall
 // the whole sweep. Pins observed during the pass are NOT recorded — only
 // user-driven cross-domain moves create pins.
-func ApplyTimeBasedPromotion(ctx context.Context, domains []*Domain, pins *PinRegistry) error {
+//
+// An empty `rules` slice short-circuits — no rules declared in the
+// catalog means time-promotion is disabled.
+func ApplyTimeBasedPromotion(ctx context.Context, domains []*Domain, pins *PinRegistry, rules []PromotionRule) error {
+	if len(rules) == 0 {
+		return nil
+	}
 	now := time.Now()
-	domainByTag := indexQuicknoteDomains(domains)
+	domainByTag := indexPromotionDomains(domains, rules)
+	// Build the from-tag → rule lookup once per sweep; ApplyTimeBased
+	// Promotion fans the same set across every atom, so rebuilding it
+	// in each PromoteByCalendar call would be pure waste.
+	ruleIndex := indexPromotionRules(rules)
 
 	type atomToProcess struct {
 		atom   Note
@@ -112,7 +198,7 @@ func ApplyTimeBasedPromotion(ctx context.Context, domains []*Domain, pins *PinRe
 		if err := CheckCtx(ctx); err != nil {
 			return err
 		}
-		processAtomForPromotion(ctx, item.atom, item.source, domainByTag, pins, now)
+		processAtomForPromotion(ctx, item.atom, item.source, domainByTag, pins, now, ruleIndex)
 	}
 	return nil
 }
@@ -128,6 +214,7 @@ func processAtomForPromotion(
 	domainByTag map[string]*Domain,
 	pins *PinRegistry,
 	now time.Time,
+	ruleIndex map[string]PromotionRule,
 ) {
 	if source.skipNote(atom) {
 		return
@@ -139,7 +226,7 @@ func processAtomForPromotion(
 	if pins.IsPinned(atom.ID, now) {
 		return
 	}
-	newTag, shouldMove := PromoteByCalendar(source.Tag, atom.Created, now)
+	newTag, shouldMove := promoteByCalendarIndexed(source.Tag, atom.Created, now, ruleIndex)
 	if !shouldMove {
 		return
 	}
@@ -153,16 +240,25 @@ func processAtomForPromotion(
 	}
 }
 
-// indexQuicknoteDomains returns a map keyed by Tag of every quicknote/*
-// domain in `all`. Skip-atomics-pass domains (umbrellas) are excluded so
-// listNotes doesn't pull child atoms via Bear's hierarchical tag query.
-func indexQuicknoteDomains(all []*Domain) map[string]*Domain {
-	out := make(map[string]*Domain)
+// indexPromotionDomains returns a map keyed by Tag of every domain
+// that appears as either the From or To of a promotion rule. Skip-
+// atomics-pass domains (umbrellas) are excluded so listNotes doesn't
+// pull child atoms via Bear's hierarchical tag query. The set is
+// purely catalog-driven — operators with an arbitrary ladder shape
+// (e.g. "fleeting/inbox" → "fleeting/week" → …) get the same indexing
+// without code changes.
+func indexPromotionDomains(all []*Domain, rules []PromotionRule) map[string]*Domain {
+	wanted := make(map[string]struct{}, len(rules)*2)
+	for _, r := range rules {
+		wanted[r.From] = struct{}{}
+		wanted[r.To] = struct{}{}
+	}
+	out := make(map[string]*Domain, len(wanted))
 	for _, d := range all {
 		if d.SkipAtomicsPass {
 			continue
 		}
-		if !strings.HasPrefix(d.Tag, "quicknote/") {
+		if _, ok := wanted[d.Tag]; !ok {
 			continue
 		}
 		out[d.Tag] = d

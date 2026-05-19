@@ -90,14 +90,16 @@ func runApply(cmd *cobra.Command, _ []string) error {
 	defer stop()
 
 	opts := engine.ApplyOpts{
-		Domains:      domains,
-		Pins:         pins,
-		StatePath:    "./.noxctl/state.json",
-		LockPath:     "./.noxctl/.lock",
-		Features:     featuresFromCatalog(cat),
-		NoWait:       applyNoWait,
-		AuditEnabled: false,
-		Stderr:       os.Stderr,
+		Domains:         domains,
+		Pins:            pins,
+		StatePath:       "./.noxctl/state.json",
+		LockPath:        "./.noxctl/.lock",
+		Features:        featuresFromCatalog(cat),
+		NoWait:          applyNoWait,
+		AuditEnabled:    false,
+		Stderr:          os.Stderr,
+		DailyDefaultTag: dailyDefaultTagFromCatalog(cat),
+		PromotionRules:  promotionRulesFromCatalog(cat),
 	}
 
 	result, runErr := engine.Apply(ctx, opts)

@@ -225,6 +225,11 @@ func applyOptsFor(t *testing.T, domains []*bear.Domain) engine.ApplyOpts {
 		LockPath:           filepath.Join(dir, ".lock"),
 		Features:           engine.Features{}, // all pre-passes off
 		BearcliConcurrency: poolCapacityForParallelTests,
+		// Auto-tag fast-pass tests resolve dailyDomain via
+		// domainsByTag[opts.DailyDefaultTag]; without this hint the
+		// fast-pass logs `dailyDomain is nil` and skips. Tests that
+		// don't care still get a harmless zero-effect default.
+		DailyDefaultTag: "quicknote/daily",
 	}
 }
 

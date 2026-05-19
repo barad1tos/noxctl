@@ -124,7 +124,12 @@ func ApplyCrossDomainMoves(ctx context.Context, domains []*Domain, pins *PinRegi
 // applyCrossDomainMovesFor handles one source domain: walks its atomics,
 // finds those claimed by a different flat-list domain's master, rewrites
 // their canonical tag-line.
-func applyCrossDomainMovesFor(ctx context.Context, source *Domain, claims map[string]flatListMasterClaim, pins *PinRegistry) error {
+func applyCrossDomainMovesFor(
+	ctx context.Context,
+	source *Domain,
+	claims map[string]flatListMasterClaim,
+	pins *PinRegistry,
+) error {
 	notes, err := source.listNotes(ctx)
 	if err != nil {
 		return fmt.Errorf("ApplyCrossDomainMoves(%s) list: %w", source.Tag, err)
