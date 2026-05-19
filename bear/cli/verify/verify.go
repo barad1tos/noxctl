@@ -183,7 +183,8 @@ func Run(ctx context.Context, opts Options) error {
 		return finalize(opts, sigCtx, &result)
 	}
 
-	result.Checks = append(result.Checks,
+	result.Checks = append(
+		result.Checks,
 		checkPlanParity(sigCtx, opts, domains),
 		checkDaemonLog(opts),
 	)

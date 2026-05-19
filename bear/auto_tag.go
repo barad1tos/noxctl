@@ -69,7 +69,7 @@ func ApplyDailyDefaultTag(ctx context.Context, dailyDomain *Domain) (int, error)
 	}
 	out, err := runBearcli(
 		ctx,
-		[]string{"list", "--location", "notes", flagFormat, formatJSON, flagFields, "id,title,tags,content"},
+		[]string{"list", "--location", "notes", flagFormat, formatJSON, flagFields, fieldsAutoTag},
 		"",
 	)
 	if err != nil {
@@ -137,8 +137,8 @@ func ApplyPlaceholderRefresh(ctx context.Context, domainsByTag map[string]*Domai
 			"list",
 			"--sort", "created:desc",
 			"--limit", "20",
-			"--format", "json",
-			"--fields", "id,title,tags,content",
+			flagFormat, formatJSON,
+			flagFields, fieldsAutoTag,
 		},
 		"",
 	)
@@ -255,7 +255,7 @@ func ApplyDomainBootstrap(ctx context.Context, domainsByTag map[string]*Domain) 
 	}
 	out, err := runBearcli(
 		ctx,
-		[]string{"list", "--location", "notes", flagFormat, formatJSON, flagFields, "id,title,tags,content"},
+		[]string{"list", "--location", "notes", flagFormat, formatJSON, flagFields, fieldsAutoTag},
 		"",
 	)
 	if err != nil {
@@ -306,13 +306,14 @@ func applyDomainBootstrapOne(
 	if d == nil {
 		return false
 	}
-	//: defensive guard — `matchOwningDomain` MUST have
+	// : defensive guard — `matchOwningDomain` MUST have
 	// resolved umbrella → DefaultChild via `ResolveURLDomain`. This
 	// branch is unreachable through that path today; it locks against
 	// future refactors that might drop the resolution OR cases where
 	// `domainsByTag` carries a bare umbrella without its child wiring.
 	if d.SkipAtomicsPass {
-		log.Printf("domain-bootstrap: BUG — umbrella %q leaked past matchOwningDomain for note %q; skipping", d.Tag, note.ID)
+		log.Printf("domain-bootstrap: BUG — umbrella %q leaked past matchOwningDomain "+
+			"for note %q; skipping", d.Tag, note.ID)
 		return false
 	}
 	// Loop-prevention guard: when the note's body ALREADY carries a
@@ -414,7 +415,8 @@ func (g *bootstrapLoopGuard) recordRewrite(noteID, title string) {
 	}
 	if _, already := g.stuck[noteID]; !already {
 		g.stuck[noteID] = struct{}{}
-		log.Printf("domain-bootstrap: LOOP detected for note %q (%s); rewrite_count=%d ≥ cap=%d; suppressing on future ticks",
+		log.Printf("domain-bootstrap: LOOP detected for note %q (%s); "+
+			"rewrite_count=%d ≥ cap=%d; suppressing on future ticks",
 			title, noteID, g.counts[noteID], bootstrapNoteRewriteCap)
 	}
 	if !g.disabled && len(g.stuck) >= bootstrapStuckEmergencyCap {
@@ -423,7 +425,8 @@ func (g *bootstrapLoopGuard) recordRewrite(noteID, title string) {
 			"domain-bootstrap: EMERGENCY DISABLE — %d distinct notes hit rewrite-loop cap; "+
 				"pass disabled until daemon restart. Set REGEN_DOMAIN_BOOTSTRAP=off and "+
 				"investigate render idempotency.",
-			len(g.stuck))
+			len(g.stuck),
+		)
 	}
 }
 
@@ -488,7 +491,12 @@ func hasCanonicalLineForLeaf(content, tag string) bool {
 // `umbrella.ResolveURLDomain` — typically the umbrella's
 // `DefaultChild` leaf.
 // 4. Otherwise return nil.
-func matchOwningDomain(noteTags []string, domainsByTag map[string]*Domain, noteID string, warned map[string]struct{}) *Domain {
+func matchOwningDomain(
+	noteTags []string,
+	domainsByTag map[string]*Domain,
+	noteID string,
+	warned map[string]struct{},
+) *Domain {
 	var leaves []*Domain
 	var umbrella *Domain
 	for _, raw := range noteTags {
@@ -543,7 +551,8 @@ func mostSpecificOrSkip(leaves []*Domain, noteID string, warned map[string]struc
 		for _, d := range leaves {
 			tags = append(tags, d.Tag)
 		}
-		log.Printf("domain-bootstrap: note %q has ambiguous managed tags %v — skipping (resolve manually)", noteID, tags)
+		log.Printf("domain-bootstrap: note %q has ambiguous managed tags %v — "+
+			"skipping (resolve manually)", noteID, tags)
 	}
 	return nil
 }

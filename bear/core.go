@@ -67,7 +67,10 @@ func overwriteWithRetry(ctx context.Context, noteID, body string) error {
 // bumped on every canonicalization pass so creation date is the only
 // stable age signal.
 func (d *Domain) listNotes(ctx context.Context) ([]Note, error) {
-	out, err := runBearcli(ctx, []string{"list", "--tag", d.Tag, flagFormat, formatJSON, flagFields, "id,title,content,tags,created"}, "")
+	out, err := runBearcli(ctx,
+		[]string{"list", "--tag", d.Tag, flagFormat, formatJSON, flagFields, "id,title,content,tags,created"},
+		"",
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listNotes(tag=%s): %w", d.Tag, err)
 	}
@@ -969,7 +972,11 @@ func (d *Domain) upsertHub(ctx context.Context, bucket string, notes []Note) (st
 	if hubID == "" {
 		// Fresh hub — no existing order, render alphabetical.
 		newAuto := d.RenderHub(d, bucket, notes, nil)
-		if _, err = runBearcli(ctx, []string{"create", hubTitle, flagFormat, formatJSON, flagFields, fieldsIDTitle}, newAuto); err != nil {
+		_, err = runBearcli(ctx,
+			[]string{"create", hubTitle, flagFormat, formatJSON, flagFields, fieldsIDTitle},
+			newAuto,
+		)
+		if err != nil {
 			return "", fmt.Errorf("upsertHub %q create: %w", hubTitle, err)
 		}
 		return fmt.Sprintf("%s: created", hubTitle), nil
@@ -1015,7 +1022,11 @@ func (d *Domain) upsertMasterIndex(ctx context.Context, groups map[string][]Note
 	}
 
 	if idxID == "" {
-		if _, err = runBearcli(ctx, []string{"create", d.IndexTitle, flagFormat, formatJSON, flagFields, fieldsIDTitle}, newAuto); err != nil {
+		_, err = runBearcli(ctx,
+			[]string{"create", d.IndexTitle, flagFormat, formatJSON, flagFields, fieldsIDTitle},
+			newAuto,
+		)
+		if err != nil {
 			return "", fmt.Errorf("upsertMasterIndex(%s) create: %w", d.IndexTitle, err)
 		}
 		return "index: created", nil

@@ -47,7 +47,11 @@ func PromoteByCalendar(currentTag string, created, now time.Time, rules []Promot
 // driven by a pre-built rules map. ApplyTimeBasedPromotion builds the
 // map once per sweep and threads it through every atom; without this
 // extraction the same map would be rebuilt N times per cycle.
-func promoteByCalendarIndexed(currentTag string, created, now time.Time, index map[string]PromotionRule) (string, bool) {
+func promoteByCalendarIndexed(
+	currentTag string,
+	created, now time.Time,
+	index map[string]PromotionRule,
+) (string, bool) {
 	tag := currentTag
 	moved := false
 	for {

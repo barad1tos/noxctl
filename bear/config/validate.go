@@ -79,7 +79,8 @@ func validatePromotions(cat *Catalog, path string) []error {
 		if prev, dup := seen[p.From]; dup {
 			errs = append(errs, fmt.Errorf(
 				"%s: promotion[%d] from=%q: duplicate; first declared at promotion[%d]",
-				path, i, p.From, prev))
+				path, i, p.From, prev,
+			))
 		} else {
 			seen[p.From] = i
 		}
@@ -106,18 +107,21 @@ func validatePromotionShape(p Promotion, i int, path string, knownTargets map[st
 	if _, ok := bear.ValidPromotionBoundaries[p.Boundary]; !ok {
 		errs = append(errs, fmt.Errorf(
 			"%s: promotion[%d] from=%q: unknown boundary %q (valid: day|week|month|year, empty = day)",
-			path, i, p.From, p.Boundary))
+			path, i, p.From, p.Boundary,
+		))
 	}
 	if p.To != "" && p.From == p.To {
 		errs = append(errs, fmt.Errorf(
 			"%s: promotion[%d] from=%q: self-loop (from == to); time-promotion would advance forever",
-			path, i, p.From))
+			path, i, p.From,
+		))
 	}
 	if p.To != "" && p.From != p.To {
 		if _, ok := knownTargets[p.To]; !ok {
 			errs = append(errs, fmt.Errorf(
 				"%s: promotion[%d] from=%q: to=%q does not match any declared domain tag or another promotion's from",
-				path, i, p.From, p.To))
+				path, i, p.From, p.To,
+			))
 		}
 	}
 	return errs
@@ -156,7 +160,8 @@ func validateMeta(cat *Catalog, path string) []error {
 		if _, ok := supportedLocales[cat.Meta.Locale]; !ok {
 			errs = append(errs, fmt.Errorf(
 				"%s: meta.locale %q unsupported (v1 supports: uk)",
-				path, cat.Meta.Locale))
+				path, cat.Meta.Locale,
+			))
 		}
 	}
 	return errs
@@ -194,12 +199,14 @@ func validateStanzaInvariants(d Stanza, i int, path string) []error {
 		if !tagFormatRE.MatchString(d.Tag) {
 			errs = append(errs, fmt.Errorf(
 				"%s: domain[%d] tag=%q: must match [a-zA-Z0-9_/-]+ (security: tag-injection guard)",
-				path, i, d.Tag))
+				path, i, d.Tag,
+			))
 		}
 		if strings.Count(d.Tag, "/") > 1 {
 			errs = append(errs, fmt.Errorf(
 				"%s: domain[%d] tag=%q: tag tree depth limit exceeded (max 2 segments per project )",
-				path, i, d.Tag))
+				path, i, d.Tag,
+			))
 		}
 	}
 	if d.IndexTitle == "" {
@@ -213,7 +220,8 @@ func validateStanzaInvariants(d Stanza, i int, path string) []error {
 			if re.MatchString(*d.UnknownBucket) {
 				errs = append(errs, fmt.Errorf(
 					"%s: domain[%d] tag=%q unknown_bucket=%q: contains forbidden pattern (security)",
-					path, i, d.Tag, *d.UnknownBucket))
+					path, i, d.Tag, *d.UnknownBucket,
+				))
 			}
 		}
 	}

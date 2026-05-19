@@ -90,7 +90,8 @@ func TestDaemonConfigShow_EnvAnnotatesSource(t *testing.T) {
 	home := t.TempDir()
 
 	cmd := exec.Command(bin, "daemon-config", "show")
-	cmd.Env = append(cmd.Env,
+	cmd.Env = append(
+		cmd.Env,
 		"HOME="+home,
 		"REGEN_DEBOUNCE_PAUSE=750ms",
 	)

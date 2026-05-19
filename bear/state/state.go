@@ -34,7 +34,9 @@ type State struct {
 	Version           string                 `json:"version"`             // strict "1"
 	AppliedConfigHash string                 `json:"applied_config_hash"` // sha256 of canonicalized noxctl.toml
 	Domains           map[string]DomainState `json:"domains,omitempty"`   // tag → state
-	//nolint:modernize // omitempty kept intentionally for schema clarity (encoder ignores it on time.Time, but the tag documents intent)
+	// omitempty kept intentionally for schema clarity; encoder ignores
+	// it on time.Time, but the tag documents intent.
+	//nolint:modernize
 	LastApply    time.Time `json:"last_apply,omitempty"`
 	DriftMarkers []string  `json:"drift_markers,omitempty"` // domain tags with drift
 	//nolint:modernize // omitempty + nested struct match `LastApply` convention; encoder semantics noted in LEARNINGS

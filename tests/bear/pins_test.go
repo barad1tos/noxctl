@@ -121,19 +121,27 @@ func TestPinRegistryIsPinnedCalendarExpiry(t *testing.T) {
 		// Each row pairs a still-valid sample inside the calendar period
 		// with a one-second-past-boundary sample to prove the strict edge
 		// (period_end + 1s → expired).
-		{"daily", "quicknote/daily",
+		{
+			"daily", "quicknote/daily",
 			mkDate(2026, 5, 7, 14), mkDate(2026, 5, 7, 23), "same day",
-			mkDate(2026, 5, 8, 0).Add(time.Second), "next day"},
+			mkDate(2026, 5, 8, 0).Add(time.Second), "next day",
+		},
 		// Wed 2026-05-06 14:00 → ISO week is Mon 05-04.. Sun 05-10.
-		{"weekly", "quicknote/weekly",
+		{
+			"weekly", "quicknote/weekly",
 			mkDate(2026, 5, 6, 14), mkDate(2026, 5, 9, 12), "same ISO week (Sat)",
-			mkDate(2026, 5, 11, 0).Add(time.Second), "next Monday"},
-		{"monthly", "quicknote/monthly",
+			mkDate(2026, 5, 11, 0).Add(time.Second), "next Monday",
+		},
+		{
+			"monthly", "quicknote/monthly",
 			mkDate(2026, 5, 7, 14), mkDate(2026, 5, 30, 23), "same month",
-			mkDate(2026, 6, 1, 0).Add(time.Second), "next month"},
-		{"yearly", "quicknote/yearly",
+			mkDate(2026, 6, 1, 0).Add(time.Second), "next month",
+		},
+		{
+			"yearly", "quicknote/yearly",
 			mkDate(2026, 5, 7, 14), mkDate(2026, 12, 31, 23), "Dec 31 of pin year",
-			mkDate(2027, 1, 1, 0).Add(time.Second), "next year"},
+			mkDate(2027, 1, 1, 0).Add(time.Second), "next year",
+		},
 	}
 
 	for _, tc := range cases {

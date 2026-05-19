@@ -211,8 +211,11 @@ func TestValidatePromotions_RejectedShapes(t *testing.T) {
 		want  string
 	}{
 		{"self-loop", config.Promotion{From: "a", To: "a", Boundary: "day"}, "self-loop"},
-		{"unknown target", config.Promotion{From: "a", To: "weeky", Boundary: "day"},
-			"does not match any declared domain"},
+		{
+			"unknown target",
+			config.Promotion{From: "a", To: "weeky", Boundary: "day"},
+			"does not match any declared domain",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {

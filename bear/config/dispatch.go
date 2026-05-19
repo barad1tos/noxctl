@@ -207,10 +207,12 @@ func buildBucketed(blueprint string, s Stanza,
 func buildHubRouted(s Stanza, _ func([]string) ([]*bear.Domain, error)) (*bear.Domain, error) {
 	if err := validateBlueprintFields("hub-routed", s,
 		[]optKey{optUnknownBucket, optHubH2Prefix},
-		[]optKey{optUnknownBucket, optHubH2Prefix, optHubH2Legacy,
+		[]optKey{
+			optUnknownBucket, optHubH2Prefix, optHubH2Legacy,
 			optOwnGroup, optOwnAliases,
 			optLegacyAuthor, optStripAuthorH2,
-			optMasterSection}); err != nil {
+			optMasterSection,
+		}); err != nil {
 		return nil, err
 	}
 	if err := validateMasterSections(s); err != nil {
@@ -220,6 +222,17 @@ func buildHubRouted(s Stanza, _ func([]string) ([]*bear.Domain, error)) (*bear.D
 	applyHubRoutedOptionals(d, s)
 	applyMasterSections(d, s)
 	return d, nil
+}
+
+// masterSectionEnumError formats a "unknown <field> %q" rejection
+// for a hub-routed master_section enum (script, count_mode, etc.).
+// Extracted to keep the per-enum check lines under the dupl
+// threshold — the two call sites (script + count_mode) had nearly
+// identical message shapes and were tripping the linter.
+func masterSectionEnumError(tag string, idx int, title, field, got, valid string) error {
+	return fmt.Errorf(
+		"hub-routed %q: master_section[%d] %q has unknown %s %q (valid: %s)",
+		tag, idx, title, field, got, valid)
 }
 
 // validateMasterSections enforces the per-section selection-rule
@@ -245,18 +258,20 @@ func validateMasterSections(s Stanza) error {
 			return fmt.Errorf("hub-routed %q: master_section[%d] is missing required `title`", s.Tag, i)
 		}
 		if len(sec.Buckets) > 0 && sec.Script != "" {
-			return fmt.Errorf("hub-routed %q: master_section[%d] %q sets both `buckets` and `script`; pick exactly one selection rule",
+			return fmt.Errorf(
+				"hub-routed %q: master_section[%d] %q sets both `buckets` and `script`; "+
+					"pick exactly one selection rule",
 				s.Tag, i, sec.Title)
 		}
 		if sec.Script != "" {
 			if _, ok := validScripts[sec.Script]; !ok {
-				return fmt.Errorf("hub-routed %q: master_section[%d] %q has unknown script %q (valid: latin|non-latin)",
-					s.Tag, i, sec.Title, sec.Script)
+				return masterSectionEnumError(s.Tag, i, sec.Title, "script",
+					sec.Script, "latin|non-latin")
 			}
 		}
 		if _, ok := validCounts[sec.CountMode]; !ok {
-			return fmt.Errorf("hub-routed %q: master_section[%d] %q has unknown count_mode %q (valid: notes|buckets, empty = notes)",
-				s.Tag, i, sec.Title, sec.CountMode)
+			return masterSectionEnumError(s.Tag, i, sec.Title, "count_mode",
+				sec.CountMode, "notes|buckets, empty = notes")
 		}
 	}
 	return nil

@@ -5,12 +5,15 @@ package config
 // explicitly zero", which the spec requires so per-field provenance
 // can distinguish file-source from default.
 type daemonStanza struct {
-	DebouncePause       *string `toml:"debounce_pause"`
-	MaxBurstWindow      *string `toml:"max_burst_window"`
-	AuditEnabled        *bool   `toml:"audit_enabled"`
-	BearcliConcurrency  *int    `toml:"bearcli_concurrency"`    //  D-01: operator-tuned bearcli pool cap.
-	MtimePollInterval   *string `toml:"mtime_poll_interval"`    //  POLL-01: 30s default, "0s" disables, negative is fatal.
-	AutoTagPollInterval *string `toml:"auto_tag_poll_interval"` //  TAG-01: 2s default, "0s" disables fast-pass, negative is fatal.
+	DebouncePause  *string `toml:"debounce_pause"`
+	MaxBurstWindow *string `toml:"max_burst_window"`
+	AuditEnabled   *bool   `toml:"audit_enabled"`
+	// Operator-tuned bearcli pool cap.
+	BearcliConcurrency *int `toml:"bearcli_concurrency"`
+	// 30s default, "0s" disables polling, negative is fatal.
+	MtimePollInterval *string `toml:"mtime_poll_interval"`
+	// 2s default, "0s" disables fast-pass, negative is fatal.
+	AutoTagPollInterval *string `toml:"auto_tag_poll_interval"`
 	//: universal fast-pass canonicalization kill-switch
 	// (default true). ships the flag; /3 wires the pass.
 	DomainBootstrap *bool              `toml:"domain_bootstrap"`

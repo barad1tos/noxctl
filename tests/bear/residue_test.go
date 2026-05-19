@@ -66,7 +66,8 @@ func twoFamilyFixture() []noteFixture {
 // number of fixture notes carrying that tag.
 func TestScanUntrackedEmptyDomainsLeavesEverythingUntracked(t *testing.T) {
 	report, err := bear.AggregateUntrackedFromJSON(
-		mustMarshalNotes(t, twoFamilyFixture()), managedSet())
+		mustMarshalNotes(t, twoFamilyFixture()), managedSet(),
+	)
 	if err != nil {
 		t.Fatalf("AggregateUntrackedFromJSON: %v", err)
 	}
@@ -97,7 +98,8 @@ func TestScanUntrackedEmptyDomainsLeavesEverythingUntracked(t *testing.T) {
 // rely on the array shape.
 func TestScanUntrackedAllManagedReturnsEmpty(t *testing.T) {
 	report, err := bear.AggregateUntrackedFromJSON(
-		mustMarshalNotes(t, twoFamilyFixture()), managedSet("library", "claude"))
+		mustMarshalNotes(t, twoFamilyFixture()), managedSet("library", "claude"),
+	)
 	if err != nil {
 		t.Fatalf("AggregateUntrackedFromJSON: %v", err)
 	}

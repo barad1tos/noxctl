@@ -71,10 +71,23 @@ linters:
  # bisection after any structural change before relaxing.
       threshold: 30
     lll:
-      line-length: 150
+ # 120 lines up with the Go community baseline (gofumpt's default,
+ # most public Go codebases sit at 100-120). The previous 150 ceiling
+ # let composite literals stay glued onto one line — gofmt only
+ # vertical-izes a struct literal when fields don't fit, so a slack
+ # lll budget produced unreadable horizontal walls. Pair this with
+ # the gofumpt formatter below to keep keyed multi-line struct
+ # literals consistent across the codebase.
+      line-length: 120
       tab-width: 4
     misspell:
       locale: US
+      # `synctest` is the Go ≥1.24 stdlib package `testing/synctest`;
+      # misspell's default dictionary flags it as a typo of "synthetic"
+      # or similar. Allow-list the real symbol so the IDE stops
+      # underlining every legitimate import + call site.
+      ignore-rules:
+        - synctest
       # client9/misspell ships a common-typo dictionary keyed by locale,
       # but it does NOT cover every British→American variant pair —
       # `canonicalisation`/`canonicalised`/`canonicaliser` are
@@ -135,8 +148,21 @@ linters:
           - lll
           - revive
           - unparam
+ # Tests get a relaxed line-length budget: assertion error messages
+ # carry full debug context (counts, expected vs got, log excerpts)
+ # and Bear-callback URL fixtures legitimately reach ~140 chars.
+ # Production code stays under 120; tests are exempt because the
+ # readability win is the inverse — wrapping long Errorf strings
+ # buries the diagnostic detail.
+      - path: '_test\.go$'
+        linters:
+          - lll
 
 formatters:
   enable:
     - gofmt      # canonical formatting
+    - gofumpt    # stricter gofmt — forces one-field-per-line on
+                 # multi-line composite literals (kills horizontal
+                 # struct-literal walls) and a handful of other
+                 # tightenings that gofmt leaves to taste.
     - goimports  # import grouping

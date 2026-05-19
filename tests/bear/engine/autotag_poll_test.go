@@ -384,6 +384,19 @@ func aphorismListPayload(t *testing.T) []byte {
 	return raw
 }
 
+// fourPassDaemonOpts returns the canonical DaemonOpts shape used by
+// every four-pass autotag-tick test in this file: one virtual tick
+// every 200ms, all features on, with the daily + aphorisms leaves
+// in scope. Extracted so per-test variants (gate-split asserts,
+// flag-off asserts) can tweak a single field without duplicating
+// the full constructor — that duplication tripped the dupl linter
+// when sibling tests differed only in one DaemonOpts field.
+func fourPassDaemonOpts(t *testing.T, features engine.Features) engine.DaemonOpts {
+	t.Helper()
+	return autoTagOptsForDomains(t, 200*time.Millisecond, features,
+		[]*bear.Domain{testutil.Domain(t, "quicknote/daily"), testutil.Domain(t, "library/aphorisms")})
+}
+
 // TestDaemonAutoTagPoll_FourPassesInOrder asserts:
 // when `Features.DomainBootstrap=true`, the per-tick `passes` slice in
 // `handleAutoTagTick` runs all FOUR pre-passes — foreign-tag escape,
@@ -393,15 +406,12 @@ func aphorismListPayload(t *testing.T) []byte {
 // - `list` count == 4 (one per pass; equality pins the ordinal slot)
 // - `overwrite` count >= 1 (the aphorism note got canonicalized by
 // the 4th pass via the `#library/aphorisms` leaf).
-//
-// MUST FAIL until Task 2 inserts the 4th `passes` entry.
 func TestDaemonAutoTagPoll_FourPassesInOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fake := newFakeAutoTagBackend(aphorismListPayload(t))
 		// Pin a single tick: ticker=200ms + sleep=300ms under synctest
 		// virtual time advances past exactly one fire at the 200ms mark.
-		opts := autoTagOptsForDomains(t, 200*time.Millisecond, engine.AllFeaturesOn(),
-			[]*bear.Domain{testutil.Domain(t, "quicknote/daily"), testutil.Domain(t, "library/aphorisms")})
+		opts := fourPassDaemonOpts(t, engine.AllFeaturesOn())
 		run := startDaemonRun(t, fake, opts, nil)
 		run.WaitFor(300 * time.Millisecond) // one virtual tick at 200ms
 		buf := run.Buf
@@ -414,6 +424,47 @@ func TestDaemonAutoTagPoll_FourPassesInOrder(t *testing.T) {
 		if got := fake.CountKind("overwrite"); got < 1 {
 			t.Errorf("overwrite count = %d, want >= 1 (domain-bootstrap must canonicalize the aphorism note)\nlog:\n%s",
 				got, buf.String())
+		}
+	})
+}
+
+// TestDaemonAutoTagPoll_DailyDefaultTagEmptyGate pins the daemon-side
+// half of the catalog-driven silent-disable contract: when an
+// operator omits [meta].daily_default_tag (DailyDefaultTag == ""),
+// the daily-default fast-pass is skipped while placeholder-refresh
+// keeps running. Without this guard, the daemon would log a
+// `daily-default failed: dailyDomain is nil` line every poll tick,
+// AND a regression that folded both gates back together would
+// silently disable placeholder refresh for OSS catalogs that set
+// `quick_placeholder_h1` on a domain without declaring the daily
+// tag.
+//
+// Asserts on the daemon analog to TestApply_AutoTagGatedOnDailyDefault
+// Tag (one-shot path): list count drops from 4 to 3 (daily-default
+// dropped; foreign-tag + domain-bootstrap + placeholder-refresh
+// remain), and no `auto-tag:` stamp lines appear in the log.
+func TestDaemonAutoTagPoll_DailyDefaultTagEmptyGate(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend(aphorismListPayload(t))
+		opts := fourPassDaemonOpts(t, engine.AllFeaturesOn())
+		// Override the default DailyDefaultTag seeded by applyOptsFor
+		// to assert the empty-tag silent-disable contract directly.
+		opts.DailyDefaultTag = ""
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(300 * time.Millisecond) // one virtual tick at 200ms
+		buf := run.Buf
+
+		if got := fake.CountKind("list"); got != 3 {
+			t.Errorf("list call count = %d, want 3 (DailyDefaultTag=\"\" → daily-default skipped; "+
+				"foreign-tag + domain-bootstrap + placeholder-refresh must still run)\nlog:\n%s",
+				got, buf.String())
+		}
+		if stamps := countAutoTagStamps(buf); stamps != 0 {
+			t.Errorf("auto-tag stamp count = %d, want 0 (empty DailyDefaultTag must silently disable daily-default)\nlog:\n%s",
+				stamps, buf.String())
+		}
+		if strings.Contains(buf.String(), "dailyDomain is nil") {
+			t.Errorf("log must not mention 'dailyDomain is nil' under the empty-tag gate; got:\n%s", buf.String())
 		}
 	})
 }
@@ -431,8 +482,7 @@ func TestDaemonAutoTagPoll_DomainBootstrapFlagOff(t *testing.T) {
 		fake := newFakeAutoTagBackend(aphorismListPayload(t))
 		feats := engine.AllFeaturesOn()
 		feats.DomainBootstrap = false
-		opts := autoTagOptsForDomains(t, 200*time.Millisecond, feats,
-			[]*bear.Domain{testutil.Domain(t, "quicknote/daily"), testutil.Domain(t, "library/aphorisms")})
+		opts := fourPassDaemonOpts(t, feats)
 		run := startDaemonRun(t, fake, opts, nil)
 		run.WaitFor(300 * time.Millisecond) // one virtual tick at 200ms
 		buf := run.Buf

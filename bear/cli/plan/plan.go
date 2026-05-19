@@ -131,7 +131,13 @@ func LoadDomains(args []string,
 
 // DispatchRender chooses RenderJSON vs RenderText based on output.
 // Centralizes the format dispatch so callers stay under gocognit ≤ 15.
-func DispatchRender(stdout io.Writer, result *engine.PlanResult, output string, color engine.ColorMode, verbose bool) error {
+func DispatchRender(
+	stdout io.Writer,
+	result *engine.PlanResult,
+	output string,
+	color engine.ColorMode,
+	verbose bool,
+) error {
 	if output == "json" {
 		return engine.RenderJSON(stdout, result)
 	}
