@@ -7,8 +7,8 @@ import (
 )
 
 // FetchMasterContent returns the current body of d's master note,
-// pre-stripped of the trailing [Нова нотатка] new-note-link
-// (D-07: idempotency-stable bytes for content hashing). Returns
+// pre-stripped of the trailing [Нова нотатка] new-note-link, so the
+// returned bytes are idempotency-stable for content hashing. Returns
 // ("", err) on bearcli failure or when the master note doesn't
 // exist yet (engine.Apply caller treats this as "skip the hash
 // update for this domain", preserving last-known-good).
@@ -52,9 +52,8 @@ func FetchHubContents(ctx context.Context, d *Domain) (map[string]string, error)
 // DomainRenderInputs bundles the read-only inputs the engine needs to
 // render a domain's master + hubs without writing. Returned by
 // SnapshotDomainRenderInputs as a single value to keep the engine
-// public-API surface narrow per -01 (facade pattern over
-// bulk-exporting listNotes/computeMasterOverrides/computeHubOverrides/
-// groupAtomics — RESEARCH Pitfall 8).
+// public-API surface narrow — facade pattern over bulk-exporting
+// listNotes/computeMasterOverrides/computeHubOverrides/groupAtomics.
 type DomainRenderInputs struct {
 	Notes  []Note            // every atom + hub + master under d.Tag
 	Groups map[string][]Note // bucket → atoms, post-override-merge

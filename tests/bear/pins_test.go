@@ -180,10 +180,9 @@ func TestPinRegistryIsPinnedUnknownDomainTreatedAsExpired(t *testing.T) {
 	}
 }
 
-// TestPinAtomicWritePerm asserts that PinRegistry.Save (post-Plan-01-02
-// back-port to bear.AtomicWriteJSON) writes pins.json with mode 0o600
-// — closes the CONCERNS.md fsync gap and the Pitfall 5 perm trap in
-// one verification.
+// TestPinAtomicWritePerm asserts that PinRegistry.Save (routed through
+// bear.AtomicWriteJSON) writes pins.json with mode 0o600 — closes the
+// fsync gap and the perm trap in one verification.
 func TestPinAtomicWritePerm(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pins.json")

@@ -3,19 +3,18 @@
 // Three concerns live in this file:
 //
 // 1. ColorMode enum + ParseColorMode: the --color flag's value
-// (CONTEXT D-08; "auto"/"always"/"never").
+// ("auto"/"always"/"never").
 // 2. useColor predicate: stdlib-only TTY detection via
-// os.Stdout.Stat & os.ModeCharDevice (CONTEXT D-05; deliberately
-// NOT golang.org/x/term — keeps the dep budget at one).
+// os.Stdout.Stat & os.ModeCharDevice (deliberately NOT
+// golang.org/x/term — keeps the dep budget at one).
 // 3. RenderText / RenderJSON: writers that take *PlanResult and emit
 // human or machine output. RenderJSON has NO ColorMode parameter —
-// ANSI escape codes can never leak into JSON output (RESEARCH
-// Pitfall 3 hard contract).
+// ANSI escape codes can never leak into JSON output (hard contract).
 //
-// Streaming rule (RESEARCH Pitfall 7): every line goes through
-// fmt.Fprintf(w,...) directly — never builds a strings.Builder and
-// then dumps once. os.Stdout's runtime buffering handles cadence;
-// explicit bufio.NewWriter is unnecessary at this scale.
+// Streaming rule: every line goes through fmt.Fprintf(w,...) directly
+// — never builds a strings.Builder and then dumps once. os.Stdout's
+// runtime buffering handles cadence; explicit bufio.NewWriter is
+// unnecessary at this scale.
 package engine
 
 import (
@@ -96,8 +95,8 @@ func useColor(stdout *os.File, mode ColorMode) bool {
 }
 
 // RenderJSON writes r to w as indented JSON. NO ColorMode parameter —
-// JSON output never carries ANSI escapes (RESEARCH Pitfall 3 hard
-// contract; locked by TestRenderJSONNoANSI).
+// JSON output never carries ANSI escapes (locked by
+// TestRenderJSONNoANSI).
 func RenderJSON(w io.Writer, r *PlanResult) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -108,7 +107,7 @@ func RenderJSON(w io.Writer, r *PlanResult) error {
 // per-domain output. Color is decided by useColor when w is *os.File;
 // non-file writers (e.g. bytes.Buffer) get color only on ColorAlways.
 //
-// Output shape per CONTEXT D-07/D-09:
+// Output shape:
 // - one line per domain ("✓ tag — clean", "~ tag — N change(s)", "✗ tag — error")
 // - drift domains list each Diff.Summary indented two spaces
 // - verbose adds Diff.Detail lines indented four spaces

@@ -25,8 +25,8 @@ var (
 )
 
 // rootCmd is the noxctl entry. Subcommand wiring happens in each
-// subcommand's init via rootCmd.AddCommand — D-13 / Discretion in
-// 01-CONTEXT.md keeps main.go small.
+// subcommand's init via rootCmd.AddCommand so main.go stays small
+// and each verb owns its own flag surface.
 var rootCmd = &cobra.Command{
 	Use:   "noxctl",
 	Short: "Declarative Bear-notes structure manager",
@@ -49,16 +49,16 @@ func init() {
 		"verbose stderr output")
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false,
 		"suppress success messages on stderr")
-	// CONTEXT D-05 — quiet/verbose are mutually exclusive. Declared
-	// here (root.go init) so the flag-group registration happens AFTER
-	// the persistent flags are bound, regardless of subcommand init order.
+	// quiet/verbose are mutually exclusive. Declared here (root.go
+	// init) so the flag-group registration happens AFTER the
+	// persistent flags are bound, regardless of subcommand init
+	// order.
 	rootCmd.MarkFlagsMutuallyExclusive("quiet", "verbose")
 }
 
-// Exit-code constants per CLI-04 (Terraform-style detailed-exitcode
-// contract) + CLI-08 (SIGINT mid-apply maps to POSIX 130). 's
-// plan command wires the actual ExitDiffPresent usage; 's
-// apply command is the first reader of ExitInterrupted.
+// Exit-code constants follow the Terraform-style detailed-exitcode
+// contract: 0 success, 1 error, 2 diff present (plan), 130 SIGINT
+// mid-apply (POSIX 128 + signal number).
 const (
 	ExitSuccess     = 0
 	ExitError       = 1

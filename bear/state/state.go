@@ -1,12 +1,10 @@
 // Package state owns the per-project state.json schema + load/save
-// lifecycle for noxctl. Schema is locked at version="1" in.
+// lifecycle for noxctl. Schema is locked at version="1".
 //
-// STATE-04 mandates that a corrupt state.json is RENAMED to
-// state.json.corrupt-<RFC3339> and surfaced via slog.Warn — never
-// silently reset (operator must investigate). layers flock on
-// top; layers plan-cache writes through the same atomic
-// helper. ships only the schema, Load, Save, and the
-// corrupt-recovery branch.
+// A corrupt state.json is RENAMED to state.json.corrupt-<RFC3339>
+// and surfaced via slog.Warn — never silently reset (operator must
+// investigate). The flock and plan-cache helpers compose on top of
+// the same atomic write primitive.
 package state
 
 import (
@@ -44,9 +42,9 @@ type State struct {
 }
 
 // InProgress signals that a verb (`apply` or `daemon-cycle`) is mid-flight.
-// Set on Apply entry, cleared on success per CONTEXT D-14. Combined with
-// `State.LastApply` (set only on success per D-09), the plan
-// engine discriminates completed-vs-interrupted runs:
+// Set on Apply entry, cleared on success. Combined with `State.LastApply`
+// (set only on success), the plan engine discriminates completed-vs-
+// interrupted runs:
 //
 // - `InProgress.Verb == "" && LastApply != zero` → last cycle completed
 // - `InProgress.Verb != "" && LastApply older` → interrupted at `StartedAt`
@@ -57,8 +55,8 @@ type InProgress struct {
 }
 
 // DomainState is the per-domain content snapshot. ContentHash is the
-// sha256 of the rendered Master+Hub bytes — 's apply pipeline
-// updates it; 's plan reads it.
+// sha256 of the rendered Master+Hub bytes — the apply pipeline updates
+// it; plan reads it.
 type DomainState struct {
 	ContentHash string `json:"content_hash"`
 }
@@ -93,9 +91,9 @@ func Load(path string) (*State, error) {
 }
 
 // Save writes State to path via the bear.AtomicWriteJSON helper. perm
-// is fixed at 0o600 (threat T-1-09: state.json carries hashes of the
-// applied config, not secrets, but defensive perm closes the multi-user
-// info-disclosure window).
+// is fixed at 0o600: state.json carries hashes of the applied config,
+// not secrets, but defensive perm closes the multi-user
+// info-disclosure window.
 func (s *State) Save(path string) error {
 	return bear.AtomicWriteJSON(path, s, 0o600)
 }

@@ -1,9 +1,9 @@
 // Package engine_test — parallel applyPerDomain orchestration tests.
 //
-// Validates the per-umbrella errgroup refactor of
-// engine.applyPerDomain — PAR-02 (siblings concurrent / umbrella waits
-// on family / families concurrent), PAR-05 (state.Save serialization
-// under parallel writers), PAR-08 (idempotency across cycles).
+// Validates the per-umbrella errgroup orchestration of
+// engine.applyPerDomain: siblings concurrent / umbrella waits on
+// family / families concurrent; state.Save serialization under
+// parallel writers; idempotency across cycles.
 //
 // Production code uses errgroup.WithContext-based applyPerDomain over
 // a per-umbrella dependency graph. These
@@ -198,9 +198,9 @@ func umbrellaStub(tag, indexTitle, defaultChild string) *bear.Domain {
 }
 
 // poolCapacityForParallelTests is the pool slot count every parallel
-// orchestration test resets to. Eight is the ship default per D-01 and
-// gives every test fixture enough headroom to fan out without the
-// semaphore ever becoming the back-pressure source under observation.
+// orchestration test resets to. Eight is the ship default and gives
+// every test fixture enough headroom to fan out without the semaphore
+// ever becoming the back-pressure source under observation.
 const poolCapacityForParallelTests = 8
 
 // resetPoolForApply resets the bearcli pool capacity to the test-wide

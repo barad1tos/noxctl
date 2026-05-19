@@ -1,13 +1,8 @@
 // Package e2e_test is the end-to-end harness for the noxctl binary.
-//
-// Cross-plan dependency: the binary's main package lives at
-// `github.com/barad1tos/noxctl/cmd/noxctl`, authored by.
-// This test and that binary ship in
-// parallel worktrees during wave 2; the test compiles
-// successfully against any tree that contains both. Until 01-05
-// merges into the integration branch this test will fail at
-// `go build` with "no Go files in cmd/noxctl" — that is expected
-// and resolved by the orchestrator's wave-merge.
+// The binary's main package lives at
+// `github.com/barad1tos/noxctl/cmd/noxctl`; the test compiles
+// successfully against any tree that contains both this file and that
+// package.
 //
 // SAST note: this file invokes go (build) and the just-built noxctl
 // (run) via os/exec. The first arg to every exec.Command call is
@@ -29,14 +24,14 @@ import (
 	"time"
 )
 
-// TestValidateRomanCorpus is SPEC.md acceptance criterion 1:
-// `noxctl validate./examples/roman.toml` exits 0 in <1 second
+// TestValidateRomanCorpus is the validate acceptance gate:
+// `noxctl validate ./examples/roman.toml` exits 0 in <1 second
 // wall-clock with zero bearcli process spawned.
 //
-// Cold-start wall-clock per D-17 — INCLUDES binary spawn, flag
-// parse, TOML decode, dispatch, every Domain.Validate. If binary
-// spawn dominates that's the user-facing reality; the budget
-// covers the whole user-perceivable path, not just the loader.
+// Cold-start wall-clock — INCLUDES binary spawn, flag parse, TOML
+// decode, dispatch, every Domain.Validate. If binary spawn dominates
+// that's the user-facing reality; the budget covers the whole
+// user-perceivable path, not just the loader.
 //
 // The 1-second hard cap fails the build on perf regression so a
 // future loader hot-path change surfaces the cost immediately.
@@ -49,7 +44,7 @@ func TestValidateRomanCorpus(t *testing.T) {
 	fixture := filepath.Join(repoRoot, "examples", "roman.toml")
 
 	// Snapshot bearcli process count before+after. validate must
-	// not spawn bearcli (VAL-02) — the static guarantee in
+	// not spawn bearcli — the static guarantee in
 	// tests/bear/config/loader_test.go::TestLoaderZeroBearcli
 	// catches regressions at compile time; this is the runtime belt.
 	beforeCount := pgrepCount("bearcli")
@@ -65,21 +60,21 @@ func TestValidateRomanCorpus(t *testing.T) {
 	afterCount := pgrepCount("bearcli")
 	if afterCount != beforeCount {
 		t.Errorf("bearcli process count changed: before=%d after=%d "+
-			"(validate must not spawn bearcli — VAL-02)",
+			"(validate must not spawn bearcli)",
 			beforeCount, afterCount)
 	}
 
 	const budget = 1 * time.Second
 	if elapsed > budget {
 		t.Errorf("validate took %v on Roman's corpus; budget %v "+
-			"(D-17 cold-start wall-clock)", elapsed, budget)
+			"(cold-start wall-clock)", elapsed, budget)
 	}
 	t.Logf("noxctl validate ./examples/roman.toml: %v (budget %v)",
 		elapsed, budget)
 
 	// Sanity on the success summary. The success line lands somewhere
-	// in stdout or stderr — accept either to stay loose against
-	// 's exact wording choice.
+	// in stdout or stderr — accept either to stay loose against the
+	// CLI's exact wording choice.
 	combined := stdout + stderr
 	if !strings.Contains(combined, "validated") &&
 		!strings.Contains(combined, "OK") &&
@@ -127,8 +122,7 @@ func shellSafeRun(prog string, args ...string) (stdout, stderr string, err error
 
 // buildE2EBinary compiles cmd/noxctl into a temp directory and
 // returns the path. Build failures fast-fail the test; a missing
-// cmd/noxctl/ tree (not merged yet) surfaces here as
-// `go build: no Go files in...` — that's the cross-plan signal.
+// cmd/noxctl/ tree surfaces here as `go build: no Go files in...`.
 func buildE2EBinary(t *testing.T) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "noxctl")

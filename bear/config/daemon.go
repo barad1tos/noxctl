@@ -40,17 +40,17 @@ const (
 	EnvPinsPath            = "REGEN_PINS_PATH"
 	EnvLogPath             = "REGEN_LOG_PATH"
 	EnvBearDBDir           = "BEAR_DB_DIR"
-	EnvBearcliConcurrency  = "REGEN_BEARCLI_CONCURRENCY"   //  D-01: operator-tuned bearcli pool cap.
-	EnvMtimePollInterval   = "REGEN_MTIME_POLL_INTERVAL"   //  POLL-01: database.sqlite mtime poll interval.
-	EnvAutoTagPollInterval = "REGEN_AUTOTAG_POLL_INTERVAL" //  TAG-01: auto-tag fast-pass tick interval.
-	EnvDomainBootstrap     = "REGEN_DOMAIN_BOOTSTRAP"      //  : universal fast-pass canonicalization kill-switch.
+	EnvBearcliConcurrency  = "REGEN_BEARCLI_CONCURRENCY"   // operator-tuned bearcli pool cap.
+	EnvMtimePollInterval   = "REGEN_MTIME_POLL_INTERVAL"   // database.sqlite mtime poll interval.
+	EnvAutoTagPollInterval = "REGEN_AUTOTAG_POLL_INTERVAL" // auto-tag fast-pass tick interval.
+	EnvDomainBootstrap     = "REGEN_DOMAIN_BOOTSTRAP"      // universal fast-pass canonicalization kill-switch.
 )
 
 // bearcliConcurrencySoftCap is the value above which LoadDaemon emits a
-// WARN log line but still accepts the value (D-02 — soft cap, not a hard
-// truncation). Operators stress-testing via `--bench --sweep` must see
+// WARN log line but still accepts the value — soft cap, not a hard
+// truncation. Operators stress-testing via `--bench --sweep` must see
 // exactly the value they set in the JSON metrics, not a silently-clamped
-// one. Pitfall 6 in 07-RESEARCH.md covers the visibility contract.
+// one.
 const bearcliConcurrencySoftCap = 16
 
 // SourceDefault, SourceFile, SourceEnv are the values stored in
@@ -75,36 +75,33 @@ type DaemonConfig struct {
 	BearDBDir      string
 
 	// BearcliConcurrency is the operator-tuned cap for concurrent bearcli
-	// subprocess invocations (D-01). Default 8. Threaded through
+	// subprocess invocations. Default 8. Threaded through
 	// engine.ApplyOpts.BearcliConcurrency into bear.SetBearcliConcurrency
 	// at daemon startup. Zero/negative is fatal at LoadDaemon; values >16
-	// emit a WARN log line but are accepted (soft cap, D-02).
+	// emit a WARN log line but are accepted (soft cap).
 	BearcliConcurrency int
 
 	// MtimePollInterval is the period between database.sqlite mtime
-	// checks driving the second daemon trigger source (POLL-01).
-	// Default 30s. Zero is a valid "disabled" sentinel — the poll loop
-	// never starts (semantic divergence from BearcliConcurrency, which
-	// treats zero as fatal). Negative is fatal at LoadDaemon. Threaded
-	// through engine.DaemonOpts.MtimePollInterval in.
+	// checks driving the second daemon trigger source. Default 30s. Zero
+	// is a valid "disabled" sentinel — the poll loop never starts
+	// (semantic divergence from BearcliConcurrency, which treats zero as
+	// fatal). Negative is fatal at LoadDaemon. Threaded through
+	// engine.DaemonOpts.MtimePollInterval.
 	MtimePollInterval time.Duration
 
-	// AutoTagPollInterval is the period between auto-tag fast-pass ticks
-	// (TAG-01). Each tick runs ONLY ApplyForeignTagEscape +
-	// ApplyDailyDefaultTag — independent of the full regen cycle.
-	// Default 2s. Zero is a valid "disabled" sentinel — the fast-pass
-	// loop never starts. Negative is fatal at LoadDaemon. Threaded
-	// through engine.DaemonOpts.AutoTagPollInterval in.
+	// AutoTagPollInterval is the period between auto-tag fast-pass ticks.
+	// Each tick runs ONLY ApplyForeignTagEscape + ApplyDailyDefaultTag —
+	// independent of the full regen cycle. Default 2s. Zero is a valid
+	// "disabled" sentinel — the fast-pass loop never starts. Negative is
+	// fatal at LoadDaemon. Threaded through
+	// engine.DaemonOpts.AutoTagPollInterval.
 	AutoTagPollInterval time.Duration
 
-	// DomainBootstrap gates the universal fast-pass
-	// canonicalization pre-pass. Default true (ship-on). Env semantics
-	// mirror `EnvAuditEnabled`: `REGEN_DOMAIN_BOOTSTRAP=off` disables;
-	// any other non-empty value enables. The CLI boundary in
-	// `cmd/regen-watchd/main.go` threads this into
-	// `engine.Features.DomainBootstrap`. ships the flag only —
-	// the new pass arrives in /3, so flipping this knob is a
-	// behavioral no-op until then.
+	// DomainBootstrap gates the universal fast-pass canonicalization
+	// pre-pass. Default true (ship-on). Env semantics mirror
+	// `EnvAuditEnabled`: `REGEN_DOMAIN_BOOTSTRAP=off` disables; any other
+	// non-empty value enables. Threaded into
+	// `engine.Features.DomainBootstrap`.
 	DomainBootstrap bool
 
 	// Sources maps field name → "env" | "file" | "default" so callers
@@ -113,7 +110,7 @@ type DaemonConfig struct {
 }
 
 // daemonDefaults returns hardcoded defaults for every TOML-configurable
-// field. Path defaults match the cmd/regen-watchd/main.go const block
+// field. Path defaults match the legacy daemon's const block
 // (defaultLogPath, defaultPinsPath) plus the engine.DefaultDebounce*
 // constants.
 func daemonDefaults() DaemonConfig {
@@ -126,10 +123,10 @@ func daemonDefaults() DaemonConfig {
 		PinsPath:            "$HOME/.cache/regen-watchd-pins.json",
 		LogPath:             "$HOME/.cache/regen-watchd.log",
 		BearDBDir:           "",                                // empty = auto-discover
-		BearcliConcurrency:  8,                                 //  D-01 ship default.
-		MtimePollInterval:   engine.DefaultMtimePollInterval,   //  POLL-01 ship default 30s.
-		AutoTagPollInterval: engine.DefaultAutoTagPollInterval, //  TAG-01 ship default 2s.
-		DomainBootstrap:     true,                              //   ship default ON (kill-switch is the off path).
+		BearcliConcurrency:  8,                                 // ship default.
+		MtimePollInterval:   engine.DefaultMtimePollInterval,   // ship default 30s.
+		AutoTagPollInterval: engine.DefaultAutoTagPollInterval, // ship default 2s.
+		DomainBootstrap:     true,                              // ship default ON (kill-switch is the off path).
 		Sources:             make(map[string]string, 12),
 	}
 }
@@ -139,9 +136,6 @@ func daemonDefaults() DaemonConfig {
 // exist, returns defaults with no error. When the file is present but
 // unparseable, returns the parse error so callers can decide whether
 // to fatal-out.
-//
-// Task 2 ships file decoding; Task 3 adds env overlay; Task 4 adds
-// path expansion.
 func LoadDaemon(path string) (DaemonConfig, error) {
 	cfg := daemonDefaults()
 	for _, field := range []string{
@@ -242,10 +236,10 @@ func applyFileOverlay(cfg *DaemonConfig, s daemonStanza) error {
 // the operator-facing identifier (TOML key or env-var name) so the
 // error message points at exactly the input the operator supplied.
 //
-// Soft-cap semantics (D-02): values >16 are accepted but
-// logged — we do NOT truncate, because operators stress-testing via
-// `regen-watchd --bench --sweep` need the JSON metrics to reflect the
-// configured value, not a silently-clamped one.
+// Soft-cap semantics: values >16 are accepted but logged — we do NOT
+// truncate, because operators stress-testing via `--bench --sweep`
+// need the JSON metrics to reflect the configured value, not a
+// silently-clamped one.
 func validateConcurrency(n int, keyName string) error {
 	if n <= 0 {
 		return fmt.Errorf("%s = %d: must be > 0", keyName, n)
@@ -333,7 +327,7 @@ func applyEnvOverlay(cfg *DaemonConfig) error {
 	}
 	if v := os.Getenv(EnvAuditEnabled); v != "" {
 		// REGEN_AUDIT quirk: only "off" disables; anything else enables.
-		// Backward-compat with cmd/regen-watchd/main.go pre-Task-3 semantics.
+		// Backward-compat with the legacy daemon's semantics.
 		cfg.AuditEnabled = v != "off"
 		cfg.Sources["AuditEnabled"] = SourceEnv
 	}
@@ -358,7 +352,7 @@ func applyEnvOverlay(cfg *DaemonConfig) error {
 
 // envOverlayBearcliConcurrency parses REGEN_BEARCLI_CONCURRENCY into
 // cfg.BearcliConcurrency. Separated from applyEnvOverlay to keep that
-// function's gocognit budget intact (D-01).
+// function's gocognit budget intact.
 func envOverlayBearcliConcurrency(cfg *DaemonConfig) error {
 	v := os.Getenv(EnvBearcliConcurrency)
 	if v == "" {
@@ -405,7 +399,7 @@ func envOverlayString(cfg *DaemonConfig, envName, sourceKey string, dst *string)
 // expandPath performs ~/ -> $HOME/ rewriting then $VAR substitution.
 // Two-step so a path like "~/$LOG_DIR/file" round-trips: leading "~/"
 // expands first, then any embedded vars expand via os.ExpandEnv.
-// Mirrors the existing cmd/regen-watchd/main.go envOr behavior.
+// Mirrors the legacy daemon's envOr behavior.
 func expandPath(p string) string {
 	if p == "" {
 		return p

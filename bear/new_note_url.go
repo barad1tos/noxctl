@@ -14,11 +14,11 @@ const (
 	// FormBootstrap means text= carries the full canonical body plus
 	// edit=yes. This is the current canonical shape every domain emits.
 	FormBootstrap NewNoteURLForm = iota
-	// FormSimple means tags= and open_note=yes only — the Phase-09
+	// FormSimple means tags= and open_note=yes only — the legacy
 	// pre-bootstrap shape, still produced as the Inner URL inside
 	// FormBootstrap.
 	FormSimple
-	// FormLegacyTitle is the pre-Phase-09 shape carrying a title=
+	// FormLegacyTitle is the historical shape carrying a title=
 	// parameter. Kept for round-trip parsing only; production never
 	// emits this form.
 	FormLegacyTitle

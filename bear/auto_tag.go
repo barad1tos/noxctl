@@ -223,10 +223,10 @@ func ApplyQuicknotePlaceholderRefresh(ctx context.Context, dailyDomain *Domain) 
 }
 
 // ApplyDomainBootstrap canonicalizes any note whose `Tags` array
-// matches a managed leaf domain. New fourth fast-pass.
-// Wired into `handleAutoTagTick` and `applyPrePasses` in.
+// matches a managed leaf domain. Fourth fast-pass; wired into
+// `handleAutoTagTick` and `applyPrePasses`.
 //
-// Routing (CONTEXT.md D-04):
+// Routing:
 // 1. Most-specific leaf wins — note with `#llm/agents` (possibly
 // alongside `#llm`) routes to leaf `llm/agents`.
 // 2. Bare umbrella → DefaultChild — note with ONLY `#llm` routes to
@@ -236,12 +236,12 @@ func ApplyQuicknotePlaceholderRefresh(ctx context.Context, dailyDomain *Domain) 
 // 4. Multi-leaf tie of unrelated families — log WARN once per
 // note-ID, skip (per user direction: do not guess).
 //
-// Idempotency: existing canonical notes detected by 's
-// `equalIgnoringNewNoteLinkStrict` predicate — zero bearcli writes
-// when already canonical, ensuring `≤3-pass unchanged` convergence.
+// Idempotency: existing canonical notes detected by
+// `equalIgnoringNewNoteLinkStrict` — zero bearcli writes when
+// already canonical, ensuring `≤3-pass unchanged` convergence.
 //
 // Self-write safety: relies on the daemon's self-write gate
-// around `handleAutoTagTick` plus 's `effectiveSelfWriteEpsilon`
+// around `handleAutoTagTick` plus `effectiveSelfWriteEpsilon`
 // to suppress FSEvent feedback on our own writes.
 //
 // Returns the number of notes actually rewritten (zero when every

@@ -1,5 +1,5 @@
-# Fixture exercises all 6 closed-catalog blueprints (D-12) with one
-# minimal but representative stanza each. ships the full
+# Fixture exercises all 6 closed-catalog blueprints with one minimal
+# but representative stanza each. The production catalog ships the full
 # 28-domain Roman corpus; this file only verifies that every dispatch
 # path round-trips cleanly with no metadata.Undecoded drift.
 

@@ -1,10 +1,9 @@
 // Package engine plan_result — JSON-stable schema for `noxctl plan`.
 //
-// deliverable. Mirrors bear/engine/apply_result.go in
-// style: types live here, no behavior; behavior lives in plan.go and
-// diff.go. The JSON wire shape is locked at SchemaVersion=1 per
-// CONTEXT D-05 (integer schema versioning, full-shape always emitted —
-// empty-drift marshals `[]`, never `null`, per RESEARCH Pitfall 6).
+// Mirrors bear/engine/apply_result.go in style: types live here, no
+// behavior; behavior lives in plan.go and diff.go. The JSON wire shape
+// is locked at SchemaVersion=1: integer schema versioning, full-shape
+// always emitted — empty-drift marshals `[]`, never `null`.
 package engine
 
 import "time"
@@ -48,7 +47,7 @@ const (
 // DomainPlan groups one domain's per-note changes plus a status flag.
 // Changes is initialized to make([]Diff, 0) at construction time so the
 // JSON shape is `"changes": []` rather than `"changes": null` for clean
-// domains (RESEARCH Pitfall 6).
+// domains.
 type DomainPlan struct {
 	Tag     string `json:"tag"`
 	Status  string `json:"status"`  // StatusClean | StatusDrift | StatusError
@@ -64,10 +63,9 @@ type UntrackedFamily struct {
 	NoteCount int    `json:"note_count"`
 }
 
-// UntrackedReport is the residue section of plan output (CONTEXT D-02).
-// emits a zero-value report (TagFamilies as an initialized
-// empty slice, TotalNotes=0) — wires bear.ScanUntracked to
-// populate it.
+// UntrackedReport is the residue section of plan output. The result
+// always carries a zero-value report (TagFamilies as an initialized
+// empty slice, TotalNotes=0) when bear.ScanUntracked finds nothing.
 type UntrackedReport struct {
 	TagFamilies []UntrackedFamily `json:"tag_families"` // make(..., 0) — never null
 	TotalNotes  int               `json:"total_notes"`
@@ -94,14 +92,14 @@ type PlanSummary struct {
 }
 
 // PlanResult is the complete return payload of engine.Plan. Stable
-// across patch versions per PLAN-05; SchemaVersion bumps only on
-// breaking changes (additive evolution allowed inside SchemaVersion=1).
+// across patch versions; SchemaVersion bumps only on breaking changes
+// (additive evolution allowed inside SchemaVersion=1).
 //
 // Slice fields are initialized via make(..., 0) at construction time in
-// Plan so JSON marshaling produces `[]` rather than `null` (RESEARCH
-// Pitfall 6 — the most common JSON-stability bug in Go).
+// Plan so JSON marshaling produces `[]` rather than `null` — the most
+// common JSON-stability bug in Go.
 type PlanResult struct {
-	SchemaVersion int             `json:"schema_version"` // = 1 in
+	SchemaVersion int             `json:"schema_version"` // = 1
 	StartedAt     time.Time       `json:"started_at"`
 	CompletedAt   time.Time       `json:"completed_at"`
 	Domains       []DomainPlan    `json:"domains"` // make(..., 0)
@@ -113,8 +111,8 @@ type PlanResult struct {
 
 // HasDrift reports whether the plan found any drift across all domains.
 // Nil-safe: a nil receiver returns false (mirrors bear/pins.go nil-safe
-// methods). Callers (cmd/noxctl/plan.go in) use this to map
-// to exit code 2.
+// methods). Callers (cmd/noxctl/plan.go) use this to map to exit
+// code 2.
 func (r *PlanResult) HasDrift() bool {
 	if r == nil {
 		return false

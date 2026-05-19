@@ -1,9 +1,9 @@
 package config
 
 // daemonStanza mirrors the `[daemon]` + `[daemon.paths]` TOML schema.
-// Pointer types per D-09: distinguishes "field absent" from "field
-// explicitly zero", which the spec requires so per-field provenance
-// can distinguish file-source from default.
+// Pointer types so per-field provenance can distinguish "field absent"
+// from "field explicitly zero" — needed for file-source vs default
+// reporting.
 type daemonStanza struct {
 	DebouncePause  *string `toml:"debounce_pause" json:"debounce_pause,omitempty"`
 	MaxBurstWindow *string `toml:"max_burst_window" json:"max_burst_window,omitempty"`

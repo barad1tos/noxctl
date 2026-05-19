@@ -87,7 +87,7 @@ func TestState_RoundTrip(t *testing.T) {
 	}
 }
 
-// TestState_CorruptRenamesAndWarns is the STATE-04 acceptance gate.
+// TestState_CorruptRenamesAndWarns is the corrupt-state acceptance gate.
 // Garbage bytes at state.json must be renamed to state.json.corrupt-
 // <RFC3339>, slog.Warn must fire ("state file corrupt"), and the
 // returned State must be a fresh V1 — never silent reset, never
@@ -148,8 +148,8 @@ func TestState_CorruptRenamesAndWarns(t *testing.T) {
 	_ = context.TODO()
 }
 
-// TestState_SavePerm0o600 confirms STATE-07 / threat T-1-09: state.json
-// must never end up group/world readable.
+// TestState_SavePerm0o600 confirms state.json must never end up
+// group/world readable.
 func TestState_SavePerm0o600(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")

@@ -15,7 +15,7 @@ import (
 // noxctl.toml at the resolved path, runs the full strict-mode
 // loader (decode → Undecoded → ValidateCatalog → Dispatch →
 // Domain.Validate, all aggregated through errors.Join), prints a
-// verbose success summary on stderr (D-13), and exits 0/1.
+// verbose success summary on stderr, and exits 0/1.
 //
 // validate has no PersistentPreRunE because validate IS the
 // preflight — running a separate PersistentPreRunE step would
@@ -25,10 +25,10 @@ import (
 // surface is identical to a future real subcommand without the
 // double-load.
 //
-// VAL-02 / VAL-05: never spawns bearcli; the static guarantee at
+// validate never spawns bearcli; the static guarantee at
 // tests/bear/config/loader_test.go::TestLoaderZeroBearcli plus the
-// e2e smoke test below verify both compile-time and runtime that
-// no Bear-side I/O happens here.
+// e2e smoke test verify both compile-time and runtime that no
+// Bear-side I/O happens here.
 var validateCmd = &cobra.Command{
 	Use:   "validate [path]",
 	Short: "Validate noxctl.toml without any Bear-side I/O",
@@ -36,10 +36,9 @@ var validateCmd = &cobra.Command{
 	RunE: func(_ *cobra.Command, args []string) error {
 		start := time.Now()
 
-		// Path resolution: positional arg overrides --config flag
-		// (D-14 keeps the path explicit; no env-var override, no
-		// walk-up). When neither is set, --config's default
-		// "./noxctl.toml" applies.
+		// Path resolution: positional arg overrides --config flag,
+		// which defaults to "./noxctl.toml". No env-var override,
+		// no walk-up — the path is always explicit.
 		path := cfgPath
 		if len(args) == 1 {
 			path = args[0]
@@ -59,8 +58,8 @@ var validateCmd = &cobra.Command{
 		if loadErr != nil {
 			// Cobra surfaces this to stderr + sets exit 1.
 			// Wrap so stderr shows the uniform `path:line:col: kind:
-			// message` shape (VAL-04) while preserving errors.Is
-			// reachability of the original chain (e.g. fs.ErrNotExist).
+			// message` shape while preserving errors.Is reachability
+			// of the original chain (e.g. fs.ErrNotExist).
 			return &formattedLoadError{
 				inner: loadErr,
 				msg:   config.FormatLoadError(loadErr, path),
@@ -84,7 +83,7 @@ func init() { rootCmd.AddCommand(validateCmd) }
 // error (so existing tests like TestLoaderFileNotFound continue to
 // satisfy errors.Is(returned, fs.ErrNotExist)) while overriding
 // Error so cobra's stderr output shows the uniform shape produced
-// by config.FormatLoadError. See VAL-04.
+// by config.FormatLoadError.
 type formattedLoadError struct {
 	inner error
 	msg   string

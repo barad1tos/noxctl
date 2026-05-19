@@ -8,22 +8,20 @@ import (
 )
 
 // stubCmd builds a Cobra command for a subcommand whose body is
-// scheduled to land in a later phase (init/plan/apply/daemon/
-// destroy/import). The returned *cobra.Command prints msg to stderr
-// and returns nil (exit 0) per 01-CONTEXT.md §Discretion.
+// scheduled to land in a later release (init/destroy/import).
+// The returned *cobra.Command prints msg to stderr and returns nil
+// (exit 0) so the binary stays useful while the verb is incomplete.
 //
 // Stubs deliberately skip the PersistentPreRunE preflight — a user
-// running `noxctl plan` in a fresh directory expects the helpful
-// Phase-Y notice ("Run `noxctl validate` to check the config."), not
-// a config-load error pointing at a file they haven't created yet.
-// When a stub gets a real Phase-N implementation it must wire its
-// own RunE-level preflight (or PersistentPreRunE) so config errors
-// surface cleanly at that point — not before.
+// running a stub in a fresh directory expects the helpful "not yet
+// implemented" notice, not a config-load error pointing at a file
+// they haven't created yet. When a stub gets a real implementation
+// it must wire its own RunE-level preflight so config errors surface
+// cleanly at that point.
 //
-// Extracted to dodge the dupl ≥ 30-token gate: all six stubs share
-// the same Cobra-literal shape; inlining them per file produced 12
-// dupl findings. Per "Never raise thresholds — above limit
-// = extract a helper. The threshold is the point."
+// Extracted to dodge the dupl ≥ 30-token gate: every stub would
+// otherwise repeat the same Cobra-literal shape. Centralizing also
+// keeps the "not yet implemented" wording consistent.
 //
 // args may be nil for stubs that accept any number of positional
 // arguments, or cobra.ExactArgs(N) for `destroy`/`import` which

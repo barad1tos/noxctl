@@ -1,19 +1,12 @@
 // Package engine_test — mtime-poll fallback tests for the daemon.
 //
-// Validates POLL-02 (stat-and-trigger primitive), POLL-03
-// (zero disables the poll loop) and POLL-04 (self-write gate honored
-// on poll-triggered events). Drives the real Daemon.Run select loop
-// with a fake FsWatcher (no FSEvents arrive unless the test injects
-// them) and a fake StatFn (scripted ModTime sequence per scenario).
-// All tests wrap the body in testing/synctest.Test so time.NewTicker,
-// time.NewTimer, and the virtual clock advance deterministically.
-//
-// Production code (DaemonOpts.MtimePollInterval + DaemonOpts.StatFn +
-// 6th select case in Daemon.Run) lands in. The first
-// two tests are RED before that lands (compile error on the missing
-// struct fields); GREEN once Task 2 lands. SelfWriteGate and
-// DebounceReset are filled in during Task 3 (GREEN refactor) once the
-// production seam exists for a deterministic cycle counter.
+// Validates the stat-and-trigger primitive, the zero-disables-poll-loop
+// behavior, and the self-write gate honored on poll-triggered events.
+// Drives the real Daemon.Run select loop with a fake FsWatcher (no
+// FSEvents arrive unless the test injects them) and a fake StatFn
+// (scripted ModTime sequence per scenario). All tests wrap the body in
+// testing/synctest.Test so time.NewTicker, time.NewTimer, and the
+// virtual clock advance deterministically.
 package engine_test
 
 import (
@@ -74,7 +67,7 @@ func (f fakeFileInfo) ModTime() time.Time { return f.mt }
 func (fakeFileInfo) IsDir() bool          { return false }
 func (fakeFileInfo) Sys() any             { return nil }
 
-// pollOptsFor builds a DaemonOpts wired for POLL-* synctest scenarios.
+// pollOptsFor builds a DaemonOpts wired for poll synctest scenarios.
 // SkipFlock=true mirrors apply_parallel_test.go — flock isn't ctx-aware
 // and synctest cannot virtualize the syscall. Reuses applyOptsFor from
 // apply_parallel_test.go (same package) so the inner ApplyOpts shape
@@ -121,8 +114,8 @@ func countCycles(buf *bytes.Buffer) int {
 	return strings.Count(buf.String(), "regen trigger:")
 }
 
-// TestDaemonPoll_StatAndTrigger asserts POLL-02: a poll-detected mtime
-// change resets the debounce timer and the loop fires at least the
+// TestDaemonPoll_StatAndTrigger asserts: a poll-detected mtime change
+// resets the debounce timer and the loop fires at least the
 // initial-record + change-detect stat sequence under virtual time.
 func TestDaemonPoll_StatAndTrigger(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -151,15 +144,11 @@ func TestDaemonPoll_StatAndTrigger(t *testing.T) {
 		if got := fs.calls.Load(); got < 2 {
 			t.Errorf("fakeStat.calls = %d, want >= 2 (at least one initial-record + one change-detect)", got)
 		}
-		// Task 3 (GREEN refactor) tightens this with a cycle counter via
-		// log capture; for the RED phase the structural assertion above
-		// is the canonical compile-or-die marker.
 	})
 }
 
-// TestDaemonPoll_ZeroDisables asserts POLL-03 engine half: when
-// MtimePollInterval == 0, no ticker is created and StatFn is never
-// invoked from the poll path.
+// TestDaemonPoll_ZeroDisables asserts: when MtimePollInterval == 0,
+// no ticker is created and StatFn is never invoked from the poll path.
 func TestDaemonPoll_ZeroDisables(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fs := &fakeStat{mtimes: []time.Time{time.Now()}}
@@ -187,7 +176,7 @@ func TestDaemonPoll_ZeroDisables(t *testing.T) {
 	})
 }
 
-// TestDaemonPoll_SelfWriteGate asserts POLL-04: a poll that catches a
+// TestDaemonPoll_SelfWriteGate asserts: a poll that catches a
 // fresh mtime advance within the EFFECTIVE self-write epsilon of the
 // last cycle end does NOT trigger a redundant cycle. After the gate
 // closes the next mtime change DOES trigger a cycle. The contract gates
@@ -253,7 +242,7 @@ func TestDaemonPoll_SelfWriteGate(t *testing.T) {
 	})
 }
 
-// TestDaemonPoll_DebounceReset asserts POLL-02's debounce-uniformity
+// TestDaemonPoll_DebounceReset asserts the debounce-uniformity
 // contract: an FSEvent followed by a poll-detected mtime change INSIDE
 // the debounce window resets the same quietTimer (idempotent reset),
 // so exactly one cycle fires after the LATER reset's DebouncePause.

@@ -1,5 +1,5 @@
 // Package main wraps the cyrillic Analyzer in singlechecker so it can
-// be invoked as a standalone binary by pre-commit and CI. See I18N-04.
+// be invoked as a standalone binary by pre-commit and CI.
 package main
 
 import (

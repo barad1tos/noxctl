@@ -11,11 +11,11 @@ import "errors"
 // errors.Join.
 var (
 	// ErrUnknownBlueprint is wrapped when a [[domain]].blueprint value
-	// does not appear in the closed 6-entry dispatch map (D-12).
+	// does not appear in the closed 6-entry dispatch map.
 	ErrUnknownBlueprint = errors.New("config: unknown blueprint")
 
 	// ErrSchemaVersion is wrapped when [meta].version is anything
-	// other than the string "1" (D-15 — ships v1 only).
+	// other than the string "1" — noxctl ships schema v1 only.
 	ErrSchemaVersion = errors.New("config: unsupported schema version")
 
 	// ErrDuplicateTag is wrapped when two or more [[domain]] entries

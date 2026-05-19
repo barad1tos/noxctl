@@ -15,8 +15,8 @@ import (
 
 // captureSlog installs a per-test slog text handler at LevelInfo (so
 // both Info and Warn records flow through) and restores the previous
-// default on cleanup.: per-test reset of package-level
-// state instead of @AfterEach.
+// default on cleanup. Per-test reset of package-level state instead
+// of @AfterEach.
 func captureSlog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	buf := &bytes.Buffer{}
@@ -45,7 +45,7 @@ func seedLegacy(t *testing.T, legacyPath string) (string, time.Time) {
 	return body, info.ModTime()
 }
 
-// TestMigratePins_SourceExistsTargetAbsent is case (a) of MIGRATE-06:
+// TestMigratePins_SourceExistsTargetAbsent is case (a) of MigratePins:
 // copy preserves bytes, perm 0o600 on target, source untouched, exactly
 // one slog.Info emitted with from/to keys.
 func TestMigratePins_SourceExistsTargetAbsent(t *testing.T) {
@@ -206,9 +206,9 @@ func TestMigratePins_ConcurrentRaceSafe(t *testing.T) {
 	}
 }
 
-// TestMigratePins_LegacyNeverDeleted is case (e): MIGRATE-06 explicit
-// "legacy left in place for operator recovery". After case (a)
-// completes, the legacy file is still readable.
+// TestMigratePins_LegacyNeverDeleted is case (e): legacy is left in
+// place for operator recovery. After case (a) completes, the legacy
+// file is still readable.
 func TestMigratePins_LegacyNeverDeleted(t *testing.T) {
 	root := t.TempDir()
 	legacyPath := filepath.Join(root, "legacy", "regen-watchd-pins.json")

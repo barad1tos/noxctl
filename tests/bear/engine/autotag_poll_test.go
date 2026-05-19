@@ -1,27 +1,26 @@
 // Package engine_test — auto-tag fast-pass tests for the daemon.
 //
-// Validates TAG-02 (7th-case fast-pass body), TAG-03 (skip
-// when regenInProgress), TAG-04 (BearcliBackend semaphore respected
-// via bear.runBearcli, no bypass), and the disabled-poll path
-// (AutoTagPollInterval == 0 → no ticker, no work). Drives the real
-// Daemon.Run select loop with a fake FsWatcher and a fake
-// bear.BearcliBackend stamped on ctx via bear.ContextWithBackend.
-// All tests wrap the body in testing/synctest.Test so time.NewTicker
-// and the virtual clock advance deterministically.
+// Validates the 7th-case fast-pass body, the skip-while-regen-in-progress
+// behavior, the BearcliBackend semaphore (respected via bear.runBearcli,
+// no bypass), and the disabled-poll path (AutoTagPollInterval == 0 → no
+// ticker, no work). Drives the real Daemon.Run select loop with a fake
+// FsWatcher and a fake bear.BearcliBackend stamped on ctx via
+// bear.ContextWithBackend. All tests wrap the body in
+// testing/synctest.Test so time.NewTicker and the virtual clock advance
+// deterministically.
 //
-// Test seam (D-01): bear.BearcliBackend is the SAME seam
-// used by tests/bear/engine/apply_parallel_test.go. Both
-// ApplyForeignTagEscape and ApplyDailyDefaultTag route their bearcli
-// list/overwrite calls through bear.runBearcli, which consults
-// BackendFromContext(ctx) and dispatches to the fake. DaemonOpts
-// gains ZERO new test fields — the seam is one layer deeper than the
-// daemon, so the daemon never has to know about test fakes.
+// Test seam: bear.BearcliBackend is the SAME seam used by
+// tests/bear/engine/apply_parallel_test.go. Both ApplyForeignTagEscape
+// and ApplyDailyDefaultTag route their bearcli list/overwrite calls
+// through bear.runBearcli, which consults BackendFromContext(ctx) and
+// dispatches to the fake. DaemonOpts gains ZERO new test fields — the
+// seam is one layer deeper than the daemon, so the daemon never has to
+// know about test fakes.
 //
-// TAG-03 test seam: Daemon.SetRegenInProgressForTest mirrors the
-// SetBearcliConcurrency precedent — a tiny exported helper
-// that lets the test flip d.regenInProgress directly. This matches
-// SPEC TAG-03 acceptance verbatim and avoids orchestrating a
-// blocking cycle to hold the flag mid-flight.
+// Regen-in-progress test seam: Daemon.SetRegenInProgressForTest mirrors
+// the SetBearcliConcurrency precedent — a tiny exported helper that
+// lets the test flip d.regenInProgress directly. This avoids
+// orchestrating a blocking cycle to hold the flag mid-flight.
 
 //goland:noinspection SpellCheckingInspection
 package engine_test
@@ -47,7 +46,7 @@ import (
 // untagged note unless overridden), and {"id":..."ok":true} stub for
 // "overwrite". Test scenarios pre-populate listPayload + assert via
 // Calls snapshot. Mirrors apply_parallel_test.go::fakeBackend in
-// spirit; trimmed for 's needs (no inflight peak counting —
+// spirit; trimmed for this test's needs (no inflight peak counting —
 // the BearcliPool semaphore itself is exercised by TestApplyParallel_*).
 type fakeAutoTagBackend struct {
 	listPayload []byte // canned response for "list"
@@ -124,9 +123,9 @@ func untaggedListPayload(t *testing.T) []byte {
 	return raw
 }
 
-// autoTagOptsFor builds a DaemonOpts wired for TAG-* synctest scenarios.
-// SkipFlock=true mirrors apply_parallel_test.go/pollOptsFor — flock is
-// not ctx-aware and synctest cannot virtualize the syscall.
+// autoTagOptsFor builds a DaemonOpts wired for auto-tag synctest
+// scenarios. SkipFlock=true mirrors apply_parallel_test.go/pollOptsFor —
+// flock is not ctx-aware and synctest cannot virtualize the syscall.
 // MtimePollInterval=0 disables the mtime poll loop so cycle counts are
 // driven exclusively by the fast-pass under test.
 func autoTagOptsFor(t *testing.T, pollInterval time.Duration, features engine.Features) engine.DaemonOpts {
@@ -201,12 +200,11 @@ func (r *daemonRun) WaitFor(dur time.Duration) {
 	<-r.errCh
 }
 
-// TestDaemonAutoTagPoll_TickFires asserts TAG-02: a fast-pass tick
-// invokes ApplyForeignTagEscape + ApplyDailyDefaultTag via the
-// BearcliBackend seam — but NEVER invokes cycleOnce. With one untagged
-// note injected via the fake list payload, the daily-default pass
-// stamps it (one "overwrite" call), and no "regen trigger:" log line
-// is emitted.
+// TestDaemonAutoTagPoll_TickFires asserts: a fast-pass tick invokes
+// ApplyForeignTagEscape + ApplyDailyDefaultTag via the BearcliBackend
+// seam — but NEVER invokes cycleOnce. With one untagged note injected
+// via the fake list payload, the daily-default pass stamps it (one
+// "overwrite" call), and no "regen trigger:" log line is emitted.
 func TestDaemonAutoTagPoll_TickFires(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fake := newFakeAutoTagBackend(untaggedListPayload(t))
@@ -220,9 +218,9 @@ func TestDaemonAutoTagPoll_TickFires(t *testing.T) {
 		// list payload does NOT simulate idempotency (real
 		// ApplyDailyDefaultTag skips notes whose Tags is already
 		// populated; the fake keeps returning the same untagged shape
-		// each tick). The TAG-02 contract is "fast-pass invokes the
-		// pre-passes", not "exactly one stamp" — exactness comes from
-		// production behavior, not the fake.
+		// each tick). The contract is "fast-pass invokes the pre-passes",
+		// not "exactly one stamp" — exactness comes from production
+		// behavior, not the fake.
 		if got := fake.CountKind("overwrite"); got < 1 {
 			t.Errorf("overwrite count = %d, want >= 1 (one note stamped #quicknote/daily per tick)\nlog:\n%s",
 				got, buf.String())
@@ -237,11 +235,11 @@ func TestDaemonAutoTagPoll_TickFires(t *testing.T) {
 	})
 }
 
-// TestDaemonAutoTagPoll_SkippedWhenRegenInProgress asserts TAG-03:
+// TestDaemonAutoTagPoll_SkippedWhenRegenInProgress asserts:
 // while d.regenInProgress is true, fast-pass ticks return silently
 // without invoking the BearcliBackend at all. Clearing the flag must
 // allow the next tick to fire normally. Uses the
-// SetRegenInProgressForTest seam (W-03 Option A) — mirrors the
+// SetRegenInProgressForTest seam — mirrors the
 // SetBearcliConcurrency precedent.
 func TestDaemonAutoTagPoll_SkippedWhenRegenInProgress(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -260,7 +258,7 @@ func TestDaemonAutoTagPoll_SkippedWhenRegenInProgress(t *testing.T) {
 
 		if got := fake.TotalCalls(); got != 0 {
 			t.Errorf("backend total calls while regenInProgress=true = %d, want 0 "+
-				"(fast-pass must skip silently per TAG-03)\nlog:\n%s",
+				"(fast-pass must skip silently)\nlog:\n%s",
 				got, buf.String())
 		}
 
@@ -276,7 +274,7 @@ func TestDaemonAutoTagPoll_SkippedWhenRegenInProgress(t *testing.T) {
 	})
 }
 
-// TestDaemonAutoTagPoll_FeatureToggleRespected asserts TAG-02 feature
+// TestDaemonAutoTagPoll_FeatureToggleRespected asserts feature
 // gating: opts.Features.AutoTagDefault and opts.Features.ForeignTagEscape
 // are honored independently. Sub-case (a): only foreign-tag escape runs.
 // Sub-case (b): only daily-default runs.
@@ -325,7 +323,7 @@ func TestDaemonAutoTagPoll_FeatureToggleRespected(t *testing.T) {
 	})
 }
 
-// TestDaemonAutoTagPoll_Disabled asserts TAG-01 disabled sentinel:
+// TestDaemonAutoTagPoll_Disabled asserts the disabled sentinel:
 // AutoTagPollInterval == 0 → no ticker → no list → no overwrite.
 // Mirrors mtime_poll_test.go::TestDaemonPoll_ZeroDisables shape.
 func TestDaemonAutoTagPoll_Disabled(t *testing.T) {
@@ -475,8 +473,6 @@ func TestDaemonAutoTagPoll_DailyDefaultTagEmptyGate(t *testing.T) {
 // fired against the aphorism note. The other three passes still run
 // (foreign-tag escape + daily-default + placeholder-refresh) so the
 // list count drops from 4 to 3.
-//
-// MUST FAIL until Task 2 wires the gated `passes` entry.
 func TestDaemonAutoTagPoll_DomainBootstrapFlagOff(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fake := newFakeAutoTagBackend(aphorismListPayload(t))

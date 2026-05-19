@@ -1,5 +1,5 @@
 // Package config_test exercises bear/config schema decoding round-trips
-// and sentinel-error wiring (Task 1 of).
+// and sentinel-error wiring.
 //
 // Tests live in the external test package so they catch import-path
 // regressions and reflect what downstream callers (cmd/noxctl/) see.
@@ -158,7 +158,7 @@ func assertUmbrellaShape(t *testing.T, um config.Stanza) {
 
 // TestSchemaSnakeCaseEnforced: replacing index_title with indexTitle
 // (camelCase) makes BurntSushi flag the camelCase key as undecoded —
-// confirms snake_case tags are load-bearing (D-07).
+// confirms snake_case tags are load-bearing.
 func TestSchemaSnakeCaseEnforced(t *testing.T) {
 	src := `
 [meta]
@@ -190,8 +190,8 @@ blueprint   = "flat-list"
 }
 
 // TestSchemaSingularDomainTable: confirms [[domain]] (singular) is
-// the canonical form per D-08; [[domains]] (plural) decodes to nothing
-// useful and shows up in metadata.Undecoded.
+// the canonical form; [[domains]] (plural) decodes to nothing useful
+// and shows up in metadata.Undecoded.
 func TestSchemaSingularDomainTable(t *testing.T) {
 	src := `
 [meta]

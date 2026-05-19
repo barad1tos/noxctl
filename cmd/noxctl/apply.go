@@ -17,7 +17,7 @@ import (
 )
 
 // errInterrupted is the sentinel that cmd/noxctl/main.go maps to
-// POSIX exit code 130 (128 + SIGINT). Per CLI-08 + CONTEXT D-16.
+// POSIX exit code 130 (128 + SIGINT).
 var errInterrupted = errors.New("noxctl: interrupted")
 
 // errApplyFailures is returned when engine.Apply completed without a
@@ -79,13 +79,14 @@ func runApply(cmd *cobra.Command, _ []string) error {
 	// Pin registry — best-effort load (nil-safe registry per bear/pins.go).
 	pins, _ := bear.LoadPinRegistry(target)
 
-	// Resume detection — single stderr warning, no prompt (D-17).
+	// Resume detection — single stderr warning, no prompt.
 	if st, stErr := state.Load("./.noxctl/state.json"); stErr == nil && st.InProgress.Verb == "apply" {
 		_, _ = fmt.Fprintf(os.Stderr, "noxctl: resuming after interrupted apply (started %s)\n",
 			st.InProgress.StartedAt.UTC().Format("2006-01-02T15:04:05Z"))
 	}
 
-	// SIGINT/SIGTERM bridging — Pattern 2 from 02-RESEARCH.md.
+	// SIGINT/SIGTERM bridging: signal.NotifyContext cancels ctx,
+	// engine.Apply persists InProgress state, main maps to exit 130.
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -128,9 +129,7 @@ func init() {
 	rootCmd.AddCommand(applyCmd)
 }
 
-// applyAutoApproveAck silences the `unused` lint on the reserved
-// no-op flag binding (--auto-approve is declared per APPLY-06 forward-
-// compat for destructive verbs but has no consumer in v1).
-// Read by no production code; a future plan replaces this
-// keeper with a real consumer.
+// --auto-approve is declared as a forward-compatibility no-op for
+// future destructive verbs; it has no consumer in v1. The blank
+// assignment silences the `unused` lint.
 var _ = applyAutoApprove

@@ -19,8 +19,8 @@ import (
 )
 
 // pinPaths returns the canonical legacy and target pin-registry
-// paths. MIGRATE-06: legacy at ~/.cache/regen-watchd-pins.json,
-// target at per-project./.noxctl/pins.json (Terraform-style).
+// paths. Legacy at ~/.cache/regen-watchd-pins.json (kept for
+// auto-migration); target at per-project ./.noxctl/pins.json.
 //
 // Subcommands that need pin-registry access call this directly. Stub
 // subcommands deliberately skip pin migration — when a stub gets a
@@ -110,17 +110,15 @@ func domainsWithPreflight() ([]*bear.Domain, error) {
 // are `*bool`, distinguishing "omitted in TOML" from "set to false")
 // into the flat `engine.Features` struct (plain bool fields, defaults
 // applied at this CLI boundary). This is the only legitimate place
-// to bridge `bear/` and `bear/config/` — `cmd/noxctl` is the boundary
-// (D-01: `bear/` and `bear/engine/` never import `bear/config/`).
+// to bridge `bear/` and `bear/config/` — `cmd/noxctl` is the boundary;
+// `bear/` and `bear/engine/` never import `bear/config/`.
 //
-// Defaults: every pre-pass ON for noxctl. Matches `cmd/regen-watchd`'s
-// `engine.AllFeaturesOn` — preserves engine-level parity for users
-// who haven't opted into selective feature gating yet (D-05).
+// Defaults: every pre-pass ON. Operators get every fast-pass running
+// out of the box unless they explicitly opt out via the catalog.
 //
-// B3 (checker fix): `config.Catalog.Features` is a VALUE TYPE (not
-// `*Features`); fields are `*bool` pointers. We start with all-true
-// defaults, then per-pointer overwrite where the user explicitly
-// set a value.
+// `config.Catalog.Features` is a VALUE TYPE (not `*Features`); fields
+// are `*bool` pointers. We start with all-true defaults, then
+// per-pointer overwrite where the user explicitly set a value.
 func featuresFromCatalog(cat *config.Catalog) engine.Features {
 	f := engine.Features{
 		AutoTagDefault:    true,
@@ -165,8 +163,8 @@ func dailyDefaultTagFromCatalog(cat *config.Catalog) string {
 // engine-side `bear.PromotionRule` slice. Empty input or nil catalog
 // yields a nil slice — time-promotion fast-pass treats nil as disabled.
 //
-// CLI boundary helper (D-01): `bear/` never imports `bear/config/`, so
-// the TOML-to-Domain bridge lives in `cmd/noxctl/` alongside the rest
+// CLI boundary helper: `bear/` never imports `bear/config/`, so the
+// TOML-to-Domain bridge lives in `cmd/noxctl/` alongside the rest
 // of the catalog wiring.
 func promotionRulesFromCatalog(cat *config.Catalog) []bear.PromotionRule {
 	if cat == nil || len(cat.Promotions) == 0 {
