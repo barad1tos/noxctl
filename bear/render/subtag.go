@@ -1,9 +1,11 @@
-package domain
+package render
 
 import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // Hub-routed-with-subtag pattern: like the existing hub-routed shape used by
@@ -26,19 +28,19 @@ import (
 // hub note titles produced by HubTitleSubTag (`<top> · <bucket>`).
 const HubTitleSeparator = " · "
 
-// HubTitleSubTag is a Domain.HubTitleFor implementation that namespaces
+// HubTitleSubTag is a domain.Domain.HubTitleFor implementation that namespaces
 // Tier-2 hub notes as `<top> · <bucket>`. Prevents collisions with arbitrary
 // user notes that happen to share a bucket name (e.g. a personal note titled
 // `sessions` would otherwise be picked up by daemon's `findHubID("sessions")`
 // for a `claude · sessions` hub).
-func HubTitleSubTag(d *Domain, bucket string) string {
+func HubTitleSubTag(d *domain.Domain, bucket string) string {
 	return d.Tag + HubTitleSeparator + bucket
 }
 
 // BucketFromHubTitleSubTag inverts HubTitleSubTag — strips the `<top> · `
 // prefix and returns the bucket. Returns "" when the title is not one of
 // our hubs (signals computeHubOverrides to skip this note).
-func BucketFromHubTitleSubTag(d *Domain, title string) string {
+func BucketFromHubTitleSubTag(d *domain.Domain, title string) string {
 	prefix := d.Tag + HubTitleSeparator
 	if !strings.HasPrefix(title, prefix) {
 		return ""
@@ -50,16 +52,16 @@ func BucketFromHubTitleSubTag(d *Domain, title string) string {
 // preserving domain — its title matches the `<top> · <bucket>` pattern. The
 // content is unused; title alone is sufficient because daemon owns the
 // title space (BearcliFindByTitle for the master, hub titles for hubs).
-func IsHubNoteSubTag(d *Domain, n Note) bool {
+func IsHubNoteSubTag(d *domain.Domain, n domain.Note) bool {
 	prefix := d.Tag + HubTitleSeparator
 	return strings.HasPrefix(n.Title, prefix)
 }
 
-// HubBacklinkSubTag is a Domain.BacklinkFor implementation that backlinks
+// HubBacklinkSubTag is a domain.Domain.BacklinkFor implementation that backlinks
 // each atomic at its per-bucket Tier-2 hub note (`[[<top> · <bucket>]]`),
 // not at the master. Pairs with the hub-side bidirectional flow: a bullet
 // inside a hub claims its atomic for that hub's bucket.
-func HubBacklinkSubTag(d *Domain, bucket string) string {
+func HubBacklinkSubTag(d *domain.Domain, bucket string) string {
 	return "[[" + d.Tag + HubTitleSeparator + bucket + "]]"
 }
 
@@ -73,18 +75,20 @@ func HubBacklinkSubTag(d *Domain, bucket string) string {
 //	---
 //	- [[atom1]]
 //	- [[atom2]]
-func RenderHubFlatSubTag(d *Domain, bucket string, notes []Note, _ map[string][]string) string {
+//
+//nolint:revive // public API; rename is breaking change for callers
+func RenderHubFlatSubTag(d *domain.Domain, bucket string, notes []domain.Note, _ map[string][]string) string {
 	hubTitle := d.HubTitle(bucket)
-	canonicalTag := d.canonicalTagFor(bucket)
-	sorted := append([]Note(nil), notes...)
-	sort.Sort(ByTitle(sorted))
+	canonicalTag := d.ResolveCanonicalTag(bucket)
+	sorted := append([]domain.Note(nil), notes...)
+	sort.Sort(domain.ByTitle(sorted))
 
 	var body strings.Builder
 	_, _ = fmt.Fprintf(&body, "# %s\n", hubTitle)
 	_, _ = fmt.Fprintf(&body, "%s | [[%s]]%s\n---\n",
-		canonicalTag, d.IndexTitle, NewNoteURLFromDomain(d).Emit())
+		canonicalTag, d.IndexTitle, domain.NewNoteURLFromDomain(d).Emit())
 	for _, note := range sorted {
-		_, _ = fmt.Fprintf(&body, "- %s\n", AtomicWikilink(d, note))
+		_, _ = fmt.Fprintf(&body, "- %s\n", domain.AtomicWikilink(d, note))
 	}
 	return body.String()
 }
@@ -101,7 +105,9 @@ func RenderHubFlatSubTag(d *Domain, bucket string, notes []Note, _ map[string][]
 //	- [[<top> · sessions]] (15)
 //	- [[<top> · memory]] (18)
 //	-...
-func RenderMasterHubList(d *Domain, groups map[string][]Note, columns []string) string {
+//
+//nolint:revive // public API; rename is breaking change for callers
+func RenderMasterHubList(d *domain.Domain, groups map[string][]domain.Note, columns []string) string {
 	ordered := OrderFlatColumns(groups, columns)
 	nonEmpty := make([]string, 0, len(ordered))
 	total := 0
@@ -117,12 +123,12 @@ func RenderMasterHubList(d *Domain, groups map[string][]Note, columns []string) 
 		bullets[index] = fmt.Sprintf("[[%s]] (%d)", d.HubTitle(bucket), len(groups[bucket]))
 	}
 	return RenderVerticalSections(d, []Section{{
-		Header:  fmt.Sprintf("%s (%d)", T("master.section.categories"), total),
+		Header:  fmt.Sprintf("%s (%d)", domain.T("master.section.categories"), total),
 		Bullets: bullets,
 	}})
 }
 
-// NewHubRoutedSubTagDomain builds a Domain configured for the sub-tag
+// NewHubRoutedSubTagDomain builds a domain.Domain configured for the sub-tag
 // preserving hub-routed pattern. Each bucket gets a Tier-2 hub note
 // `<top> · <bucket>` with a flat bullet list of its atomics; the master
 // indexes those hubs via `## Категорії`. Atomics carry canonical headers
@@ -133,15 +139,15 @@ func RenderMasterHubList(d *Domain, groups map[string][]Note, columns []string) 
 // without a recognizable sub-tag — they go into a hub `<top> · <unknownBucket>`
 // like any other bucket; user can re-bucket via cut/paste in any of the
 // per-bucket hubs.
-func NewHubRoutedSubTagDomain(tag, indexTitle, unknownBucket string, buckets []string) *Domain {
+func NewHubRoutedSubTagDomain(tag, indexTitle, unknownBucket string, buckets []string) *domain.Domain {
 	columns := append([]string(nil), buckets...)
-	return &Domain{
+	return &domain.Domain{
 		Tag:                tag,
 		CanonicalTag:       "#" + tag,
 		IndexTitle:         indexTitle,
 		UnknownBucket:      unknownBucket,
 		HubH2Prefix:        "",
-		ParseMeta:          ParseMetaFromSubTag,
+		ParseMeta:          domain.ParseMetaFromSubTag,
 		BacklinkFor:        HubBacklinkSubTag,
 		SectionFor:         BucketAsSection,
 		CanonicalTagFor:    SubTagCanonical,
@@ -149,7 +155,7 @@ func NewHubRoutedSubTagDomain(tag, indexTitle, unknownBucket string, buckets []s
 		HubTitleFor:        HubTitleSubTag,
 		BucketFromHubTitle: BucketFromHubTitleSubTag,
 		RenderHub:          RenderHubFlatSubTag,
-		RenderMaster: func(d *Domain, groups map[string][]Note) string {
+		RenderMaster: func(d *domain.Domain, groups map[string][]domain.Note) string {
 			return RenderMasterHubList(d, groups, columns)
 		},
 	}

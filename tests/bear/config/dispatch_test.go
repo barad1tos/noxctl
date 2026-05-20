@@ -163,7 +163,7 @@ func TestDispatchBlueprintFieldMismatch(t *testing.T) {
 
 // TestDispatchUmbrellaResolvesChildren: umbrella delegates child
 // resolution to the loader-supplied callback; resolved Domains must
-// pass through to domain.NewUmbrellaDomain.
+// pass through to render.NewUmbrellaDomain.
 func TestDispatchUmbrellaResolvesChildren(t *testing.T) {
 	child := &domain.Domain{
 		Tag: "library/poetry", CanonicalTag: "#library/poetry",

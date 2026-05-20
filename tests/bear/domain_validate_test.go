@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/render"
 )
 
 // TestDomainValidate_UmbrellaRequiresDefaultChild covers spec component
@@ -17,15 +18,15 @@ func TestDomainValidate_UmbrellaRequiresDefaultChild(t *testing.T) {
 		Tag:          "library/poetry",
 		CanonicalTag: "#library/poetry",
 		IndexTitle:   "✱ Поезія",
-		ParseMeta:    domain.DefaultParseMetaCanonical,
-		RenderMaster: domain.DefaultRenderMasterFlat,
+		ParseMeta:    render.DefaultParseMetaCanonical,
+		RenderMaster: render.DefaultRenderMasterFlat,
 	}
 	leafB := &domain.Domain{
 		Tag:          "library/lyrics",
 		CanonicalTag: "#library/lyrics",
 		IndexTitle:   "✱ Lyrics",
-		ParseMeta:    domain.DefaultParseMetaCanonical,
-		RenderMaster: domain.DefaultRenderMasterFlat,
+		ParseMeta:    render.DefaultParseMetaCanonical,
+		RenderMaster: render.DefaultRenderMasterFlat,
 	}
 
 	cases := []struct {
@@ -78,15 +79,15 @@ func TestDomainValidate_UmbrellaRequiresDefaultChild(t *testing.T) {
 func buildValidateCase(t *testing.T, isUmbrella bool, defaultChild string, children []*domain.Domain) *domain.Domain {
 	t.Helper()
 	if isUmbrella {
-		return domain.NewUmbrellaDomainForTest(t, "library", "✱ Library", defaultChild, children)
+		return render.NewUmbrellaDomainForTest(t, "library", "✱ Library", defaultChild, children)
 	}
 	return &domain.Domain{
 		Tag:          "library/poetry-leaf",
 		CanonicalTag: "#library/poetry-leaf",
 		IndexTitle:   "✱ Poetry Leaf",
 		DefaultChild: defaultChild,
-		ParseMeta:    domain.DefaultParseMetaCanonical,
-		RenderMaster: domain.DefaultRenderMasterFlat,
+		ParseMeta:    render.DefaultParseMetaCanonical,
+		RenderMaster: render.DefaultRenderMasterFlat,
 	}
 }
 
@@ -117,10 +118,10 @@ func TestNewUmbrellaDomain_RejectsNestedUmbrella(t *testing.T) {
 		IndexTitle:      "✱ Sub",
 		SkipAtomicsPass: true,
 		DefaultChild:    "library/poetry",
-		ParseMeta:       domain.DefaultParseMetaCanonical,
-		RenderMaster:    domain.DefaultRenderMasterFlat,
+		ParseMeta:       render.DefaultParseMetaCanonical,
+		RenderMaster:    render.DefaultRenderMasterFlat,
 	}
-	d := domain.NewUmbrellaDomainForTest(t, "library", "✱ Library", "library/sub-umbrella",
+	d := render.NewUmbrellaDomainForTest(t, "library", "✱ Library", "library/sub-umbrella",
 		[]*domain.Domain{innerUmbrella})
 
 	err := d.Validate()

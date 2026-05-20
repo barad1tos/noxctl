@@ -24,6 +24,7 @@ import (
 
 	"github.com/barad1tos/noxctl/bear/cli/lint"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/render"
 )
 
 // fakeBearcli records every domain.runBearcli call routed through the
@@ -108,7 +109,7 @@ func brokenH1ListPayload(t *testing.T, tag string) []byte {
 // fixture keeps the test surface narrow to the lint heuristics
 // themselves.
 func flatListDomainForTest() *domain.Domain {
-	return domain.NewFlatListDomain("test/notes", "✱ Notes")
+	return render.NewFlatListDomain("test/notes", "✱ Notes")
 }
 
 // armBearcliPool resets the bearcli subprocess semaphore to a small

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/render"
 )
 
 // buildFunc constructs a *domain.Domain from a stanza. The
@@ -20,8 +21,8 @@ type buildFunc func(s Stanza, resolveChildren func([]string) ([]*domain.Domain, 
 // is the public entry point. DispatchSize is exported for tests.
 var dispatch = map[string]buildFunc{
 	"flat-list":              buildFlatList,
-	"flat-table":             bucketedBuilder("flat-table", domain.NewGroupedVerticalFlatDomain),
-	"grouped-vertical":       bucketedBuilder("grouped-vertical", domain.NewGroupedVerticalDomain),
+	"flat-table":             bucketedBuilder("flat-table", render.NewGroupedVerticalFlatDomain),
+	"grouped-vertical":       bucketedBuilder("grouped-vertical", render.NewGroupedVerticalDomain),
 	"hub-routed":             buildHubRouted,
 	"hub-routed-with-subtag": buildHubRoutedSubTag,
 	"umbrella":               buildUmbrella,
@@ -177,7 +178,7 @@ func buildFlatList(s Stanza, _ func([]string) ([]*domain.Domain, error)) (*domai
 	if err := validateBlueprintFields("flat-list", s, nil, []optKey{optQuickPlaceH1}); err != nil {
 		return nil, err
 	}
-	d := domain.NewFlatListDomain(s.Tag, s.IndexTitle)
+	d := render.NewFlatListDomain(s.Tag, s.IndexTitle)
 	if s.QuickPlaceholderH1 != nil {
 		d.QuickPlaceholderH1 = *s.QuickPlaceholderH1
 	}
@@ -218,9 +219,9 @@ func buildHubRouted(s Stanza, _ func([]string) ([]*domain.Domain, error)) (*doma
 	if err := validateMasterSections(s); err != nil {
 		return nil, err
 	}
-	d := domain.NewHubRoutedDomain(
+	d := render.NewHubRoutedDomain(
 		s.Tag, s.IndexTitle, *s.UnknownBucket, *s.HubH2Prefix,
-		domain.DefaultRenderMaster3Tier,
+		render.DefaultRenderMaster3Tier,
 	)
 	applyHubRoutedOptionals(d, s)
 	applyMasterSections(d, s)
@@ -299,7 +300,7 @@ func applyMasterSections(d *domain.Domain, s Stanza) {
 		}
 	}
 	d.MasterSections = sections
-	d.RenderMaster = domain.SectionedMasterRenderer()
+	d.RenderMaster = render.SectionedMasterRenderer()
 }
 
 // countModeFromString maps the TOML enum string to the domain.CountMode
@@ -365,7 +366,7 @@ func buildHubRoutedSubTag(s Stanza, _ func([]string) ([]*domain.Domain, error)) 
 		[]optKey{optBuckets, optUnknownBucket, optSubtag}); err != nil {
 		return nil, err
 	}
-	return domain.NewHubRoutedSubTagDomain(s.Tag, s.IndexTitle, *s.UnknownBucket, *s.Buckets), nil
+	return render.NewHubRoutedSubTagDomain(s.Tag, s.IndexTitle, *s.UnknownBucket, *s.Buckets), nil
 }
 
 // buildUmbrella: REQUIRES children + default_child. Resolver maps each
@@ -393,7 +394,7 @@ func buildUmbrella(s Stanza, resolveChildren func([]string) ([]*domain.Domain, e
 	return safeNewUmbrellaDomain(s.Tag, s.IndexTitle, *s.DefaultChild, kids)
 }
 
-// safeNewUmbrellaDomain wraps domain.NewUmbrellaDomain, recovering its
+// safeNewUmbrellaDomain wraps render.NewUmbrellaDomain, recovering its
 // panic-on-misconfig into a returned error. The factory panics so
 // hardcoded callers fail fast at init; the TOML loader needs a soft
 // error path so malformed user config produces a friendly message
@@ -404,5 +405,5 @@ func safeNewUmbrellaDomain(tag, indexTitle, defaultChild string, kids []*domain.
 			err = fmt.Errorf("umbrella %q: %v", tag, r)
 		}
 	}()
-	return domain.NewUmbrellaDomain(tag, indexTitle, defaultChild, kids), nil
+	return render.NewUmbrellaDomain(tag, indexTitle, defaultChild, kids), nil
 }

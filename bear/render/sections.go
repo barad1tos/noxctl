@@ -1,8 +1,10 @@
-package domain
+package render
 
 import (
 	"fmt"
 	"strings"
+
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // Section is one labeled bucket emitted by RenderVerticalSections.
@@ -41,7 +43,9 @@ type Section struct {
 // blank-line layout, count format, and bullet syntax. Domains that need
 // custom data shape supply a section-builder; the rendering itself never
 // varies.
-func RenderVerticalSections(d *Domain, sections []Section) string {
+//
+//nolint:revive // public API; rename is breaking change for callers
+func RenderVerticalSections(d *domain.Domain, sections []Section) string {
 	var body strings.Builder
 	WriteMasterHeader(&body, d)
 	for _, section := range sections {

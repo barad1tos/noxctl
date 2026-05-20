@@ -12,7 +12,7 @@
 //  3. Presentation knobs — count_mode (notes vs buckets) and
 //     show_bullet_counts (with/without `(N)` suffix per bullet).
 //
-// Tests drive `domain.BuildMasterSections` directly so the assertions
+// Tests drive `render.BuildMasterSections` directly so the assertions
 // stay close to the predicate logic without going through the full
 // rendering pipeline.
 package bear_test
@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/render"
 )
 
 // fakeNote returns N synthetic notes whose only field that matters
@@ -60,7 +61,7 @@ func TestBuildMasterSections_ExplicitBuckets_OperatorPicksColumns(t *testing.T) 
 		Buckets:          []string{"rust", "python", "go"},
 		ShowBulletCounts: true,
 	}})
-	out := domain.BuildMasterSections(d, groups)
+	out := render.BuildMasterSections(d, groups)
 	if len(out) != 1 {
 		t.Fatalf("len(sections) = %d, want 1", len(out))
 	}
@@ -89,7 +90,7 @@ func TestBuildMasterSections_ClaimPrecedence_LaterSectionsSkipClaimedBuckets(t *
 		{Title: "Dev", Buckets: []string{"python"}},
 		{Title: "Other"}, // catch-all
 	})
-	out := domain.BuildMasterSections(d, groups)
+	out := render.BuildMasterSections(d, groups)
 	if len(out) != 2 {
 		t.Fatalf("len = %d, want 2", len(out))
 	}
@@ -118,7 +119,7 @@ func TestBuildMasterSections_ScriptLatin_NonLatinBinaryPartition(t *testing.T) {
 		{Title: "Latin", Script: "latin"},
 		{Title: "Other", Script: "non-latin"},
 	})
-	out := domain.BuildMasterSections(d, groups)
+	out := render.BuildMasterSections(d, groups)
 	if len(out) != 2 {
 		t.Fatalf("len = %d, want 2", len(out))
 	}
@@ -149,7 +150,7 @@ func TestBuildMasterSections_CatchAll_SkipsUnknownBucket(t *testing.T) {
 	d := domainWithSections("Невідомі", []domain.MasterSection{
 		{Title: "Catch-all"},
 	})
-	out := domain.BuildMasterSections(d, groups)
+	out := render.BuildMasterSections(d, groups)
 	if len(out) != 1 {
 		t.Fatalf("len = %d, want 1", len(out))
 	}
@@ -171,7 +172,7 @@ func TestBuildMasterSections_CatchAll_AcceptsUnknownBucketWhenExplicit(t *testin
 	d := domainWithSections("Невідомі", []domain.MasterSection{
 		{Title: "Misc", Buckets: []string{"Невідомі"}},
 	})
-	out := domain.BuildMasterSections(d, groups)
+	out := render.BuildMasterSections(d, groups)
 	if len(out) != 1 {
 		t.Fatalf("len(sections) = %d, want 1", len(out))
 	}
@@ -192,7 +193,7 @@ func TestBuildMasterSections_EmptySection_DropsOut(t *testing.T) {
 		{Title: "Missing", Buckets: []string{"absent"}},
 		{Title: "Present", Buckets: []string{"present"}},
 	})
-	out := domain.BuildMasterSections(d, groups)
+	out := render.BuildMasterSections(d, groups)
 	if len(out) != 1 {
 		t.Fatalf("len = %d, want 1 (empty section must drop)", len(out))
 	}
@@ -213,7 +214,7 @@ func TestBuildMasterSections_CountModeBuckets_ReportsBucketCount(t *testing.T) {
 		Title:     "All",
 		CountMode: domain.CountModeBuckets,
 	}})
-	out := domain.BuildMasterSections(d, groups)
+	out := render.BuildMasterSections(d, groups)
 	if len(out) != 1 {
 		t.Fatalf("len = %d, want 1", len(out))
 	}
@@ -234,7 +235,7 @@ func TestBuildMasterSections_ShowBulletCountsFalse_EmitsPlainWikilinks(t *testin
 		Title:            "Plain",
 		ShowBulletCounts: false,
 	}})
-	out := domain.BuildMasterSections(d, groups)
+	out := render.BuildMasterSections(d, groups)
 	if len(out) != 1 {
 		t.Fatalf("len = %d, want 1", len(out))
 	}
@@ -259,7 +260,7 @@ func TestBuildMasterSections_CountModeNotes_ExplicitZeroValue(t *testing.T) {
 		Title:     "Notes",
 		CountMode: domain.CountModeNotes,
 	}})
-	out := domain.BuildMasterSections(d, groups)
+	out := render.BuildMasterSections(d, groups)
 	if len(out) != 1 {
 		t.Fatalf("len = %d, want 1", len(out))
 	}
@@ -287,7 +288,7 @@ func TestBuildMasterSections_ScriptSection_ClaimedAlready_DropsOut(t *testing.T)
 		{Title: "NonLatin", Script: "non-latin"},
 	}
 	d := domainWithSections("", sections)
-	out := domain.BuildMasterSections(d, groups)
+	out := render.BuildMasterSections(d, groups)
 	if len(out) != 2 {
 		t.Fatalf("len = %d, want 2 (LatinSweep must drop out)", len(out))
 	}
@@ -318,7 +319,7 @@ func TestBuildMasterSections_ZeroNoteBucket_StaleHubDroppedSilently(t *testing.T
 	d := domainWithSections("", []domain.MasterSection{
 		{Title: "Hubs", Buckets: []string{"alive", "drain"}},
 	})
-	out := domain.BuildMasterSections(d, groups)
+	out := render.BuildMasterSections(d, groups)
 	if len(out) != 1 {
 		t.Fatalf("len = %d, want 1", len(out))
 	}
@@ -343,7 +344,7 @@ func TestSectionedMasterRenderer_Reinvocable(t *testing.T) {
 	d := domainWithSections("", []domain.MasterSection{{
 		Title: "All", Buckets: []string{"x", "y"}, ShowBulletCounts: true,
 	}})
-	render := domain.SectionedMasterRenderer()
+	render := render.SectionedMasterRenderer()
 	first := render(d, groups)
 	second := render(d, groups)
 	if first != second {

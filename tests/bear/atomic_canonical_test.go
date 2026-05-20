@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/render"
 )
 
 // TestWriteMasterHeader_UmbrellaUsesDefaultChild locks spec component 4:
@@ -27,10 +28,10 @@ func TestWriteMasterHeader_UmbrellaUsesDefaultChild(t *testing.T) {
 		Tag:          "quicknote/daily",
 		CanonicalTag: "#quicknote/daily",
 		IndexTitle:   "✱ Quicknote Daily",
-		ParseMeta:    domain.DefaultParseMetaCanonical,
-		RenderMaster: domain.DefaultRenderMasterFlat,
+		ParseMeta:    render.DefaultParseMetaCanonical,
+		RenderMaster: render.DefaultRenderMasterFlat,
 	}
-	umbrella := domain.NewUmbrellaDomain("quicknote", "✱ Quicknote", "quicknote/daily",
+	umbrella := render.NewUmbrellaDomain("quicknote", "✱ Quicknote", "quicknote/daily",
 		[]*domain.Domain{leaf})
 
 	body := umbrella.RenderMaster(umbrella, map[string][]domain.Note{})
@@ -60,7 +61,7 @@ func TestUpsertAtomic_StampsH1WhenAbsent(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 13, 15, 25, 0, 0, time.Local)
 	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
-	d := domain.NewFlatListDomain("library/quotes", "✱ Quotes")
+	d := render.NewFlatListDomain("library/quotes", "✱ Quotes")
 	d.UnknownBucket = "_unknown"
 
 	in := "#library/quotes\nbody content\n"
@@ -82,7 +83,7 @@ func TestUpsertAtomic_PreservesNonTagPreamble(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 13, 15, 25, 0, 0, time.Local)
 	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
-	d := domain.NewFlatListDomain("library/quotes", "✱ Quotes")
+	d := render.NewFlatListDomain("library/quotes", "✱ Quotes")
 	d.UnknownBucket = "_unknown"
 
 	in := "# Existing title\nuser preamble line\n#library/quotes | [[✱ Quotes]]\n---\nmain content\n"
@@ -118,7 +119,7 @@ func TestRenderAtomicCanonical_EmptyBodyEndsWithSingleTrailingNewline(t *testing
 	fixedNow := time.Date(2026, 5, 16, 0, 35, 0, 0, time.Local)
 	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
-	d := domain.NewFlatListDomain("quicknote/daily", "✱ Daily")
+	d := render.NewFlatListDomain("quicknote/daily", "✱ Daily")
 	d.UnknownBucket = "_flat"
 
 	out := domain.RenderAtomicCanonicalForTest(t, d, "ignored", "_flat", "")

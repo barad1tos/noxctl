@@ -130,7 +130,7 @@ func (d *Domain) parseAtomicContent(content, author string) AtomicParts {
 //
 //	<text>
 //
-// The leading `#<tag>` token comes from d.canonicalTagFor(bucket) so domains
+// The leading `#<tag>` token comes from d.ResolveCanonicalTag(bucket) so domains
 // that preserve sub-tags can emit `#<top>/<bucket>` per atomic without
 // touching the rest of the canonicalization flow. `preamble` lines (non-
 // tag-line content captured between H1 and the canonical tag-line) are
@@ -144,7 +144,7 @@ func (d *Domain) renderAtomicCanonical(
 	section,
 	contentBody string,
 ) string {
-	canonicalTag := d.canonicalTagFor(bucket)
+	canonicalTag := d.ResolveCanonicalTag(bucket)
 	tagLine := canonicalTag
 	if len(extraTags) > 0 {
 		tagLine = canonicalTag + " " + strings.Join(extraTags, " ")

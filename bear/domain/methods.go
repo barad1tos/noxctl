@@ -132,12 +132,12 @@ func (d *Domain) bucketFromHubTitle(title string) string {
 	return title
 }
 
-// canonicalTagFor resolves the per-atomic canonical tag-line. Defaults to
+// ResolveCanonicalTag resolves the per-atomic canonical tag-line. Defaults to
 // d.CanonicalTag when no callback is wired (existing flat-table / hub-routed
 // behavior). Domains that preserve sub-tags (grouped-vertical,
 // hub-routed-with-subtag) wire CanonicalTagFor to return `#<top>/<bucket>`
 // so each atomic carries its sub-tag in the tag-line.
-func (d *Domain) canonicalTagFor(bucket string) string {
+func (d *Domain) ResolveCanonicalTag(bucket string) string {
 	if d.CanonicalTagFor != nil {
 		return d.CanonicalTagFor(d, bucket)
 	}
