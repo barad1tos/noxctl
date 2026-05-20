@@ -95,7 +95,7 @@ func planSinglePath(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
 }
 
 // translateUntracked converts bear.UntrackedReport (residue scanner's
-// output type, declared in bear/residue.go) into the engine-side
+// output type, declared in bear/untracked.go) into the engine-side
 // UntrackedReport (declared in bear/engine/plan_result.go). Boundary
 // translation pattern — same shape as cmd/noxctl/preflight.go's
 // featuresFromCatalog.
@@ -143,7 +143,7 @@ func seedDuplicateRegistry(ctx context.Context, domains []*bear.Domain, stderr i
 // current Bear state (FetchMasterContent) and rendering desired state
 // via bear.SnapshotDomainRenderInputs + d.RenderMaster, comparing via
 // bear.EqualIgnoringNewNoteLinkStrict (master flavor — URL-shape drift
-// surfaces as a real diff). Mirrors bear/regen_writes.go::upsertMasterIndex
+// surfaces as a real diff). Mirrors bear/upserts.go::upsertMasterIndex
 // with overwriteWithRetry calls replaced by Diff{} appends.
 //
 // Hub layer is summary-only — full per-hub diff fidelity requires
@@ -171,7 +171,7 @@ func computeDomainDelta(ctx context.Context, d *bear.Domain, verbose bool) (Doma
 	// the header).
 	desiredAuto = bear.StripNewNoteURLsFromBody(desiredAuto)
 	// Preserve the curator zone (below `## ✱ Куратор`) before
-	// comparing. `upsertMasterIndex` in `bear/regen_writes.go` composes
+	// comparing. `upsertMasterIndex` in `bear/upserts.go` composes
 	// the final write as `desiredAuto + "\n" + manual`; plan MUST mirror
 	// that or every master with a curator zone surfaces as false
 	// drift here.

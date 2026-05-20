@@ -12,7 +12,7 @@ import "github.com/barad1tos/noxctl/bear/note"
 // ErrHashConflict + BearcliTimeout + bearcli command-line constants
 // (FlagFormat, FlagFields, FlagBase, FormatJSON, FieldsIDTitle,
 // FieldsAutoTag) now live in bear/bearcli. bear/ re-exports the
-// most-used ones via bear/bearcli_aliases.go for backward
+// most-used ones via bear/aliases.go for backward
 // compatibility.
 
 // HubMarker splits a Hub note's auto-zone (above) from the

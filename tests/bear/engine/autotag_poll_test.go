@@ -109,7 +109,7 @@ func (f *fakeAutoTagBackend) CountKind(kind string) int {
 }
 
 // untaggedListPayload returns the JSON bearcli list emits for one
-// untagged quicknote. Matches autoTagNote shape in bear/auto_tag.go.
+// untagged quicknote. Matches autoTagNote shape in bear/autotag.go.
 func untaggedListPayload(t *testing.T) []byte {
 	t.Helper()
 	raw, err := json.Marshal([]map[string]any{{
@@ -139,14 +139,14 @@ func autoTagOptsFor(t *testing.T, pollInterval time.Duration, features engine.Fe
 }
 
 // countAutoTagStamps counts "auto-tag:" prefix lines emitted by
-// bear.ApplyDailyDefaultTag (see bear/auto_tag.go:56). Each occurrence
+// bear.ApplyDailyDefaultTag (see bear/autotag.go:56). Each occurrence
 // equals one note stamped with #quicknote/daily.
 func countAutoTagStamps(buf *bytes.Buffer) int {
 	return strings.Count(buf.String(), "auto-tag:")
 }
 
 // countForeignEscapes counts "foreign-tag escape:" prefix lines from
-// bear.ApplyForeignTagEscape (see bear/foreign_tag.go). Each = one
+// bear.ApplyForeignTagEscape (see bear/foreigntag.go). Each = one
 // foreign-tag escape applied.
 func countForeignEscapes(buf *bytes.Buffer) int {
 	return strings.Count(buf.String(), "foreign-tag escape:")

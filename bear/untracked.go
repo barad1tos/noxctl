@@ -8,7 +8,7 @@
 // (corpus-level aggregate, not per-atom) and would tip lint.go's
 // complexity budget.
 //
-// The bearcli list call replicates bear/foreign_tag.go:103-115 — same
+// The bearcli list call replicates bear/foreigntag.go:103-115 — same
 // field set, same response shape — but the two are NOT shared at
 // runtime: foreign-tag is an apply pre-pass; plan does NOT run
 // pre-passes; runtime overlap is impossible.
@@ -25,7 +25,7 @@ import (
 // Wire-tags match the engine.UntrackedFamily shape declared in
 // bear/engine/plan_result.go. wires the
 // boundary translation at engine.Plan to avoid an import cycle:
-// bear/engine imports bear (for *bear.Domain), so bear/residue.go
+// bear/engine imports bear (for *bear.Domain), so bear/untracked.go
 // cannot import bear/engine for the report type.
 type UntrackedFamily struct {
 	Tag       string `json:"tag"`

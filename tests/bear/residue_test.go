@@ -3,7 +3,7 @@
 // aggregation logic with realistic bearcli-shaped JSON fixtures so the
 // tests run without bearcli installed.
 //
-// Test-seam rationale: bear/residue.go's aggregateUntracked is unexported
+// Test-seam rationale: bear/untracked.go's aggregateUntracked is unexported
 // and operates on the unexported autoTagNote shape. External tests at
 // tests/bear/ build a separate test binary and cannot reach in-package
 // symbols (precedent: bear/engine/export_test.go documents this same
