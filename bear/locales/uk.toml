@@ -10,8 +10,8 @@
 # `log.Fatalf`) so a typo surfaces as a fast failure, never a silent
 # fallback.
 
-# --- Generic master/hub section labels (bear/defaults.go, bear/factory.go,
-# --- bear/hub_routed_subtag.go) ---
+# --- Generic master/hub section labels (bear/renderers.go, bear/factory.go,
+# --- bear/subtag.go) ---
 "master.section.own-curated"      = "Власні"
 "master.section.authors"          = "Автори"
 "master.section.categories"       = "Категорії"

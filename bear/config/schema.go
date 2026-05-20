@@ -106,7 +106,7 @@ type Stanza struct {
 	// hub-routed: legacy H2 prefixes recognized as hub markers during
 	// transitions (e.g. ["Поезії"] for library/poetry). Carried as an
 	// ordered slice — positional semantics matter for the legacy H2
-	// fallback walk in bear/atom_routing.go::firstNonSectionH2.
+	// fallback walk in bear/routing.go::firstNonSectionH2.
 	HubH2Legacy *[]string `toml:"hub_h2_legacy"`
 
 	// hub-routed (poetry-style domains with own group + aliases).

@@ -64,7 +64,7 @@ type DomainRenderInputs struct {
 // read — calls bearcli list once, then runs the in-process
 // override+grouping pipeline. Never writes.
 //
-// The merge order matches engine.Apply's RunRegen (per_domain_regen.go):
+// The merge order matches engine.Apply's RunRegen (regen.go):
 // master overrides override hub overrides on collision. Plan engine
 // (bear/engine/plan.go) calls this and feeds.Groups straight into
 // d.RenderMaster(d, groups) — same call shape as Apply.
@@ -79,7 +79,7 @@ func SnapshotDomainRenderInputs(ctx context.Context, d *Domain) (DomainRenderInp
 	}
 	masterOverrides := d.computeMasterOverrides(notes)
 	hubOverrides := d.computeHubOverrides(notes)
-	// Master wins on collision — exact mirror of per_domain_regen.go
+	// Master wins on collision — exact mirror of regen.go
 	// "master overrides win on collision". computeMasterOverrides may
 	// return nil when ParseMasterTable is unset; lazily initialize before
 	// merging so we never write into a nil map.

@@ -314,7 +314,7 @@ func TestBuildMasterSections_ZeroNoteBucket_StaleHubDroppedSilently(t *testing.T
 	// (zero notes) while keeping `alive`. Covers the
 	// `len(groups[bucket]) == 0` branch in selectByExplicit; the
 	// script/catch-all variants share the same guard implementation
-	// in master_sections.go and don't need separate fixtures.
+	// in sectioned.go and don't need separate fixtures.
 	d := domainWithSections("", []bear.MasterSection{
 		{Title: "Hubs", Buckets: []string{"alive", "drain"}},
 	})

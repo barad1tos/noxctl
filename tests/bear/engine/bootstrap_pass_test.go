@@ -43,7 +43,7 @@ func listPayload(t *testing.T, notes []map[string]any) []byte {
 
 // lastOverwriteBody pulls the body argument from the most recent
 // "overwrite" call recorded by the fake. `bearcli overwrite` carries
-// the note body on stdin (see `overwriteWithRetry` in bear/bearcli_reads.go),
+// the note body on stdin (see `overwriteWithRetry` in bear/fetches.go),
 // captured into `fakeAutoTagCall.Body` by the fake's `Run` method.
 func lastOverwriteBody(t *testing.T, fake *fakeAutoTagBackend) string {
 	t.Helper()
@@ -505,7 +505,7 @@ func TestApplyDomainBootstrap_DefensiveUmbrellaGuard(t *testing.T) {
 		resetPoolForApply(t)
 		// Bare umbrella — no DefaultChild leaf wired. ResolveURLDomain
 		// returns self when defaultChildDomain == nil (see
-		// bear/domain_methods.go for the post-PR-H3 location).
+		// bear/methods.go for the post-PR-H3 location).
 		bareUmbrella := &bear.Domain{
 			Tag:             "phantom",
 			CanonicalTag:    "#phantom",
@@ -605,14 +605,14 @@ func assertOverwriteCount(t *testing.T, fake *fakeAutoTagBackend, want int, labe
 // TestApplyDomainBootstrap_SourceRegexUmbrellaGuard is a source-regex
 // regression lock asserting the defensive
 // `if d.SkipAtomicsPass` branch literal stays present in
-// bear/auto_tag.go AND that the word "umbrella" appears within 5
+// bear/autotag.go AND that the word "umbrella" appears within 5
 // lines of it (the comment that explains why the branch exists).
 // Future refactors that delete the guard as "unreachable dead code"
 // will trip this test instead of silently restoring the bug class.
 func TestApplyDomainBootstrap_SourceRegexUmbrellaGuard(t *testing.T) {
-	source, err := os.ReadFile("../../../bear/auto_tag.go")
+	source, err := os.ReadFile("../../../bear/autotag.go")
 	if err != nil {
-		t.Fatalf("read bear/auto_tag.go: %v", err)
+		t.Fatalf("read bear/autotag.go: %v", err)
 	}
 	lines := strings.Split(string(source), "\n")
 	guardRE := regexp.MustCompile(`if\s+d\.SkipAtomicsPass`)
@@ -625,7 +625,7 @@ func TestApplyDomainBootstrap_SourceRegexUmbrellaGuard(t *testing.T) {
 		}
 	}
 	if len(guardLines) == 0 {
-		t.Fatalf("defensive `if d.SkipAtomicsPass` guard missing from bear/auto_tag.go — defensive-guard regression lock failed")
+		t.Fatalf("defensive `if d.SkipAtomicsPass` guard missing from bear/autotag.go — defensive-guard regression lock failed")
 	}
 	for _, gl := range guardLines {
 		// Scan ±5 lines for the word "umbrella" — the comment that

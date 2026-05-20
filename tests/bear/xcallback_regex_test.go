@@ -21,7 +21,7 @@ import (
 // which targeted the now-deleted bear/new_note.go.
 func TestNewNoteURLFile_NoCyrillicLiterals(t *testing.T) {
 	repoRoot := findRepoRootFromTest(t)
-	for _, rel := range []string{"bear/new_note_url.go", "bear/h1_stamp.go"} {
+	for _, rel := range []string{"bear/xcallback.go", "bear/h1stamp.go"} {
 		path := filepath.Join(repoRoot, rel)
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)

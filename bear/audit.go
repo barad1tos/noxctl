@@ -1,7 +1,7 @@
 package bear
 
 // Lint audit orchestrator: walks every domain, runs the per-atom lint
-// pass via lint_atom.go, and reports / auto-fixes the findings. Split
+// pass via lints.go, and reports / auto-fixes the findings. Split
 // from lint.go to keep CLI-facing orchestration separate from the
 // per-atom detection logic.
 

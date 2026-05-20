@@ -154,7 +154,7 @@ func firstForeignTagFromTags(tags []string) string {
 // render is applied — bearcli still writes the substituted body so the
 // `#quicknote/*` token disappears.
 //
-// Listing reuses the bearcli JSON shape from auto_tag.go (id/title/tags/
+// Listing reuses the bearcli JSON shape from autotag.go (id/title/tags/
 // content). Failures per atom are logged and skipped so one bad note
 // can't stall the rest of the cycle.
 //
