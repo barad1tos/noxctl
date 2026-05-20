@@ -3,7 +3,6 @@ package bear
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -11,54 +10,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear/overwriteoutcome"
+	"github.com/barad1tos/noxctl/bear/bearcli"
 )
 
-// recordOutcome wires overwriteWithRetry's three counter-relevant exit
-// paths to overwriteoutcome.Record. The sub-package keeps the metric
-// arithmetic testable from tests/bear/overwriteoutcome/ without exposing
-// bearcliMetrics or its fields in the bear public API.
-func recordOutcome(outcome overwriteoutcome.Outcome) {
-	overwriteoutcome.Record(
-		outcome,
-		&bearcliMetrics.hashConflicts,
-		&bearcliMetrics.retriesOK,
-		&bearcliMetrics.retriesFail,
-	)
-}
-
-// overwriteWithRetry performs `bearcli overwrite --base <hash>` and retries
-// once if bearcli rejects with ErrHashConflict (the note changed between our
-// hash read and the write). The retry re-fetches the current hash before the
-// second attempt — the only sensible recovery short of a full new regen.
-//
-// Increments the bearcli pool's hash-conflict counters via recordOutcome →
-// overwriteoutcome.Record so the audit reporter can
-// surface conflict rate and retry success ratio per regen cycle.
+// overwriteWithRetry is the bear-package shim over
+// bearcli.OverwriteWithRetry — kept here so existing call sites
+// (RunRegen, fast-passes, lint AutoFix) continue compiling without a
+// rename. The hash-conflict counter, retry logic, and showHash live
+// in bear/bearcli; this file no longer owns any bearcli machinery.
 func overwriteWithRetry(ctx context.Context, noteID, body string) error {
-	hash, err := showHash(ctx, noteID)
-	if err != nil {
-		return err
-	}
-	_, err = runBearcli(ctx, []string{"overwrite", noteID, flagBase, hash}, body)
-	if err == nil {
-		recordOutcome(overwriteoutcome.NoConflict)
-		return nil
-	}
-	if !errors.Is(err, ErrHashConflict) {
-		return err
-	}
-	hash, err = showHash(ctx, noteID)
-	if err != nil {
-		recordOutcome(overwriteoutcome.RetryFail)
-		return fmt.Errorf("retry-after-conflict: %w", err)
-	}
-	if _, err = runBearcli(ctx, []string{"overwrite", noteID, flagBase, hash}, body); err != nil {
-		recordOutcome(overwriteoutcome.RetryFail)
-		return fmt.Errorf("retry-after-conflict: %w", err)
-	}
-	recordOutcome(overwriteoutcome.RetrySucceed)
-	return nil
+	return bearcli.OverwriteWithRetry(ctx, noteID, body)
 }
 
 // listNotes returns every note tagged d.Tag with id, title, content, and
@@ -108,23 +69,9 @@ func (d *Domain) findIndexID(ctx context.Context) (string, error) {
 	return d.findNoteByTitle(ctx, d.IndexTitle)
 }
 
-// showHash returns the current optimistic-concurrency hash for the note. An
-// empty string with no error from bearcli would silently disable concurrency
-// guards — guard against that by treating empty hash as a fault.
-func showHash(ctx context.Context, noteID string) (string, error) {
-	out, err := runBearcli(ctx, []string{"show", noteID, flagFormat, formatJSON, flagFields, "hash"}, "")
-	if err != nil {
-		return "", fmt.Errorf("showHash(%s): %w", noteID, err)
-	}
-	var hashOnly Note
-	if err = json.Unmarshal(out, &hashOnly); err != nil {
-		return "", fmt.Errorf("showHash(%s): parse: %w", noteID, err)
-	}
-	if hashOnly.Hash == "" {
-		return "", fmt.Errorf("showHash(%s): bearcli returned empty hash", noteID)
-	}
-	return hashOnly.Hash, nil
-}
+// showHash moved to bearcli.ShowHash. No bear-package callers; the
+// previous overwriteWithRetry was its only consumer and now lives in
+// bear/bearcli/overwrite.go.
 
 // firstWikilinkAuthor scans the header zone for any wikilink target that isn't
 // empty or the master index title. Maps OwnAliases to OwnGroup. Returns "" if
