@@ -88,6 +88,14 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 			cmd.SilenceErrors = true
 			return errDestroyAborted
 		}
+		// destroy.Run wraps ctx.Err() (context.Canceled) when apply
+		// bails mid-sweep on SIGINT. Translate to the shared
+		// errInterrupted sentinel so main.go maps to POSIX exit 130
+		// (same as apply); without this, canceled destroy exits 1
+		// indistinguishable from a generic error.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return errInterrupted
+		}
 		return err
 	})
 }
