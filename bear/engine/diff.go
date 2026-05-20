@@ -80,6 +80,8 @@ func useColor(stdout *os.File, mode ColorMode) bool {
 		return false
 	case ColorAlways:
 		return true
+	case ColorAuto:
+		// fall through to env + isatty heuristics below
 	}
 	if os.Getenv("NO_COLOR") != "" {
 		return false

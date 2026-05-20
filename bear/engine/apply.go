@@ -32,7 +32,7 @@ type ApplyOpts struct {
 	Features  Features            // REQUIRED — flat pre-pass toggles
 	NoWait    bool                // optional; --no-wait fail-fast on lock contention
 	Stderr    io.Writer           // optional; default os.Stderr — used by lock-acquire wait advisory
-	// AuditEnabled, when true, runs the AuditDomains pre-pass. Mirrors
+	// AuditEnabled, when true, runs the Scan pre-pass. Mirrors
 	// the legacy daemon's REGEN_AUDIT != "off" gate. Default false.
 	AuditEnabled bool
 	// SkipFlock — optional; when true, Apply skips both the AcquireApply

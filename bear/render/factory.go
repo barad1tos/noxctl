@@ -45,7 +45,7 @@ func NewGroupedVerticalFlatDomain(tag, indexTitle, unknownBucket string, buckets
 		RenderHub:        nil,
 		ParseMasterTable: domain.ParseMasterFlatGrouped,
 		RenderMaster: func(d *domain.Domain, groups map[string][]domain.Note) string {
-			return RenderMasterFlatGrouped(d, groups, columns)
+			return MasterFlatGrouped(d, groups, columns)
 		},
 	}
 }
@@ -193,7 +193,7 @@ func umbrellaRenderMaster(children []*domain.Domain) func(d *domain.Domain, grou
 			bullets[index] = fmt.Sprintf("[[%s]] (%d)",
 				child.IndexTitle, len(groups[child.TagSuffix()]))
 		}
-		return RenderVerticalSections(d, []Section{{
+		return VerticalSections(d, []Section{{
 			Header:  fmt.Sprintf("%s (%d)", domain.T("master.section.divisions"), len(children)),
 			Bullets: bullets,
 		}})

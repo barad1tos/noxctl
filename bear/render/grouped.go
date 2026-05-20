@@ -22,7 +22,7 @@ import (
 // per-bucket Tier-2 hub adds no navigation value (english, health, leisure,
 // humor).
 
-// RenderMasterFlatGrouped produces the grouped-vertical master body —
+// MasterFlatGrouped produces the grouped-vertical master body —
 // a stack of `## <bucket> (N)` sections each followed by an
 // alphabetical bullet list of `[[Title]]` (or
 // `bear://x-callback-url/open-note?id=X` for duplicate titles).
@@ -39,10 +39,8 @@ import (
 //
 //	## rules (7)
 //	- [[atomA]]
-//
-//nolint:revive // public API; rename is breaking change for callers
-func RenderMasterFlatGrouped(d *domain.Domain, groups map[string][]domain.Note, columns []string) string {
-	return RenderVerticalSections(d, flatGroupedSections(d, groups, columns))
+func MasterFlatGrouped(d *domain.Domain, groups map[string][]domain.Note, columns []string) string {
+	return VerticalSections(d, flatGroupedSections(d, groups, columns))
 }
 
 // flatGroupedSections builds the section list for the grouped-vertical
@@ -98,7 +96,7 @@ func NewGroupedVerticalDomain(tag, indexTitle, unknownBucket string, buckets []s
 		ParseMasterTable: domain.ParseMasterFlatGrouped,
 		CanonicalTagFor:  SubTagCanonical,
 		RenderMaster: func(d *domain.Domain, groups map[string][]domain.Note) string {
-			return RenderMasterFlatGrouped(d, groups, columns)
+			return MasterFlatGrouped(d, groups, columns)
 		},
 	}
 }

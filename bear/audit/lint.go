@@ -3,7 +3,7 @@ package audit
 // Lint pass — types + sort utility.
 //
 // Per-atom detection (LintAtom) and auto-fix logic (AutoFixAtom) live
-// in lints.go; the audit orchestrator (AuditDomains, PrintFindings,
+// in lints.go; the audit orchestrator (Scan, PrintFindings,
 // LintApplyDomains) lives in audit.go. This file owns only the
 // shared types (LintCategory + Finding) and the SortFindings utility
 // callers across both halves rely on.

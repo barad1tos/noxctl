@@ -1,6 +1,6 @@
 // Package audit owns the lint + scan pipeline — per-atom Finding
 // detection (LintAtom in lints.go), corpus-wide orchestrators
-// (AuditDomains, LintApplyDomains in audit.go), and the untracked-
+// (Scan, LintApplyDomains in audit.go), and the untracked-
 // tag corpus scanner (ScanUntracked in untracked.go). engine.Plan
 // + cli/lint use this surface to drive `noxctl audit` and `noxctl
 // lint --apply`.
@@ -61,7 +61,7 @@ func AutoFixDomain(ctx context.Context, d *domain.Domain, notes []domain.Note) (
 	return fixed, failed
 }
 
-// AuditDomains is the audit-pass orchestrator: walks every domain in the
+// Scan is the audit-pass orchestrator: walks every domain in the
 // supplied slice, lists its atomics via bearcli, runs LintAtom on each, and
 // returns the consolidated finding set sorted by domain → category → title.
 // Listing failures are logged but don't abort the pass — caller gets every
@@ -75,7 +75,7 @@ func AutoFixDomain(ctx context.Context, d *domain.Domain, notes []domain.Note) (
 // ~50% of select-races where the slot wins over ctx.Done().
 //
 //nolint:revive // public API; rename is breaking change for callers
-func AuditDomains(ctx context.Context, domains []*domain.Domain) []Finding {
+func Scan(ctx context.Context, domains []*domain.Domain) []Finding {
 	var findings []Finding
 	for _, d := range domains {
 		if err := domain.CheckCtx(ctx); err != nil {
@@ -95,7 +95,7 @@ func AuditDomains(ctx context.Context, domains []*domain.Domain) []Finding {
 }
 
 // PrintFindings writes a grouped, human-readable audit report to `w`.
-// Findings are pre-sorted by AuditDomains; this writer just adds section
+// Findings are pre-sorted by Scan; this writer just adds section
 // headers and a final tally line. Pure formatting — no IO outside `w`.
 func PrintFindings(w io.Writer, findings []Finding, totalDomains int) {
 	currentDomain := ""
@@ -124,7 +124,7 @@ func PrintFindings(w io.Writer, findings []Finding, totalDomains int) {
 // non-fixable findings (broken-h1, malformed-canonical without rebuild
 // signal, unsafe-title) surface in the daemon log without the user having
 // to invoke `--audit` separately. Findings should be pre-sorted by
-// AuditDomains; this writer just prints them. No-op on empty input.
+// Scan; this writer just prints them. No-op on empty input.
 func LogAuditFindings(findings []Finding, logf func(format string, args ...any)) {
 	if len(findings) == 0 {
 		return
@@ -151,7 +151,7 @@ func LogAuditFindings(findings []Finding, logf func(format string, args ...any))
 // findings. Idempotent — re-running on a clean corpus is a no-op. Listing
 // failures are logged but don't abort the pass.
 //
-// Honors SIGINT/SIGTERM the same way AuditDomains does — the ctx.Err
+// Honors SIGINT/SIGTERM the same way Scan does — the ctx.Err
 // guard at the top of each iteration short-circuits before any bearcli
 // I/O, so a canceled sweep stops deterministically instead of racing the
 // pool semaphore for one more list+overwrite round.

@@ -24,7 +24,7 @@ type prePassSpec struct {
 
 func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 	if opts.AuditEnabled {
-		findings := audit.AuditDomains(ctx, opts.Domains)
+		findings := audit.Scan(ctx, opts.Domains)
 		audit.LogAuditFindings(findings, log.Printf)
 	}
 	// canonical-bootstrap wiring: build the tag→*Domain lookup

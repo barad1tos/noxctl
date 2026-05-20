@@ -378,13 +378,14 @@ func TestApplyDomainBootstrap_SubTagBucketNoOp(t *testing.T) {
 		domains := []*domain.Domain{testutil.Domain(t, "health")}
 		domainsByTag := domain.DomainsByTag(domains)
 
-		// Sub-tag bucket form — `#health/інше | …`, the actual shape
-		// produced by per-domain regen for grouped-vertical leaves.
-		// `inshe` (інше) is the UnknownBucket label for this domain.
+		// Sub-tag bucket form — `#health/<unknown> | …`, the actual
+		// shape produced by per-domain regen for grouped-vertical
+		// leaves. The UnknownBucket label for this domain comes from
+		// the catalog (see examples/personal.toml health entry).
 		subTagged := "# Меню від ШІ\n" +
 			"#health/інше | [[✱ Здоров'я]] | інше | [Нова нотатка](bear://x-callback-url/create?text=stub)\n" +
 			"---\n\n" +
-			"На основі [[Меню від Люди]].\n"
+			"Based on [[Sibling Note]].\n"
 
 		payload := listPayload(t, []map[string]any{{
 			"id":      "health-subtag-1",
@@ -435,7 +436,7 @@ func TestApplyDomainBootstrap_AlreadyBucketedNoOp(t *testing.T) {
 		bucketed := "# Я\n" +
 			"#library/lyrics | [[Дайте-танк]] | [Нова нотатка](bear://x-callback-url/create?text=stub)\n" +
 			"---\n\n" +
-			"Я гуляю, только если сумерки в микрорайоне.\n"
+			"Placeholder atomic body — content shape is irrelevant to this assertion.\n"
 
 		payload := listPayload(t, []map[string]any{{
 			"id":      "lyr-bucketed-1",
@@ -620,7 +621,7 @@ func TestApplyDomainBootstrap_SourceRegexUmbrellaGuard(t *testing.T) {
 	guardRE := regexp.MustCompile(`if\s+d\.SkipAtomicsPass`)
 	umbrellaRE := regexp.MustCompile(`(?i)umbrella`)
 
-	guardLines := []int{}
+	var guardLines []int
 	for i, line := range lines {
 		if guardRE.MatchString(line) {
 			guardLines = append(guardLines, i)

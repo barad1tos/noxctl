@@ -3,7 +3,7 @@
 //
 // snapshot_test.go locks down the snapshot facade contract:
 //
-//  1. domain.SnapshotDomainRenderInputs returns (DomainRenderInputs{Groups:
+//  1. domain.SnapshotDomainRenderInputs returns (RenderInputs{Groups:
 //     non-nil empty map}, nil) for a Domain whose tag matches zero notes
 //     in the live Bear corpus. Empty-but-non-nil is the contract the
 //     engine.Plan core and the residue scanner both depend on — they
@@ -51,7 +51,7 @@ func skipIfNoBearcli(t *testing.T) {
 
 // TestSnapshotDomainRenderInputs locks the facade's empty-tag contract:
 // a Domain whose tag yields zero notes from bearcli must produce
-// DomainRenderInputs with Groups initialized to an empty map (not nil)
+// RenderInputs with Groups initialized to an empty map (not nil)
 // and Notes nil-or-empty. The contract matters because ranges
 // over.Groups without a nil-guard.
 //

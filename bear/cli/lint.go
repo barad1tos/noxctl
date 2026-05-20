@@ -16,12 +16,12 @@ import (
 )
 
 // RunLint performs the lint sweep. When apply is false (audit mode or
-// `lint` without --apply), it runs audit.AuditDomains read-only and
+// `lint` without --apply), it runs audit.Scan read-only and
 // prints the grouped report to stdout. When apply is true, it runs
 // audit.LintApplyDomains which rewrites Fixable rows through bearcli.
 //
 // ctx cancellation aborts the sweep at the next bearcli call. Both
-// AuditDomains and LintApplyDomains are log-and-continue on per-atom
+// Scan and LintApplyDomains are log-and-continue on per-atom
 // failures, so a partial sweep always renders whatever findings
 // completed before the cancellation.
 //
@@ -32,6 +32,6 @@ func RunLint(ctx context.Context, stdout io.Writer, domains []*domain.Domain, ap
 		audit.LintApplyDomains(ctx, domains)
 		return
 	}
-	findings := audit.AuditDomains(ctx, domains)
+	findings := audit.Scan(ctx, domains)
 	audit.PrintFindings(stdout, findings, len(domains))
 }
