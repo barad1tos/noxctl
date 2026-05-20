@@ -1,4 +1,4 @@
-package domain
+package audit
 
 // Lint atom-level pass: per-atom anomaly detection (LintAtom) and the
 // auto-fix logic (AutoFixAtom) plus all private helpers they use. Split
@@ -8,13 +8,15 @@ package domain
 import (
 	"fmt"
 	"strings"
+
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // LintAtom inspects one atom and returns every finding that fires. Empty
 // slice when the atom is clean. Skips notes that the domain treats as
 // non-atomic (master, Tier-2 hubs).
-func (d *Domain) LintAtom(n Note) []Finding {
-	if d.skipNote(n) {
+func LintAtom(d *domain.Domain, n domain.Note) []Finding {
+	if domain.IsAuxNote(d, n) {
 		return nil
 	}
 	var out []Finding
@@ -78,7 +80,7 @@ func (d *Domain) LintAtom(n Note) []Finding {
 // downstream will rewrite the canonical anyway, so AutoFixAtom only needs
 // to leave the body in a state where ParseMeta succeeds and no orphan tags
 // remain — exact whitespace doesn't matter.
-func (d *Domain) AutoFixAtom(content string) (string, bool) {
+func AutoFixAtom(d *domain.Domain, content string) (string, bool) {
 	canonicalIndices := findCanonicalLineIndices(content, d.Tag)
 	hasOrphan := findOrphanTagLines(content, d.Tag, canonicalIndices)
 	multi := len(canonicalIndices) > 1
@@ -111,14 +113,14 @@ func (d *Domain) AutoFixAtom(content string) (string, bool) {
 // when the title is clean. broken-H1 wins over unsafe-title because a
 // title with a leading pipe is structurally corrupt — the URL-form
 // fallback would render fine but the title itself is wrong.
-func titleLevelFinding(d *Domain, n Note) (Finding, bool) {
+func titleLevelFinding(d *domain.Domain, n domain.Note) (Finding, bool) {
 	var category LintCategory
 	var detail string
 	switch {
 	case titleLooksBroken(n.Title):
 		category = LintBrokenH1
 		detail = "title starts with canonical-line fragment; original H1 lost"
-	case titleNeedsURLForm(n.Title):
+	case domain.TitleNeedsURLForm(n.Title):
 		category = LintUnsafeTitle
 		detail = "title contains | ] [ — wikilink emitted as bear:// URL by render"
 	default:
