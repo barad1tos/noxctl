@@ -116,7 +116,7 @@ func newUmbrellaDomainStrict(tag, indexTitle, defaultChild string, children []*D
 		IndexTitle:         indexTitle,
 		UnknownBucket:      "_umbrella",
 		DefaultChild:       defaultChild,
-		defaultChildDomain: matched,
+		DefaultChildDomain: matched,
 		ParseMeta:          ParseMetaFromSubTag,
 		SkipAtomicsPass:    true,
 		SkipNote:           umbrellaSkipNote(frozen),
@@ -148,7 +148,7 @@ func NewUmbrellaDomainForTest(
 			DefaultChild:    defaultChild,
 			ParseMeta:       ParseMetaFromSubTag,
 			RenderMaster:    umbrellaRenderMaster(children),
-			validationError: err,
+			ValidationError: err,
 		}
 	}
 	return d
@@ -167,7 +167,7 @@ func umbrellaSkipNote(children []*Domain) func(d *Domain, n Note) bool {
 			return true
 		}
 		for _, child := range children {
-			if child.skipNote(n) {
+			if IsAuxNote(child, n) {
 				return true
 			}
 		}
@@ -183,7 +183,7 @@ func umbrellaRenderMaster(children []*Domain) func(d *Domain, groups map[string]
 		bullets := make([]string, len(children))
 		for index, child := range children {
 			bullets[index] = fmt.Sprintf("[[%s]] (%d)",
-				child.IndexTitle, len(groups[child.tagSuffix()]))
+				child.IndexTitle, len(groups[child.TagSuffix()]))
 		}
 		return RenderVerticalSections(d, []Section{{
 			Header:  fmt.Sprintf("%s (%d)", T("master.section.divisions"), len(children)),

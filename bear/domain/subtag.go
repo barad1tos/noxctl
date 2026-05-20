@@ -74,7 +74,7 @@ func HubBacklinkSubTag(d *Domain, bucket string) string {
 //	- [[atom1]]
 //	- [[atom2]]
 func RenderHubFlatSubTag(d *Domain, bucket string, notes []Note, _ map[string][]string) string {
-	hubTitle := d.hubTitleFor(bucket)
+	hubTitle := d.HubTitle(bucket)
 	canonicalTag := d.canonicalTagFor(bucket)
 	sorted := append([]Note(nil), notes...)
 	sort.Sort(ByTitle(sorted))
@@ -114,7 +114,7 @@ func RenderMasterHubList(d *Domain, groups map[string][]Note, columns []string) 
 	}
 	bullets := make([]string, len(nonEmpty))
 	for index, bucket := range nonEmpty {
-		bullets[index] = fmt.Sprintf("[[%s]] (%d)", d.hubTitleFor(bucket), len(groups[bucket]))
+		bullets[index] = fmt.Sprintf("[[%s]] (%d)", d.HubTitle(bucket), len(groups[bucket]))
 	}
 	return RenderVerticalSections(d, []Section{{
 		Header:  fmt.Sprintf("%s (%d)", T("master.section.categories"), total),

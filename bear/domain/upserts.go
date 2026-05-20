@@ -18,7 +18,7 @@ func (d *Domain) upsertHub(ctx context.Context, bucket string, notes []Note) (st
 	if d.RenderHub == nil {
 		return bucket + ": skipped (no Tier-2)", nil
 	}
-	hubTitle := d.hubTitleFor(bucket)
+	hubTitle := d.HubTitle(bucket)
 	hubID, err := d.findHubID(ctx, hubTitle)
 	if err != nil {
 		return "", fmt.Errorf("upsertHub %q: %w", hubTitle, err)
@@ -117,7 +117,7 @@ func (d *Domain) upsertMasterIndex(ctx context.Context, groups map[string][]Note
 // "process all". Per-domain `REGEN_ATOMICS_PILOT_<TAG>` takes precedence over
 // the global `REGEN_ATOMICS_PILOT`.
 func (d *Domain) atomicsPilotBucket() string {
-	if pilot := os.Getenv("REGEN_ATOMICS_PILOT_" + strings.ToUpper(d.tagSuffix())); pilot != "" {
+	if pilot := os.Getenv("REGEN_ATOMICS_PILOT_" + strings.ToUpper(d.TagSuffix())); pilot != "" {
 		return pilot
 	}
 	return os.Getenv("REGEN_ATOMICS_PILOT")

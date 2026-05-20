@@ -176,14 +176,14 @@ type Domain struct {
 	// the TOML `default_child` key. Leaf domains leave it empty.
 	DefaultChild string
 
-	// defaultChildDomain is the leaf *Domain pointer resolved by
+	// DefaultChildDomain is the leaf *Domain pointer resolved by
 	// NewUmbrellaDomain at factory time from DefaultChild + children.
 	// newNoteLinkForDomain delegates to this leaf so the umbrella's
 	// "Нова нотатка" click produces a leaf-tagged note with leaf-correct
 	// canonical body (CanonicalTag, backlinkFor(UnknownBucket), IndexTitle)
 	// instead of the umbrella's internal "_umbrella" placeholder. Nil for
 	// leaf domains; non-nil only on umbrellas after successful construction.
-	defaultChildDomain *Domain
+	DefaultChildDomain *Domain
 
 	// QuickPlaceholderH1 is the literal H1 string ("Quicknote", "Article",
 	// etc.) the master's new-note x-callback URL embeds as a marker in
@@ -205,11 +205,11 @@ type Domain struct {
 	// the default master.
 	MasterSections []MasterSection
 
-	// validationError carries a factory-level error so Validate can
+	// ValidationError carries a factory-level error so Validate can
 	// surface it without the test-helper having to crash on misconfig.
 	// Set by NewUmbrellaDomainForTest. Production callers use
 	// NewUmbrellaDomain which panics on the same error class.
-	validationError error
+	ValidationError error
 }
 
 // MasterSection is one entry of a hub-routed domain's vertical-sections

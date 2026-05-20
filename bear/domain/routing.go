@@ -8,8 +8,11 @@ package domain
 
 import "strings"
 
-// nothing useful found. Used as second-tier fallback by detectAuthor.
-func (d *Domain) firstWikilinkAuthor(header string) string {
+// FirstWikilinkAuthor scans `header` for the first `[[X]]` wikilink
+// whose target is neither empty nor the domain's master index title,
+// returning that target as the bucket key. Returns "" when nothing
+// useful is found. Used as second-tier fallback by DetectAuthor.
+func (d *Domain) FirstWikilinkAuthor(header string) string {
 	rest := header
 	for {
 		openIdx := strings.Index(rest, "[[")
@@ -62,10 +65,10 @@ func (d *Domain) isHubNote(n Note) bool {
 	return false
 }
 
-// detectAuthor returns the bucket key for an atomic note. Source-of-truth
+// DetectAuthor returns the bucket key for an atomic note. Source-of-truth
 // priority:
 // 1. Domain.ParseMeta — canonical header line (preferred).
-// 2. firstWikilinkAuthor in header zone — covers legacy non-canonical
+// 2. FirstWikilinkAuthor in header zone — covers legacy non-canonical
 // cases for hub-routed domains. Skipped for sub-tag-preserving
 // blueprints (CanonicalTagFor != nil): those derive bucket from the
 // Bear tag array via BucketFromSubTag in groupAtomics, never from
@@ -76,12 +79,12 @@ func (d *Domain) isHubNote(n Note) bool {
 // development drag regression.
 // 3. Legacy fallback: first non-section ## H2 in body — guarded by
 // LegacyAuthorFallback (poetry only; aphorisms quote H2s would misread).
-func (d *Domain) detectAuthor(body string) string {
+func (d *Domain) DetectAuthor(body string) string {
 	if meta := d.ParseMeta(d, body); meta.Bucket != "" {
 		return meta.Bucket
 	}
 	if d.CanonicalTagFor == nil {
-		if author := d.firstWikilinkAuthor(HeaderZone(body)); author != "" {
+		if author := d.FirstWikilinkAuthor(HeaderZone(body)); author != "" {
 			return author
 		}
 	}
@@ -108,7 +111,7 @@ func (d *Domain) groupAtomics(notes []Note, overrides map[string]string) map[str
 		}
 		bucket, hasOverride := overrides[note.ID]
 		if !hasOverride {
-			bucket = d.detectAuthor(note.Content)
+			bucket = d.DetectAuthor(note.Content)
 			if bucket == "" {
 				bucket = BucketFromSubTag(d, note.Tags)
 			}
@@ -159,7 +162,7 @@ func (d *Domain) overrideForNote(note Note, titleToBucket map[string]string) (st
 	if !inMaster {
 		return "", false
 	}
-	canonicalBucket := d.detectAuthor(note.Content)
+	canonicalBucket := d.DetectAuthor(note.Content)
 	if canonicalBucket == "" {
 		canonicalBucket = d.UnknownBucket
 	}
@@ -270,7 +273,7 @@ func (d *Domain) collectHubOverrides(
 		if !ok {
 			continue
 		}
-		canonicalBucket := d.detectAuthor(atom.Content)
+		canonicalBucket := d.DetectAuthor(atom.Content)
 		if canonicalBucket == "" {
 			canonicalBucket = d.UnknownBucket
 		}
