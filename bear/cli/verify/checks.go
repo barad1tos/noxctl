@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 )
 
@@ -28,7 +28,7 @@ func failCheck(name, message string, details []string) Check {
 // reports PASS when `PlanResult.HasDrift()` is false AND there are
 // zero per-domain errors. Strict mode additionally fails when the
 // residue scan reports untracked tag-families.
-func checkPlanParity(ctx context.Context, opts Options, domains []*bear.Domain) Check {
+func checkPlanParity(ctx context.Context, opts Options, domains []*domain.Domain) Check {
 	c := Check{Name: "plan-parity"}
 	res, err := engine.Plan(ctx, engine.PlanOpts{
 		Domains: domains,
@@ -164,12 +164,12 @@ func ScanDaemonLogForTest(r io.Reader) ([]string, bool, error) {
 }
 
 // RunApplyOnceForTest exposes runApplyOnce to the external test package.
-func RunApplyOnceForTest(ctx context.Context, opts Options, domains []*bear.Domain) (*engine.ApplyResult, error) {
+func RunApplyOnceForTest(ctx context.Context, opts Options, domains []*domain.Domain) (*engine.ApplyResult, error) {
 	return runApplyOnce(ctx, opts, domains)
 }
 
 // CheckApplyIdempotencyForTest exposes checkApplyIdempotency to the external test package.
-func CheckApplyIdempotencyForTest(ctx context.Context, opts Options, domains []*bear.Domain) Check {
+func CheckApplyIdempotencyForTest(ctx context.Context, opts Options, domains []*domain.Domain) Check {
 	return checkApplyIdempotency(ctx, opts, domains)
 }
 
@@ -233,7 +233,7 @@ func scanLogSinceStartup(r io.Reader) ([]string, bool, error) {
 //
 // Destructive: opt-in via --with-apply. Acquires the flock; daemon
 // (if running) blocks until verify releases.
-func checkApplyIdempotency(ctx context.Context, opts Options, domains []*bear.Domain) Check {
+func checkApplyIdempotency(ctx context.Context, opts Options, domains []*domain.Domain) Check {
 	c := Check{Name: "apply-idempotency"}
 
 	// Pass 1: bring the vault to canonical state. Failures here are
@@ -304,7 +304,7 @@ func checkApplyIdempotency(ctx context.Context, opts Options, domains []*bear.Do
 // via `featuresFromCatalog`). Domains and Stderr are overridden here
 // so the verify package stays catalog-agnostic. Returns the result
 // for stat collection or an error on infrastructure-level failure.
-func runApplyOnce(ctx context.Context, opts Options, domains []*bear.Domain) (*engine.ApplyResult, error) {
+func runApplyOnce(ctx context.Context, opts Options, domains []*domain.Domain) (*engine.ApplyResult, error) {
 	apply := opts.ApplyOpts
 	apply.Domains = domains
 	apply.Stderr = opts.Stderr

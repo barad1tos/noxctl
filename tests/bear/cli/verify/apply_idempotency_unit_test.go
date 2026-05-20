@@ -16,16 +16,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/cli/verify"
 	"github.com/barad1tos/noxctl/bear/config"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 )
 
 // loadFixtureDomains returns the parsed domain slice from a minimal
 // TOML catalog. Caller-supplied wrapper so a test failure inside
 // config.Load doesn't masquerade as an apply-idempotency failure.
-func loadFixtureDomains(t *testing.T) []*bear.Domain {
+func loadFixtureDomains(t *testing.T) []*domain.Domain {
 	t.Helper()
 	domains, _, err := config.Load(writeMinimalCatalog(t))
 	if err != nil {
@@ -44,7 +44,7 @@ func loadFixtureDomains(t *testing.T) []*bear.Domain {
 func applyOpts(t *testing.T) engine.ApplyOpts {
 	t.Helper()
 	dir := t.TempDir()
-	pins, _ := bear.LoadPinRegistry(filepath.Join(dir, "pins.json"))
+	pins, _ := domain.LoadPinRegistry(filepath.Join(dir, "pins.json"))
 	features := engine.AllFeaturesOn()
 	features.AutoTagDefault = false
 	return engine.ApplyOpts{
@@ -150,7 +150,7 @@ func (e simulatedErr) Error() string { return string(e) }
 func TestCheckApplyIdempotency_OperatorWithFailingBackend_FirstPassReportsFailures(t *testing.T) {
 	domains := loadFixtureDomains(t)
 	backend := failingBearcliBackend{err: simulatedErr("bearcli simulated outage")}
-	ctx := bear.ContextWithBackend(t.Context(), backend)
+	ctx := domain.ContextWithBackend(t.Context(), backend)
 	got := verify.CheckApplyIdempotencyForTest(ctx, verify.Options{
 		ApplyOpts: applyOpts(t),
 	}, domains)

@@ -9,9 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/cli/recap"
 	"github.com/barad1tos/noxctl/bear/config"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/state"
 )
@@ -77,7 +77,7 @@ func runApply(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Pin registry — best-effort load (nil-safe registry per bear/pins.go).
-	pins, _ := bear.LoadPinRegistry(target)
+	pins, _ := domain.LoadPinRegistry(target)
 
 	// Resume detection — single stderr warning, no prompt.
 	if st, stErr := state.Load("./.noxctl/state.json"); stErr == nil && st.InProgress.Verb == "apply" {

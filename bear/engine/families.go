@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/state"
 )
 
@@ -44,8 +44,8 @@ func applyPerDomain(ctx context.Context, opts ApplyOpts, st *state.State, result
 // umbrella, only a flat slice of independent leaves to fan out.
 func runFamily(
 	ctx context.Context,
-	umbrella *bear.Domain,
-	leaves []*bear.Domain,
+	umbrella *domain.Domain,
+	leaves []*domain.Domain,
 	opts ApplyOpts,
 	st *state.State,
 	stateMu *sync.Mutex,
@@ -84,7 +84,7 @@ func runFamily(
 // so eg.Wait can flip result.Interrupted.
 func runDomainAndSave(
 	ctx context.Context,
-	d *bear.Domain,
+	d *domain.Domain,
 	opts ApplyOpts,
 	st *state.State,
 	stateMu *sync.Mutex,
@@ -137,8 +137,8 @@ func runDomainAndSave(
 // umbrella present in the slice — are placed in the nil-key bucket so
 // they still run; this is defensive for partial-domain subsets passed
 // during testing.
-func groupByUmbrella(domains []*bear.Domain) map[*bear.Domain][]*bear.Domain {
-	families := make(map[*bear.Domain][]*bear.Domain)
+func groupByUmbrella(domains []*domain.Domain) map[*domain.Domain][]*domain.Domain {
+	families := make(map[*domain.Domain][]*domain.Domain)
 	// First pass: identify umbrellas by IndexTitle.
 	umbrellasByTitle := identifyUmbrellas(domains)
 	// Second pass: place each domain.
@@ -152,8 +152,8 @@ func groupByUmbrella(domains []*bear.Domain) map[*bear.Domain][]*bear.Domain {
 // IndexTitle so the placement pass can look up an umbrella from a
 // child's ParentMaster value (which equals the umbrella's IndexTitle
 // per bear/factory.go::NewUmbrellaDomain).
-func identifyUmbrellas(domains []*bear.Domain) map[string]*bear.Domain {
-	umbrellas := make(map[string]*bear.Domain)
+func identifyUmbrellas(domains []*domain.Domain) map[string]*domain.Domain {
+	umbrellas := make(map[string]*domain.Domain)
 	for _, d := range domains {
 		for _, child := range domains {
 			if child != d && child.ParentMaster == d.IndexTitle {
@@ -169,9 +169,9 @@ func identifyUmbrellas(domains []*bear.Domain) map[string]*bear.Domain {
 // Extracted from groupByUmbrella so the per-domain branch logic stays
 // under the gocognit budget.
 func placeDomainInFamily(
-	d *bear.Domain,
-	umbrellasByTitle map[string]*bear.Domain,
-	families map[*bear.Domain][]*bear.Domain,
+	d *domain.Domain,
+	umbrellasByTitle map[string]*domain.Domain,
+	families map[*domain.Domain][]*domain.Domain,
 ) {
 	if d.ParentMaster != "" {
 		if u, ok := umbrellasByTitle[d.ParentMaster]; ok {

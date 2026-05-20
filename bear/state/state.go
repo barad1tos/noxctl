@@ -16,7 +16,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // SchemaVersion is the only string accepted in State.Version for v1.
@@ -90,10 +90,10 @@ func Load(path string) (*State, error) {
 	return &s, nil
 }
 
-// Save writes State to path via the bear.AtomicWriteJSON helper. perm
+// Save writes State to path via the domain.AtomicWriteJSON helper. perm
 // is fixed at 0o600: state.json carries hashes of the applied config,
 // not secrets, but defensive perm closes the multi-user
 // info-disclosure window.
 func (s *State) Save(path string) error {
-	return bear.AtomicWriteJSON(path, s, 0o600)
+	return domain.AtomicWriteJSON(path, s, 0o600)
 }

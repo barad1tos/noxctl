@@ -154,7 +154,7 @@ func TestApply_ContentHashStable_StripsNewNoteLink(t *testing.T) {
 	// ComputeContentHash is exported in package engine (see apply.go
 	// docstring for the project-policy deviation that motivated
 	// exporting rather than using a test-seam shim). The strip-of-
-	// new-note-link happens inside bear.FetchMasterContent
+	// new-note-link happens inside domain.FetchMasterContent
 	// (snapshot.go), NOT inside ComputeContentHash — so this test
 	// verifies that ComputeContentHash is deterministic on already-
 	// stripped inputs (the strip-then-hash discipline at the pipeline

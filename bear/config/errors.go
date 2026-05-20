@@ -4,7 +4,7 @@ import "errors"
 
 // Sentinel errors for typed-error inspection via errors.Is.
 //
-// Pattern follows the existing bear.ErrHashConflict convention
+// Pattern follows the existing domain.ErrHashConflict convention
 // (bear/domain.go) — package-level vars, not types — so callers can
 // do `errors.Is(err, config.ErrUnknownBlueprint)` regardless of how
 // the loader / validator chooses to wrap them via fmt.Errorf %w or

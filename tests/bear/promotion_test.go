@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 func TestPromoteByCalendar(t *testing.T) {
@@ -14,7 +14,7 @@ func TestPromoteByCalendar(t *testing.T) {
 	// operator would write in TOML. PromoteByCalendar's contract is
 	// rules-driven now: an empty slice short-circuits, and unknown
 	// source tags pass through unchanged.
-	rules := []bear.PromotionRule{
+	rules := []domain.PromotionRule{
 		{From: "quicknote/daily", To: "quicknote/weekly", Boundary: "day"},
 		{From: "quicknote/weekly", To: "quicknote/monthly", Boundary: "week"},
 		{From: "quicknote/monthly", To: "quicknote/yearly", Boundary: "month"},
@@ -133,7 +133,7 @@ func TestPromoteByCalendar(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotTag, gotMove := bear.PromoteByCalendar(tc.currentTag, tc.created, now, rules)
+			gotTag, gotMove := domain.PromoteByCalendar(tc.currentTag, tc.created, now, rules)
 			if gotTag != tc.wantNewTag || gotMove != tc.wantShouldMove {
 				t.Errorf("got (%q, %v), want (%q, %v)", gotTag, gotMove, tc.wantNewTag, tc.wantShouldMove)
 			}
@@ -149,7 +149,7 @@ func TestPromoteByCalendar(t *testing.T) {
 func TestPromoteByCalendar_EmptyRules(t *testing.T) {
 	now := time.Date(2026, 5, 7, 14, 0, 0, 0, time.Local)
 	created := time.Date(2020, 1, 1, 0, 0, 0, 0, time.Local) // ancient
-	gotTag, gotMove := bear.PromoteByCalendar("quicknote/daily", created, now, nil)
+	gotTag, gotMove := domain.PromoteByCalendar("quicknote/daily", created, now, nil)
 	if gotTag != "quicknote/daily" || gotMove {
 		t.Errorf("empty rules: got (%q, %v), want (\"quicknote/daily\", false)",
 			gotTag, gotMove)
@@ -161,13 +161,13 @@ func TestPromoteByCalendar_EmptyRules(t *testing.T) {
 // promoter is fully decoupled from the legacy quicknote/* hardcode.
 func TestPromoteByCalendar_CustomLadder(t *testing.T) {
 	now := time.Date(2026, 5, 7, 14, 0, 0, 0, time.Local)
-	rules := []bear.PromotionRule{
+	rules := []domain.PromotionRule{
 		{From: "fleeting/inbox", To: "fleeting/week", Boundary: "day"},
 		{From: "fleeting/week", To: "fleeting/archive", Boundary: "week"},
 	}
 	// Created last month → ladder runs to terminal `fleeting/archive`.
 	created := time.Date(2026, 4, 1, 14, 0, 0, 0, time.Local)
-	gotTag, gotMove := bear.PromoteByCalendar("fleeting/inbox", created, now, rules)
+	gotTag, gotMove := domain.PromoteByCalendar("fleeting/inbox", created, now, rules)
 	if gotTag != "fleeting/archive" || !gotMove {
 		t.Errorf("custom ladder: got (%q, %v), want (\"fleeting/archive\", true)",
 			gotTag, gotMove)
@@ -175,7 +175,7 @@ func TestPromoteByCalendar_CustomLadder(t *testing.T) {
 }
 
 // TestPromoteByCalendar_BoundaryParity pins the validator-vs-runtime
-// agreement on the boundary string set. `bear.ValidPromotionBoundaries`
+// agreement on the boundary string set. `domain.ValidPromotionBoundaries`
 // is the catalog-level allow-list; the rules-driven promoter routes
 // each key through a calendar-start helper. A boundary that passes
 // validation but produces a zero `time.Time` at runtime is a silent
@@ -189,11 +189,11 @@ func TestPromoteByCalendar_BoundaryParity(t *testing.T) {
 	// non-empty key is "promote to target".
 	now := time.Date(2026, 5, 7, 14, 0, 0, 0, time.Local)
 	created := time.Date(2020, 1, 1, 0, 0, 0, 0, time.Local)
-	for boundary := range bear.ValidPromotionBoundaries {
-		rules := []bear.PromotionRule{
+	for boundary := range domain.ValidPromotionBoundaries {
+		rules := []domain.PromotionRule{
 			{From: "src", To: "dst", Boundary: boundary},
 		}
-		gotTag, gotMove := bear.PromoteByCalendar("src", created, now, rules)
+		gotTag, gotMove := domain.PromoteByCalendar("src", created, now, rules)
 		if gotTag != "dst" || !gotMove {
 			t.Errorf("boundary=%q: got (%q, %v), want (\"dst\", true) — "+
 				"validator accepts this key but boundaryStart returned zero Time",

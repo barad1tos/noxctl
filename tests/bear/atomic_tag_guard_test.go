@@ -24,7 +24,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
@@ -46,13 +46,13 @@ func (b *recordingBackend) Run(_ context.Context, _ []string, _ string) ([]byte,
 // over a note that actually belongs to development/noxctl (canonical
 // ping-pong bug observed live on 2026-05-14).
 func TestProcessAtomicSkipsNoteNotCarryingDomainTag(t *testing.T) {
-	bear.ResetBearcliPoolForTest(1)
-	bear.ResetBearcliMetrics()
+	domain.ResetBearcliPoolForTest(1)
+	domain.ResetBearcliMetrics()
 
 	backend := &recordingBackend{}
-	ctx := bear.ContextWithBackend(context.Background(), backend)
+	ctx := domain.ContextWithBackend(context.Background(), backend)
 
-	note := bear.Note{
+	note := domain.Note{
 		ID:      "test-note-id-001",
 		Title:   "14 May 2026 at 17:57",
 		Content: "# 14 May 2026 at 17:57\n\n#development/noxctl | [[✱ Development]] | noxctl",
@@ -77,13 +77,13 @@ func TestProcessAtomicSkipsNoteNotCarryingDomainTag(t *testing.T) {
 // bearcli boundary (i.e. the guard must not be over-eager and block valid
 // canonicalization).
 func TestProcessAtomicCanonicalizesNoteCarryingDomainTag(t *testing.T) {
-	bear.ResetBearcliPoolForTest(1)
-	bear.ResetBearcliMetrics()
+	domain.ResetBearcliPoolForTest(1)
+	domain.ResetBearcliMetrics()
 
 	backend := &recordingBackend{}
-	ctx := bear.ContextWithBackend(context.Background(), backend)
+	ctx := domain.ContextWithBackend(context.Background(), backend)
 
-	note := bear.Note{
+	note := domain.Note{
 		ID:      "test-note-id-002",
 		Title:   "13 May 2026 at 09:00",
 		Content: "# 13 May 2026 at 09:00\n\n#quicknote/daily | [[❋ Daily]] | Нова нотатка",

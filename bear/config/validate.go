@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // tagFormatRE allows lowercase / uppercase letters, digits, slash,
@@ -103,7 +103,7 @@ func validatePromotionShape(p Promotion, i int, path string, knownTargets map[st
 	if p.To == "" {
 		errs = append(errs, fmt.Errorf("%s: promotion[%d] from=%q: to is required", path, i, p.From))
 	}
-	if _, ok := bear.ValidPromotionBoundaries[p.Boundary]; !ok {
+	if _, ok := domain.ValidPromotionBoundaries[p.Boundary]; !ok {
 		errs = append(errs, fmt.Errorf(
 			"%s: promotion[%d] from=%q: unknown boundary %q (valid: day|week|month|year, empty = day)",
 			path, i, p.From, p.Boundary,

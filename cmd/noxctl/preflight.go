@@ -11,9 +11,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/cli/lint"
 	"github.com/barad1tos/noxctl/bear/config"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/state"
 )
@@ -91,7 +91,7 @@ func runLintSweep(cmd *cobra.Command, apply bool) error {
 // they need extra wiring (catalog metadata for verbose summaries,
 // state resume, pin registry, feature flags) that this helper
 // would either drag along uselessly or obscure.
-func domainsWithPreflight() ([]*bear.Domain, error) {
+func domainsWithPreflight() ([]*domain.Domain, error) {
 	legacyPath, target := pinPaths()
 	if migrationErr := state.MigratePins(legacyPath, target); migrationErr != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: pin migration failed: %v\n", migrationErr)
@@ -160,19 +160,19 @@ func dailyDefaultTagFromCatalog(cat *config.Catalog) string {
 }
 
 // promotionRulesFromCatalog maps `[[promotion]]` stanzas onto the
-// engine-side `bear.PromotionRule` slice. Empty input or nil catalog
+// engine-side `domain.PromotionRule` slice. Empty input or nil catalog
 // yields a nil slice — time-promotion fast-pass treats nil as disabled.
 //
 // CLI boundary helper: `bear/` never imports `bear/config/`, so the
 // TOML-to-Domain bridge lives in `cmd/noxctl/` alongside the rest
 // of the catalog wiring.
-func promotionRulesFromCatalog(cat *config.Catalog) []bear.PromotionRule {
+func promotionRulesFromCatalog(cat *config.Catalog) []domain.PromotionRule {
 	if cat == nil || len(cat.Promotions) == 0 {
 		return nil
 	}
-	out := make([]bear.PromotionRule, 0, len(cat.Promotions))
+	out := make([]domain.PromotionRule, 0, len(cat.Promotions))
 	for _, p := range cat.Promotions {
-		out = append(out, bear.PromotionRule{From: p.From, To: p.To, Boundary: p.Boundary})
+		out = append(out, domain.PromotionRule{From: p.From, To: p.To, Boundary: p.Boundary})
 	}
 	return out
 }

@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
@@ -43,7 +43,7 @@ const userGibberishLine = ",khvljhv"
 // because the new content carried no H1.
 func TestRenderCanonicalForBootstrap_EmptyContent_ProducesCanonicalForm(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 15, 22, 30, 0, 0, time.Local)
-	bear.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
+	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
 	out := testutil.Domain(t, "quicknote/daily").RenderCanonicalForBootstrap("")
 
@@ -74,7 +74,7 @@ func TestRenderCanonicalForBootstrap_EmptyContent_ProducesCanonicalForm(t *testi
 // body so user prose lands BELOW `---`.
 func TestRenderCanonicalForBootstrap_NoteWithBody_PutsBodyBelowSeparator(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 15, 21, 59, 0, 0, time.Local)
-	bear.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
+	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
 	// Mirrors the user's screenshot: H1 from Bear auto-title, body line
 	// typed by the user, no tag-line yet (fast-pass is about to add it).
@@ -104,7 +104,7 @@ func TestRenderCanonicalForBootstrap_NoteWithBody_PutsBodyBelowSeparator(t *test
 // canonical render of X must equal X up to new-note URL drift.
 func TestRenderCanonicalForBootstrap_IdempotentWithRegenCycle(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 15, 22, 30, 0, 0, time.Local)
-	bear.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
+	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
 	in := "# 15 May 2026 at 22:30\nuser typed body\n"
 	bootstrap := testutil.Domain(t, "quicknote/daily").RenderCanonicalForBootstrap(in)
@@ -112,10 +112,10 @@ func TestRenderCanonicalForBootstrap_IdempotentWithRegenCycle(t *testing.T) {
 	// Now simulate the regen cycle running on the same content —
 	// RenderAtomicCanonicalForTest is the in-memory mirror of
 	// upsertAtomicBacklink's canonicalization path.
-	canonical := bear.RenderAtomicCanonicalForTest(t, testutil.Domain(t, "quicknote/daily"), "Note Title",
+	canonical := domain.RenderAtomicCanonicalForTest(t, testutil.Domain(t, "quicknote/daily"), "Note Title",
 		testutil.Domain(t, "quicknote/daily").UnknownBucket, bootstrap)
 
-	if !bear.EqualIgnoringNewNoteLink(bootstrap, canonical) {
+	if !domain.EqualIgnoringNewNoteLink(bootstrap, canonical) {
 		t.Errorf("bootstrap output is not idempotent under cycle re-render\n  bootstrap:\n%s\n  cycle:\n%s",
 			bootstrap, canonical)
 	}
@@ -128,7 +128,7 @@ func TestRenderCanonicalForBootstrap_IdempotentWithRegenCycle(t *testing.T) {
 // destination's canonical shape, not just stripped.
 func TestApplyForeignTagEscape_CanonicalizesDestination(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 15, 22, 30, 0, 0, time.Local)
-	bear.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
+	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
 	// Use the same RenderCanonicalForBootstrap helper that
 	// processForeignTagEscape uses internally — proves the destination
@@ -167,7 +167,7 @@ func TestApplyForeignTagEscape_CanonicalizesDestination(t *testing.T) {
 // backlink target). The note remains user-managed.
 func TestApplyForeignTagEscape_UnknownDestinationFallsBackToStripOnly(t *testing.T) {
 	// Build a domainsByTag map that does NOT include the foreign tag.
-	domainsByTag := bear.DomainsByTag([]*bear.Domain{testutil.Domain(t, "quicknote/daily")})
+	domainsByTag := domain.DomainsByTag([]*domain.Domain{testutil.Domain(t, "quicknote/daily")})
 
 	if _, ok := domainsByTag["user/typed-no-domain"]; ok {
 		t.Fatalf("test precondition violated: map should not contain `user/typed-no-domain`")
@@ -194,7 +194,7 @@ func TestApplyForeignTagEscape_UnknownDestinationFallsBackToStripOnly(t *testing
 // did.
 func TestRefreshQuicknotePlaceholder_MarkerPresent(t *testing.T) {
 	in := "# Quicknote\n#quicknote/daily | [[✱ Daily]] | [Нова нотатка](bear://x-callback-url/create?tags=quicknote%2Fdaily&open_note=yes)\n---\n\n"
-	out, refreshed := bear.RefreshPlaceholderH1ForTest(in, "Quicknote", "16 May 2026 at 00:35")
+	out, refreshed := domain.RefreshPlaceholderH1ForTest(in, "Quicknote", "16 May 2026 at 00:35")
 
 	if !refreshed {
 		t.Fatalf("marker present but refreshed=false")
@@ -226,7 +226,7 @@ func TestRefreshQuicknotePlaceholder_MarkerAbsent(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, refreshed := bear.RefreshPlaceholderH1ForTest(tc.in, "Quicknote", "16 May 2026 at 00:35")
+			out, refreshed := domain.RefreshPlaceholderH1ForTest(tc.in, "Quicknote", "16 May 2026 at 00:35")
 			if refreshed {
 				t.Errorf("expected refreshed=false; got true\n  in:  %q\n  out: %q", tc.in, out)
 			}
@@ -305,16 +305,16 @@ func setupRefreshFixture(t *testing.T, notes ...fakeNote) (*fakeRefreshBackend, 
 		t.Fatalf("marshal: %v", err)
 	}
 	backend := &fakeRefreshBackend{listPayload: payload}
-	ctx := bear.ContextWithBackend(context.Background(), backend)
-	bear.ResetBearcliPoolForTest(1)
+	ctx := domain.ContextWithBackend(context.Background(), backend)
+	domain.ResetBearcliPoolForTest(1)
 	return backend, ctx
 }
 
-// setFixedNowForTest pins bear.SetNowForNewNoteLinkForTest to a fixed
+// setFixedNowForTest pins domain.SetNowForNewNoteLinkForTest to a fixed
 // instant so timestamp-stamping is deterministic.
 func setFixedNowForTest(t *testing.T, fixedNow time.Time) {
 	t.Helper()
-	bear.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
+	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 }
 
 // TestApplyQuicknotePlaceholderRefresh_MarkerNote_GetsTimestampStamped
@@ -330,7 +330,7 @@ func TestApplyQuicknotePlaceholderRefresh_MarkerNote_GetsTimestampStamped(t *tes
 		Content: "# Quicknote\n#quicknote/daily | [[✱ Daily]]\n---\n\n",
 	})
 
-	refreshed, err := bear.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
+	refreshed, err := domain.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
 	if err != nil {
 		t.Fatalf("ApplyQuicknotePlaceholderRefresh: %v", err)
 	}
@@ -362,7 +362,7 @@ func TestApplyQuicknotePlaceholderRefresh_NonMarkerNote_Skipped(t *testing.T) {
 		Content: "# 15 May 2026 at 22:00\n#quicknote/daily | [[✱ Daily]]\n---\n\nold body\n",
 	})
 
-	refreshed, err := bear.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
+	refreshed, err := domain.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
 	if err != nil {
 		t.Fatalf("ApplyQuicknotePlaceholderRefresh: %v", err)
 	}
@@ -383,10 +383,10 @@ func TestApplyQuicknotePlaceholderRefresh_NonMarkerNote_Skipped(t *testing.T) {
 // Title + tag-set match inside the loop).
 func TestApplyQuicknotePlaceholderRefresh_LegacyForwardsToGenericScan(t *testing.T) {
 	backend := &fakeRefreshBackend{listPayload: []byte("[]")}
-	ctx := bear.ContextWithBackend(context.Background(), backend)
-	bear.ResetBearcliPoolForTest(1)
+	ctx := domain.ContextWithBackend(context.Background(), backend)
+	domain.ResetBearcliPoolForTest(1)
 
-	_, err := bear.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
+	_, err := domain.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
 	if err != nil {
 		t.Fatalf("ApplyQuicknotePlaceholderRefresh: %v", err)
 	}
@@ -417,8 +417,8 @@ func TestApplyPlaceholderRefresh_DispatchesToDomainByTitleAndTag(t *testing.T) {
 		Content: "# Quicknote\n#quicknote/daily | [[✱ Daily]]\n---\n\n",
 	})
 
-	domainsByTag := bear.DomainsByTag([]*bear.Domain{testutil.Domain(t, "quicknote/daily")})
-	refreshed, err := bear.ApplyPlaceholderRefresh(ctx, domainsByTag)
+	domainsByTag := domain.DomainsByTag([]*domain.Domain{testutil.Domain(t, "quicknote/daily")})
+	refreshed, err := domain.ApplyPlaceholderRefresh(ctx, domainsByTag)
 	if err != nil {
 		t.Fatalf("ApplyPlaceholderRefresh: %v", err)
 	}
@@ -447,8 +447,8 @@ func TestApplyPlaceholderRefresh_SkipsUntaggedNotes(t *testing.T) {
 		Content: "# Quicknote\nuser typed manually\n",
 	})
 
-	domainsByTag := bear.DomainsByTag([]*bear.Domain{testutil.Domain(t, "quicknote/daily")})
-	refreshed, err := bear.ApplyPlaceholderRefresh(ctx, domainsByTag)
+	domainsByTag := domain.DomainsByTag([]*domain.Domain{testutil.Domain(t, "quicknote/daily")})
+	refreshed, err := domain.ApplyPlaceholderRefresh(ctx, domainsByTag)
 	if err != nil {
 		t.Fatalf("ApplyPlaceholderRefresh: %v", err)
 	}
@@ -466,11 +466,11 @@ func TestApplyPlaceholderRefresh_SkipsUntaggedNotes(t *testing.T) {
 // is global because placeholders are shared across domains.
 func TestApplyPlaceholderRefresh_ListArgsAreGlobal(t *testing.T) {
 	backend := &fakeRefreshBackend{listPayload: []byte("[]")}
-	ctx := bear.ContextWithBackend(context.Background(), backend)
-	bear.ResetBearcliPoolForTest(1)
+	ctx := domain.ContextWithBackend(context.Background(), backend)
+	domain.ResetBearcliPoolForTest(1)
 
-	domainsByTag := bear.DomainsByTag([]*bear.Domain{testutil.Domain(t, "quicknote/daily")})
-	_, err := bear.ApplyPlaceholderRefresh(ctx, domainsByTag)
+	domainsByTag := domain.DomainsByTag([]*domain.Domain{testutil.Domain(t, "quicknote/daily")})
+	_, err := domain.ApplyPlaceholderRefresh(ctx, domainsByTag)
 	if err != nil {
 		t.Fatalf("ApplyPlaceholderRefresh: %v", err)
 	}

@@ -12,16 +12,16 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // TestT_KnownKeyReturnsValue exercises the happy path: a known key in the
 // active locale (uk) returns the catalog value. Anchors the catalog
 // completeness gate against a stable key the master renderer also reads.
 func TestT_KnownKeyReturnsValue(t *testing.T) {
-	t.Cleanup(func() { bear.SetLocale("uk") })
-	if got := bear.T("master.section.authors"); got != "Автори" {
-		t.Errorf(`bear.T("master.section.authors") = %q, want "Автори"`, got)
+	t.Cleanup(func() { domain.SetLocale("uk") })
+	if got := domain.T("master.section.authors"); got != "Автори" {
+		t.Errorf(`domain.T("master.section.authors") = %q, want "Автори"`, got)
 	}
 }
 
@@ -30,14 +30,14 @@ func TestT_KnownKeyReturnsValue(t *testing.T) {
 // so we swap a buffer-write handler and confirm the missing key + locale flow
 // through.
 func TestMissingKeyHandler(t *testing.T) {
-	t.Cleanup(func() { bear.SetLocale("uk") })
+	t.Cleanup(func() { domain.SetLocale("uk") })
 	var buf bytes.Buffer
-	prev := bear.SetMissingKeyHandler(func(key, locale string) {
+	prev := domain.SetMissingKeyHandler(func(key, locale string) {
 		_, _ = fmt.Fprintf(&buf, "missing key=%q locale=%q\n", key, locale)
 	})
-	t.Cleanup(func() { bear.SetMissingKeyHandler(prev) })
+	t.Cleanup(func() { domain.SetMissingKeyHandler(prev) })
 
-	_ = bear.T("nonexistent.key.for.test")
+	_ = domain.T("nonexistent.key.for.test")
 	logged := buf.String()
 	if !strings.Contains(logged, "nonexistent.key.for.test") {
 		t.Errorf("handler did not capture missing key in %q", logged)
@@ -52,12 +52,12 @@ func TestMissingKeyHandler(t *testing.T) {
 // so always restore via t.Cleanup to keep suite-wide tests downstream from
 // observing leaked locale state.
 func TestSetLocaleRoundTrip(t *testing.T) {
-	prev := bear.ActiveLocale()
-	t.Cleanup(func() { bear.SetLocale(prev) })
+	prev := domain.ActiveLocale()
+	t.Cleanup(func() { domain.SetLocale(prev) })
 
-	bear.SetLocale("uk")
-	if got := bear.ActiveLocale(); got != "uk" {
-		t.Errorf(`bear.ActiveLocale() = %q, want "uk"`, got)
+	domain.SetLocale("uk")
+	if got := domain.ActiveLocale(); got != "uk" {
+		t.Errorf(`domain.ActiveLocale() = %q, want "uk"`, got)
 	}
 }
 
@@ -65,7 +65,7 @@ func TestSetLocaleRoundTrip(t *testing.T) {
 // without errors. Catches a future commit that introduces a syntactically
 // broken catalog before any runtime call surfaces it.
 func TestUkTomlWellFormed(t *testing.T) {
-	data, err := bear.LocaleFile("uk.toml")
+	data, err := domain.LocaleFile("uk.toml")
 	if err != nil {
 		t.Fatalf("read locales/uk.toml: %v", err)
 	}
@@ -82,15 +82,15 @@ func TestUkTomlWellFormed(t *testing.T) {
 // non-existent locale and calling T must invoke the missing-key handler
 // — never silently fall back to uk values.
 func TestNoSilentFallback(t *testing.T) {
-	t.Cleanup(func() { bear.SetLocale("uk") })
+	t.Cleanup(func() { domain.SetLocale("uk") })
 	var buf bytes.Buffer
-	prev := bear.SetMissingKeyHandler(func(key, locale string) {
+	prev := domain.SetMissingKeyHandler(func(key, locale string) {
 		_, _ = fmt.Fprintf(&buf, "missing key=%q locale=%q\n", key, locale)
 	})
-	t.Cleanup(func() { bear.SetMissingKeyHandler(prev) })
+	t.Cleanup(func() { domain.SetMissingKeyHandler(prev) })
 
-	bear.SetLocale("xx")
-	_ = bear.T("master.section.authors")
+	domain.SetLocale("xx")
+	_ = domain.T("master.section.authors")
 	logged := buf.String()
 	if !strings.Contains(logged, "xx") {
 		t.Errorf(`handler did not see locale "xx" in %q`, logged)
@@ -101,7 +101,7 @@ func TestNoSilentFallback(t *testing.T) {
 }
 
 // TestI18nCatalogComplete walks every production.go file under the listed
-// package roots, regex-extracts every bear.T("...") call, and asserts each
+// package roots, regex-extracts every domain.T("...") call, and asserts each
 // extracted key exists in bear/locales/uk.toml. Failure lists the missing
 // keys, sorted, one per line — so a single CI run pinpoints every gap.
 //
@@ -110,7 +110,7 @@ func TestNoSilentFallback(t *testing.T) {
 func TestI18nCatalogComplete(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 
-	catalogData, err := bear.LocaleFile("uk.toml")
+	catalogData, err := domain.LocaleFile("uk.toml")
 	if err != nil {
 		t.Fatalf("read locales/uk.toml: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestI18nCatalogComplete(t *testing.T) {
 
 	// After the atomic catalog migration the hardcoded domain packages
 	// (library/llm/it/personal/quicknote) are gone — every domain now
-	// lives in examples/personal.toml. The remaining Go-source `bear.T(...)`
+	// lives in examples/personal.toml. The remaining Go-source `domain.T(...)`
 	// call sites are inside bear/ (core + custom renderers).
 	roots := []string{"bear"}
 	keys := collectTKeys(t, repoRoot, roots)
@@ -158,12 +158,12 @@ func findRepoRoot(t *testing.T) string {
 	return ""
 }
 
-// tCallRE matches `bear.T("…")` or `T("…")` (in-package) string literals.
+// tCallRE matches `domain.T("…")` or `T("…")` (in-package) string literals.
 // Captures the key in group 1.
 var tCallRE = regexp.MustCompile(`\bT\(\s*"([^"]+)"\s*\)`)
 
 // collectTKeys reads every.go file under the supplied package roots and
-// returns the set of unique keys passed to bear.T(...). Skips any _test.go
+// returns the set of unique keys passed to domain.T(...). Skips any _test.go
 // file (their regex fixtures would self-match the production scan).
 func collectTKeys(t *testing.T, repoRoot string, roots []string) map[string]struct{} {
 	t.Helper()
@@ -178,7 +178,7 @@ func collectTKeys(t *testing.T, repoRoot string, roots []string) map[string]stru
 }
 
 // walkCollect returns a filepath.WalkFunc that mutates `keys` with every
-// bear.T(...) key found in any.go file under the walked tree. Extracted
+// domain.T(...) key found in any.go file under the walked tree. Extracted
 // from collectTKeys so its cognitive complexity stays under the project
 // gocognit ≤ 15 budget — the loop itself is trivial; the predicate
 // stack lived inside the closure.

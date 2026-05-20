@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/cli/destroy"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // TestStripCanonical_RemovesTagLines covers the happy path: every
@@ -104,9 +104,9 @@ func TestPromptConfirm(t *testing.T) {
 // rendered as "... and N more.". A regression that bumps the limit
 // or changes the truncation copy must show up here.
 func TestRenderPreview_TruncatesAtomicsAboveFive(t *testing.T) {
-	atomics := make([]bear.Note, 8)
+	atomics := make([]domain.Note, 8)
 	for i := range atomics {
-		atomics[i] = bear.Note{
+		atomics[i] = domain.Note{
 			ID:    fmt.Sprintf("id%c", 'a'+i),
 			Title: fmt.Sprintf("Atom%c", 'A'+i),
 		}
@@ -135,7 +135,7 @@ func TestRenderPreview_TruncatesAtomicsAboveFive(t *testing.T) {
 // exactly 5 atomics the "and N more" line must NOT render. Catches
 // off-by-one bugs in the overflow guard.
 func TestRenderPreview_NoTruncationAtFiveOrFewer(t *testing.T) {
-	atomics := []bear.Note{
+	atomics := []domain.Note{
 		{ID: "1", Title: "A"},
 		{ID: "2", Title: "B"},
 		{ID: "3", Title: "C"},

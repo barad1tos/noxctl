@@ -16,7 +16,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // ErrAborted is returned when the operator declines the
@@ -33,12 +33,12 @@ var ErrTagNotManaged = errors.New("destroy: tag not managed by this catalog")
 // Options bundles every input Run needs. Plain struct, no methods,
 // caller fills every field per "Accept interfaces, return structs".
 type Options struct {
-	Domains     []*bear.Domain // REQUIRED — loaded catalog
-	Tag         string         // REQUIRED — target tag, e.g. "library/poetry"
-	AutoApprove bool           // --auto-approve skips the type-to-confirm prompt
-	Stdout      io.Writer      // preview + summary lands here (typically os.Stdout)
-	Stderr      io.Writer      // diagnostic warnings (typically os.Stderr)
-	Stdin       io.Reader      // type-to-confirm reads from here (typically os.Stdin)
+	Domains     []*domain.Domain // REQUIRED — loaded catalog
+	Tag         string           // REQUIRED — target tag, e.g. "library/poetry"
+	AutoApprove bool             // --auto-approve skips the type-to-confirm prompt
+	Stdout      io.Writer        // preview + summary lands here (typically os.Stdout)
+	Stderr      io.Writer        // diagnostic warnings (typically os.Stderr)
+	Stdin       io.Reader        // type-to-confirm reads from here (typically os.Stdin)
 }
 
 // Run is the destroy orchestrator. Walks every note carrying the
@@ -58,7 +58,7 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("%w: %q", ErrTagNotManaged, opts.Tag)
 	}
 
-	notes, err := bear.ListNotesForTag(ctx, opts.Tag)
+	notes, err := domain.ListNotesForTag(ctx, opts.Tag)
 	if err != nil {
 		return fmt.Errorf("destroy: list notes for tag %q: %w", opts.Tag, err)
 	}
@@ -110,7 +110,7 @@ func Run(ctx context.Context, opts Options) error {
 // findDomain returns the *Domain whose Tag matches target, or nil
 // when the tag is not in the catalog. Linear scan; the catalog is
 // always small (< 100 domains), so a map isn't worth the wiring.
-func findDomain(domains []*bear.Domain, target string) *bear.Domain {
+func findDomain(domains []*domain.Domain, target string) *domain.Domain {
 	for _, d := range domains {
 		if d.Tag == target {
 			return d
@@ -124,9 +124,9 @@ func findDomain(domains []*bear.Domain, target string) *bear.Domain {
 // canonical tag-line stripped). Domain.skipNote is the authoritative
 // classifier — same predicate the regen pipeline uses to decide which
 // notes are "system" vs "content".
-func classify(d *bear.Domain, notes []bear.Note) (masters, atomics []bear.Note) {
+func classify(d *domain.Domain, notes []domain.Note) (masters, atomics []domain.Note) {
 	for _, n := range notes {
-		if bear.IsAuxNote(d, n) {
+		if domain.IsAuxNote(d, n) {
 			masters = append(masters, n)
 		} else {
 			atomics = append(atomics, n)
@@ -139,7 +139,7 @@ func classify(d *bear.Domain, notes []bear.Note) (masters, atomics []bear.Note) 
 // before being asked to type-to-confirm. Spells out exact counts and
 // the soft-delete vs strip distinction so there are no surprises
 // post-confirmation.
-func renderPreview(w io.Writer, tag string, masters, atomics []bear.Note) {
+func renderPreview(w io.Writer, tag string, masters, atomics []domain.Note) {
 	_, _ = fmt.Fprintf(w, "noxctl destroy %s — preview\n\n", tag)
 	_, _ = fmt.Fprintf(w, "  %d master/hub notes will be moved to Bear's trash (restorable).\n", len(masters))
 	for _, m := range masters {
@@ -195,8 +195,8 @@ func promptConfirm(out io.Writer, in io.Reader, tag string) error {
 // and the operator should see every failure, not just the first.
 func apply(
 	ctx context.Context,
-	d *bear.Domain,
-	masters, atomics []bear.Note,
+	d *domain.Domain,
+	masters, atomics []domain.Note,
 	stderr io.Writer,
 ) (trashed, stripped, failed int) {
 	for _, m := range masters {
@@ -204,7 +204,7 @@ func apply(
 			_, _ = fmt.Fprintf(stderr, "destroy: canceled mid-sweep (%v)\n", err)
 			return trashed, stripped, failed
 		}
-		if err := bear.TrashNote(ctx, m.ID); err != nil {
+		if err := domain.TrashNote(ctx, m.ID); err != nil {
 			_, _ = fmt.Fprintf(stderr, "destroy: trash %q (%s): %v\n", m.Title, m.ID, err)
 			failed++
 			continue
@@ -220,7 +220,7 @@ func apply(
 		if !changed {
 			continue
 		}
-		if err := bear.OverwriteNoteContent(ctx, a.ID, newContent); err != nil {
+		if err := domain.OverwriteNoteContent(ctx, a.ID, newContent); err != nil {
 			_, _ = fmt.Fprintf(stderr, "destroy: strip %q (%s): %v\n", a.Title, a.ID, err)
 			failed++
 			continue
@@ -268,7 +268,7 @@ func PromptConfirmForTest(out io.Writer, in io.Reader, tag string) error {
 // RenderPreviewForTest exposes the preview renderer to tests so the
 // "N atomics / ... and X more" overflow shape can be locked in
 // without going through a full Run + bearcli round trip.
-func RenderPreviewForTest(w io.Writer, tag string, masters, atomics []bear.Note) {
+func RenderPreviewForTest(w io.Writer, tag string, masters, atomics []domain.Note) {
 	renderPreview(w, tag, masters, atomics)
 }
 

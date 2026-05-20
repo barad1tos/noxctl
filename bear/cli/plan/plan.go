@@ -19,8 +19,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/config"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/state"
 )
@@ -71,7 +71,7 @@ func ValidateOutput(output string) error {
 // plan's path was missed, surfacing as "bearcli pool not initialized"
 // errors for every domain when `noxctl plan` ran standalone.
 func Run(ctx context.Context, opts Options) error {
-	bear.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
+	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
 
 	domains, err := LoadDomains(opts.Args,
 		opts.CfgPath, opts.PinLegacy, opts.PinTarget, opts.Stderr)
@@ -113,7 +113,7 @@ func Run(ctx context.Context, opts Options) error {
 // error so the operator gets a loud rejection on a typo).
 func LoadDomains(args []string,
 	cfgPath, pinLegacy, pinTarget string, stderr io.Writer,
-) ([]*bear.Domain, error) {
+) ([]*domain.Domain, error) {
 	if migrationErr := state.MigratePins(pinLegacy, pinTarget); migrationErr != nil {
 		_, _ = fmt.Fprintf(stderr, "warning: pin migration failed: %v\n", migrationErr)
 	}
@@ -148,10 +148,10 @@ func DispatchRender(
 // tag. Rejects unknown tags with a friendly error — the catalog is
 // closed, so a tag missing from the slice is almost always a typo,
 // and a loud rejection beats a silent zero-result run.
-func ScopeDomains(domains []*bear.Domain, wanted string) ([]*bear.Domain, error) {
+func ScopeDomains(domains []*domain.Domain, wanted string) ([]*domain.Domain, error) {
 	for _, d := range domains {
 		if d.Tag == wanted {
-			return []*bear.Domain{d}, nil
+			return []*domain.Domain{d}, nil
 		}
 	}
 	return nil, fmt.Errorf("noxctl plan: unknown tag %q (not in noxctl.toml)", wanted)

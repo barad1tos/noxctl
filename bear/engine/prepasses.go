@@ -9,7 +9,7 @@ import (
 	"context"
 	"log"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // tripped both gocognit and dupl thresholds.
@@ -22,14 +22,14 @@ type prePassSpec struct {
 
 func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 	if opts.AuditEnabled {
-		findings := bear.AuditDomains(ctx, opts.Domains)
-		bear.LogAuditFindings(findings, log.Printf)
+		findings := domain.AuditDomains(ctx, opts.Domains)
+		domain.LogAuditFindings(findings, log.Printf)
 	}
 	// canonical-bootstrap wiring: build the tag→*Domain lookup
 	// once so both fast-pass paths can write destination-canonical form
 	// in a single bearcli call instead of relying on the next regen
 	// cycle to restructure.
-	domainsByTag := bear.DomainsByTag(opts.Domains)
+	domainsByTag := domain.DomainsByTag(opts.Domains)
 	// dailyTagOn folds the catalog-driven "operator declared a daily
 	// default tag" gate into the feature toggle. With AutoTagDefault on
 	// but DailyDefaultTag empty the daily-default fast-pass is treated
@@ -56,7 +56,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			name:    "foreign_tag",
 			label:   "foreign-tag escape",
 			fn: func() error {
-				_, err := bear.ApplyForeignTagEscape(ctx, domainsByTag)
+				_, err := domain.ApplyForeignTagEscape(ctx, domainsByTag)
 				return err
 			},
 		},
@@ -65,7 +65,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			name:    "auto_tag",
 			label:   "auto-tag",
 			fn: func() error {
-				_, err := bear.ApplyDailyDefaultTag(ctx, domainsByTag[opts.DailyDefaultTag])
+				_, err := domain.ApplyDailyDefaultTag(ctx, domainsByTag[opts.DailyDefaultTag])
 				return err
 			},
 		},
@@ -74,7 +74,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			name:    "domain_bootstrap",
 			label:   "domain-bootstrap canonicalize",
 			fn: func() error {
-				_, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+				_, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 				return err
 			},
 		},
@@ -83,7 +83,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			name:    "placeholder_refresh",
 			label:   "placeholder refresh",
 			fn: func() error {
-				_, err := bear.ApplyPlaceholderRefresh(ctx, domainsByTag)
+				_, err := domain.ApplyPlaceholderRefresh(ctx, domainsByTag)
 				return err
 			},
 		},
@@ -92,7 +92,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			name:    "cross_domain",
 			label:   "cross-domain moves",
 			fn: func() error {
-				return bear.ApplyCrossDomainMoves(ctx, opts.Domains, opts.Pins)
+				return domain.ApplyCrossDomainMoves(ctx, opts.Domains, opts.Pins)
 			},
 		},
 		{
@@ -100,7 +100,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			name:    "time_promotion",
 			label:   "time-promotion",
 			fn: func() error {
-				return bear.ApplyTimeBasedPromotion(ctx, opts.Domains, opts.Pins, opts.PromotionRules)
+				return domain.ApplyTimeBasedPromotion(ctx, opts.Domains, opts.Pins, opts.PromotionRules)
 			},
 		},
 	}
@@ -113,7 +113,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 		}
 	}
 	if opts.Features.DuplicateRegistry {
-		registry, err := bear.BuildDuplicateRegistry(ctx, opts.Domains)
+		registry, err := domain.BuildDuplicateRegistry(ctx, opts.Domains)
 		if err != nil {
 			log.Printf("duplicates: registry build failed: %v (continuing with plain wikilinks)", err)
 			result.PrePasses["duplicate_registry"] = PrePassCounts{Failed: 1}
@@ -152,7 +152,7 @@ func runPrePass(spec prePassSpec, result *ApplyResult) {
 // of that family concurrently; after inner.Wait returns, the
 // umbrella domain's own RunRegen executes on the same goroutine.
 // - Independent families fan out in parallel; back-pressure on actual
-// bearcli subprocesses lives in the bear.SetBearcliConcurrency
+// bearcli subprocesses lives in the domain.SetBearcliConcurrency
 // semaphore, NOT at the errgroup layer.
 //
 // State serialization: state.State map writes + st.Save calls happen

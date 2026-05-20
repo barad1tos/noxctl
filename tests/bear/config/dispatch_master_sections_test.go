@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/config"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // masterSectionStanza returns a hub-routed stanza pre-filled with
@@ -134,7 +134,7 @@ func TestDispatch_MasterSection_EmptyCountModeAccepted(t *testing.T) {
 	if len(d.MasterSections) != 1 {
 		t.Fatalf("len = %d, want 1 (empty count_mode should still produce one section)", len(d.MasterSections))
 	}
-	if d.MasterSections[0].CountMode != bear.CountModeNotes {
+	if d.MasterSections[0].CountMode != domain.CountModeNotes {
 		t.Errorf("default CountMode = %v, want CountModeNotes", d.MasterSections[0].CountMode)
 	}
 }
@@ -211,7 +211,7 @@ func TestDispatch_MasterSection_PopulatesDomainFields(t *testing.T) {
 	if first.Title != "Languages" {
 		t.Errorf("section[0].Title = %q, want Languages", first.Title)
 	}
-	if first.CountMode != bear.CountModeBuckets {
+	if first.CountMode != domain.CountModeBuckets {
 		t.Errorf("section[0].CountMode = %v, want CountModeBuckets", first.CountMode)
 	}
 	if first.ShowBulletCounts {
@@ -232,7 +232,7 @@ func TestDispatch_MasterSection_PopulatesDomainFields(t *testing.T) {
 }
 
 // TestApplyMasterSections_NoAppendOnRepeat — apply twice on the SAME
-// *bear.Domain instance and assert the second call assigns (not
+// *domain.Domain instance and assert the second call assigns (not
 // appends). Dispatch can't catch this because it constructs a fresh
 // Domain each call; the regression would only manifest when
 // applyMasterSections accidentally grows d.MasterSections in place.
@@ -242,7 +242,7 @@ func TestApplyMasterSections_NoAppendOnRepeat(t *testing.T) {
 	stanza := masterSectionStanza([]config.StanzaMasterSection{
 		{Title: "Pinned", Buckets: []string{"go", "rust"}},
 	})
-	d := &bear.Domain{Tag: "test"}
+	d := &domain.Domain{Tag: "test"}
 	config.ApplyMasterSectionsForTest(d, stanza)
 	if len(d.MasterSections) != 1 {
 		t.Fatalf("first apply len = %d, want 1", len(d.MasterSections))

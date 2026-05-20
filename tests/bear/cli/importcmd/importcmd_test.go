@@ -15,8 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/cli/importcmd"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // TestEmitWithNotes_EmptyTag covers the 0-notes branch: import
@@ -42,7 +42,7 @@ func TestEmitWithNotes_EmptyTag(t *testing.T) {
 // sub-tag pattern, the suggestion is flat-table with the observed
 // bucket set populated.
 func TestEmitWithNotes_FlatTableShape(t *testing.T) {
-	notes := []bear.Note{
+	notes := []domain.Note{
 		{ID: "1", Title: "Note A", Tags: []string{"#research/papers", "#research/papers/Math"}},
 		{ID: "2", Title: "Note B", Tags: []string{"#research/papers", "#research/papers/Physics"}},
 		{ID: "3", Title: "Note C", Tags: []string{"#research/papers", "#research/papers/Math"}},
@@ -69,7 +69,7 @@ func TestEmitWithNotes_FlatTableShape(t *testing.T) {
 // through to flat-list, and the rationale steers the operator to
 // pick hub-routed manually if they want bucket-per-hub routing.
 func TestEmitWithNotes_AtomH2NotInferredAsHub(t *testing.T) {
-	notes := []bear.Note{
+	notes := []domain.Note{
 		{ID: "1", Title: "A", Tags: []string{"#library/quotes"}, Content: "# A\n## Shakespeare\nquote\n"},
 		{ID: "2", Title: "B", Tags: []string{"#library/quotes"}, Content: "# B\n## Plato\nquote\n"},
 		{ID: "3", Title: "C", Tags: []string{"#library/quotes"}, Content: "# C\n## Aristotle\nquote\n"},
@@ -89,7 +89,7 @@ func TestEmitWithNotes_AtomH2NotInferredAsHub(t *testing.T) {
 // with no shared sub-tag and fewer than three H2 headers fall back
 // to flat-list with an explicit "safe fallback" rationale.
 func TestEmitWithNotes_Fallback(t *testing.T) {
-	notes := []bear.Note{
+	notes := []domain.Note{
 		{ID: "1", Title: "A", Tags: []string{"#inbox"}, Content: "# A\nplain body\n"},
 		{ID: "2", Title: "B", Tags: []string{"#inbox"}, Content: "# B\nmore body\n"},
 	}

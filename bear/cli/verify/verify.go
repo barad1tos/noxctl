@@ -31,8 +31,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/config"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 )
 
@@ -212,7 +212,7 @@ func defaultIOAndPool(opts *Options) {
 	if opts.Stderr == nil {
 		opts.Stderr = os.Stderr
 	}
-	bear.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
+	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
 }
 
 // finalize computes the Summary, renders, and returns the

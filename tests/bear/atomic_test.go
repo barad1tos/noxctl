@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // TestAtomicWriteJSON_WritesJSONWithRequestedPerm round-trips a small
@@ -17,7 +17,7 @@ import (
 func TestAtomicWriteJSON_WritesJSONWithRequestedPerm(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a.json")
-	if err := bear.AtomicWriteJSON(path, map[string]int{"k": 1}, 0o600); err != nil {
+	if err := domain.AtomicWriteJSON(path, map[string]int{"k": 1}, 0o600); err != nil {
 		t.Fatalf("AtomicWriteJSON: %v", err)
 	}
 	data, err := os.ReadFile(path)
@@ -45,7 +45,7 @@ func TestAtomicWriteJSON_WritesJSONWithRequestedPerm(t *testing.T) {
 func TestAtomicWriteJSON_CreatesParentDirIfAbsent(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "nested", "deeper", "a.json")
-	if err := bear.AtomicWriteJSON(path, "v", 0o600); err != nil {
+	if err := domain.AtomicWriteJSON(path, "v", 0o600); err != nil {
 		t.Fatalf("AtomicWriteJSON: %v", err)
 	}
 	info, err := os.Stat(filepath.Dir(path))
@@ -69,11 +69,11 @@ func TestAtomicWriteJSON_ConcurrentWritersNoEEXIST(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		errs <- bear.AtomicWriteJSON(path, map[string]string{"who": "A"}, 0o600)
+		errs <- domain.AtomicWriteJSON(path, map[string]string{"who": "A"}, 0o600)
 	}()
 	go func() {
 		defer wg.Done()
-		errs <- bear.AtomicWriteJSON(path, map[string]string{"who": "B"}, 0o600)
+		errs <- domain.AtomicWriteJSON(path, map[string]string{"who": "B"}, 0o600)
 	}()
 	wg.Wait()
 	close(errs)
@@ -104,7 +104,7 @@ func TestAtomicWriteJSON_ConcurrentWritersNoEEXIST(t *testing.T) {
 func TestAtomicWriteJSON_CrashLeavesNoPartialJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "crash.json")
-	if err := bear.AtomicWriteJSON(path, map[string]int{"v": 1}, 0o600); err != nil {
+	if err := domain.AtomicWriteJSON(path, map[string]int{"v": 1}, 0o600); err != nil {
 		t.Fatalf("seed v1: %v", err)
 	}
 	fakeTmp := path + ".garbage.tmp"
@@ -129,7 +129,7 @@ func TestAtomicWriteJSON_CrashLeavesNoPartialJSON(t *testing.T) {
 func TestAtomicWriteJSON_PermExplicitNoImplicitOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "perm.json")
-	if err := bear.AtomicWriteJSON(path, "v", 0o644); err != nil {
+	if err := domain.AtomicWriteJSON(path, "v", 0o644); err != nil {
 		t.Fatalf("AtomicWriteJSON: %v", err)
 	}
 	info, err := os.Stat(path)
@@ -148,7 +148,7 @@ func TestAtomicWriteJSON_PermExplicitNoImplicitOverride(t *testing.T) {
 func TestAtomicWriteJSON_MarshalErrorWrappedAndNoTmpLeftBehind(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.json")
-	err := bear.AtomicWriteJSON(path, make(chan int), 0o600)
+	err := domain.AtomicWriteJSON(path, make(chan int), 0o600)
 	if err == nil {
 		t.Fatal("expected marshal error, got nil")
 	}
@@ -196,8 +196,8 @@ func assertNoTmpLeftovers(t *testing.T, dir string) {
 // placeholder so the bullet stays clickable and the orphan is visible
 // to the operator.
 func TestAtomicWikilink_EmptyTitleFallback(t *testing.T) {
-	note := bear.Note{ID: "DEADBEEF-1234", Title: ""}
-	got := bear.AtomicWikilink(nil, note)
+	note := domain.Note{ID: "DEADBEEF-1234", Title: ""}
+	got := domain.AtomicWikilink(nil, note)
 	if strings.Contains(got, "[[]]") {
 		t.Errorf("empty-title atom should not render as broken `[[]]`; got %q", got)
 	}
@@ -215,8 +215,8 @@ func TestAtomicWikilink_EmptyTitleFallback(t *testing.T) {
 // empty-title fallback didn't regress the common path: a normal
 // unique-title atom still renders as `[[Title]]`.
 func TestAtomicWikilink_NonEmptyTitleStaysWikilink(t *testing.T) {
-	note := bear.Note{ID: "X", Title: "Paranova"}
-	got := bear.AtomicWikilink(nil, note)
+	note := domain.Note{ID: "X", Title: "Paranova"}
+	got := domain.AtomicWikilink(nil, note)
 	if got != "[[Paranova]]" {
 		t.Errorf("unique-title atom should render as `[[Title]]`; got %q", got)
 	}

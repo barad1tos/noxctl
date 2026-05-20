@@ -4,27 +4,27 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
 // resolveUmbrella locates a catalog-loaded umbrella by its top-level
 // tag. testutil.Domain handles the lookup; this thin wrapper preserves
 // the existing call shape used across the tests below.
-func resolveUmbrella(t *testing.T, tag string) *bear.Domain {
+func resolveUmbrella(t *testing.T, tag string) *domain.Domain {
 	t.Helper()
 	return testutil.Domain(t, tag)
 }
 
 func TestNewNoteURLFromDomain_QuicknoteDaily_BootstrapForm(t *testing.T) {
-	u := bear.NewNoteURLFromDomain(testutil.Domain(t, "quicknote/daily"))
-	if u.Form != bear.FormBootstrap {
+	u := domain.NewNoteURLFromDomain(testutil.Domain(t, "quicknote/daily"))
+	if u.Form != domain.FormBootstrap {
 		t.Fatalf("expected FormBootstrap, got %v", u.Form)
 	}
 	if u.Inner == nil {
 		t.Fatal("FormBootstrap requires non-nil Inner")
 	}
-	if u.Inner.Form != bear.FormSimple {
+	if u.Inner.Form != domain.FormSimple {
 		t.Errorf("Inner.Form: expected FormSimple, got %v", u.Inner.Form)
 	}
 	if u.Tag != "quicknote/daily" {
@@ -34,7 +34,7 @@ func TestNewNoteURLFromDomain_QuicknoteDaily_BootstrapForm(t *testing.T) {
 
 func TestNewNoteURLFromDomain_UmbrellaResolvesToLeaf(t *testing.T) {
 	itUmbrella := resolveUmbrella(t, "it")
-	u := bear.NewNoteURLFromDomain(itUmbrella)
+	u := domain.NewNoteURLFromDomain(itUmbrella)
 	if !strings.HasPrefix(u.Tag, "it/") || u.Tag == "it" {
 		t.Errorf("umbrella did not delegate to leaf: Tag = %q", u.Tag)
 	}
@@ -44,9 +44,9 @@ func TestNewNoteURLFromDomain_UmbrellaResolvesToLeaf(t *testing.T) {
 }
 
 func TestNewNoteURL_RoundTrip_QuicknoteDaily(t *testing.T) {
-	original := bear.NewNoteURLFromDomain(testutil.Domain(t, "quicknote/daily"))
+	original := domain.NewNoteURLFromDomain(testutil.Domain(t, "quicknote/daily"))
 	emitted := original.Emit()
-	parsed, ok := bear.ParseNewNoteURLSegment(strings.TrimPrefix(emitted, " | "))
+	parsed, ok := domain.ParseNewNoteURLSegment(strings.TrimPrefix(emitted, " | "))
 	if !ok {
 		t.Fatalf("ParseNewNoteURLSegment failed for emitted output: %q", emitted)
 	}
@@ -56,10 +56,10 @@ func TestNewNoteURL_RoundTrip_QuicknoteDaily(t *testing.T) {
 }
 
 func TestNewNoteURL_Equals_StructuralDriftDetected(t *testing.T) {
-	a := bear.NewNoteURL{
+	a := domain.NewNoteURL{
 		Tag: "quicknote/daily", CanonicalTag: "#quicknote/daily",
 		Backlink: "[[✱ Daily]]", PlaceholderH1: "Quicknote",
-		Label: "Нова нотатка", Form: bear.FormBootstrap,
+		Label: "Нова нотатка", Form: domain.FormBootstrap,
 	}
 	b := a
 	b.Backlink = "[[_umbrella]]"
@@ -72,12 +72,12 @@ func TestNewNoteURL_Equals_StructuralDriftDetected(t *testing.T) {
 // NewNoteURL pinned to quicknote/daily. Used as the baseline fixture for
 // the Inner-leg equality tests (R5 gap-closure) — each test mutates a
 // single field on the copy to provoke drift.
-func quicknoteDailyBootstrapURL() bear.NewNoteURL {
-	return bear.NewNoteURL{
+func quicknoteDailyBootstrapURL() domain.NewNoteURL {
+	return domain.NewNoteURL{
 		Tag: "quicknote/daily", CanonicalTag: "#quicknote/daily",
 		Backlink: "[[✱ Daily]]", PlaceholderH1: "Quicknote",
-		Label: "Нова нотатка", Form: bear.FormBootstrap,
-		Inner: &bear.NewNoteURL{Tag: "quicknote/daily", Label: "Нова нотатка", Form: bear.FormSimple},
+		Label: "Нова нотатка", Form: domain.FormBootstrap,
+		Inner: &domain.NewNoteURL{Tag: "quicknote/daily", Label: "Нова нотатка", Form: domain.FormSimple},
 	}
 }
 
@@ -115,11 +115,11 @@ func TestNewNoteURL_Equals_InnerContentDrift(t *testing.T) {
 
 func TestParseNewNoteURLSegment_LegacySimple(t *testing.T) {
 	segment := "[Нова нотатка](bear://x-callback-url/create?tags=library%2Fpoetry&open_note=yes)"
-	u, ok := bear.ParseNewNoteURLSegment(segment)
+	u, ok := domain.ParseNewNoteURLSegment(segment)
 	if !ok {
 		t.Fatal("Parse failed for legacy simple form")
 	}
-	if u.Form != bear.FormSimple {
+	if u.Form != domain.FormSimple {
 		t.Errorf("Form = %v, want FormSimple", u.Form)
 	}
 	if u.Inner != nil {
@@ -132,11 +132,11 @@ func TestParseNewNoteURLSegment_LegacySimple(t *testing.T) {
 
 func TestParseNewNoteURLSegment_LegacyTitleForm(t *testing.T) {
 	segment := "[Нова нотатка](bear://x-callback-url/create?tags=quicknote%2Fdaily&title=13%20May%202026&open_note=yes)"
-	u, ok := bear.ParseNewNoteURLSegment(segment)
+	u, ok := domain.ParseNewNoteURLSegment(segment)
 	if !ok {
 		t.Fatal("Parse failed for legacy title form")
 	}
-	if u.Form != bear.FormLegacyTitle {
+	if u.Form != domain.FormLegacyTitle {
 		t.Errorf("Form = %v, want FormLegacyTitle", u.Form)
 	}
 }
@@ -144,7 +144,7 @@ func TestParseNewNoteURLSegment_LegacyTitleForm(t *testing.T) {
 func TestFindAllNewNoteURLsInBody_AnchoredToPipeSeparator(t *testing.T) {
 	// User-pasted bear://create literal mid-paragraph, NOT preceded by " | "
 	body := "# Note\nHere's a useful link: bear://x-callback-url/create?tags=foo&open_note=yes for opening notes.\n"
-	urls := bear.FindAllNewNoteURLsInBody(body)
+	urls := domain.FindAllNewNoteURLsInBody(body)
 	if len(urls) != 0 {
 		t.Errorf("user-pasted URL falsely picked up: %d matches found", len(urls))
 	}
@@ -152,7 +152,7 @@ func TestFindAllNewNoteURLsInBody_AnchoredToPipeSeparator(t *testing.T) {
 
 func TestFindAllNewNoteURLsInBody_PicksUpCanonicalDecoration(t *testing.T) {
 	body := "# Title\n#quicknote/daily | [[✱ Daily]] | [Нова нотатка](bear://x-callback-url/create?tags=quicknote%2Fdaily&open_note=yes)\n---\n"
-	urls := bear.FindAllNewNoteURLsInBody(body)
+	urls := domain.FindAllNewNoteURLsInBody(body)
 	if len(urls) != 1 {
 		t.Fatalf("canonical decoration: expected 1 URL, got %d", len(urls))
 	}
@@ -165,7 +165,7 @@ func TestStripNewNoteURLsFromBody_PreservesUserPastedLinks(t *testing.T) {
 	body := "# Note\nLink to: bear://x-callback-url/create?tags=foo&open_note=yes\n" +
 		"#quicknote/daily | [[✱ Daily]] | " +
 		"[Нова нотатка](bear://x-callback-url/create?tags=quicknote%2Fdaily&open_note=yes)\n"
-	stripped := bear.StripNewNoteURLsFromBody(body)
+	stripped := domain.StripNewNoteURLsFromBody(body)
 	if !strings.Contains(stripped, "Link to: bear://x-callback-url/create") {
 		t.Error("user-pasted link incorrectly removed")
 	}
@@ -209,7 +209,7 @@ func driftBodyWithBacklink(t *testing.T, backlink string) string {
 func TestEqualIgnoringNewNoteLinkStrict_DetectsBacklinkDrift(t *testing.T) {
 	leafBody := driftBodyWithBacklink(t, "[[✱ Daily]]")
 	stale := driftBodyWithBacklink(t, "[[_umbrella]]")
-	if bear.EqualIgnoringNewNoteLinkStrictForTest(leafBody, stale) {
+	if domain.EqualIgnoringNewNoteLinkStrictForTest(leafBody, stale) {
 		t.Error("strict predicate accepted Backlink drift — [[_umbrella]] leak undetected")
 	}
 }
@@ -222,7 +222,7 @@ func TestEqualIgnoringNewNoteLinkStrict_DetectsPlaceholderH1Drift(t *testing.T) 
 	u.PlaceholderH1 = "Daily"
 	a := driftBodyWithBacklink(t, "[[✱ Daily]]")
 	b := "# Title\n#quicknote/daily | [[✱ Daily]]" + u.Emit() + "\n---\n\n"
-	if bear.EqualIgnoringNewNoteLinkStrictForTest(a, b) {
+	if domain.EqualIgnoringNewNoteLinkStrictForTest(a, b) {
 		t.Error("strict predicate accepted PlaceholderH1 drift")
 	}
 }
@@ -232,7 +232,7 @@ func TestEqualIgnoringNewNoteLinkStrict_DetectsPlaceholderH1Drift(t *testing.T) 
 // predicate still consults the non-strict body compare.
 func TestEqualIgnoringNewNoteLinkStrict_FallsBackToBodyCompareWhenURLsMatch(t *testing.T) {
 	body := driftBodyWithBacklink(t, "[[✱ Daily]]")
-	if !bear.EqualIgnoringNewNoteLinkStrictForTest(body, body) {
+	if !domain.EqualIgnoringNewNoteLinkStrictForTest(body, body) {
 		t.Error("strict predicate failed to confirm identical bodies as equal")
 	}
 }
@@ -245,7 +245,7 @@ func TestEqualIgnoringNewNoteLink_AcceptsURLDriftWithBodyMatch(t *testing.T) {
 		"[Нова нотатка](bear://x-callback-url/create?tags=quicknote%2Fdaily&open_note=yes)\n"
 	b := "# X\n#quicknote/daily | [[✱ Daily]] | " +
 		"[Нова нотатка](bear://x-callback-url/create?tags=quicknote%2Fdaily&title=stale&open_note=yes)\n"
-	if !bear.EqualIgnoringNewNoteLinkForTest(a, b) {
+	if !domain.EqualIgnoringNewNoteLinkForTest(a, b) {
 		t.Error("non-strict predicate falsely rejected URL drift with body match")
 	}
 }
@@ -257,7 +257,7 @@ func TestEqualIgnoringNewNoteLinkStrict_RejectsURLDriftWithBodyMatch(t *testing.
 	simple := "# X\n#quicknote/daily | [[✱ Daily]] | " +
 		"[Нова нотатка](bear://x-callback-url/create?tags=quicknote%2Fdaily&open_note=yes)\n"
 	bootstrap := driftBodyWithBacklink(t, "[[✱ Daily]]")
-	if bear.EqualIgnoringNewNoteLinkStrictForTest(simple, bootstrap) {
+	if domain.EqualIgnoringNewNoteLinkStrictForTest(simple, bootstrap) {
 		t.Error("strict predicate accepted form mismatch (simple vs bootstrap) — structural compare not engaged")
 	}
 }

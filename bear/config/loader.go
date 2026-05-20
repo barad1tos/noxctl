@@ -14,7 +14,7 @@
 // 6. Domain.Validate per built domain.
 //
 // Errors aggregate via errors.Join. On any error path we still return
-// the partially-built []*bear.Domain so tooling can introspect what
+// the partially-built []*domain.Domain so tooling can introspect what
 // DID parse cleanly.
 package config
 
@@ -25,13 +25,13 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // Load parses noxctl.toml at path, dispatches stanzas, and returns
-// ([]*bear.Domain, *Catalog, error). Error is errors.Join of every
+// ([]*domain.Domain, *Catalog, error). Error is errors.Join of every
 // problem encountered — never just the first.
-func Load(path string) ([]*bear.Domain, *Catalog, error) {
+func Load(path string) ([]*domain.Domain, *Catalog, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		// Preserve fs.ErrNotExist via %w so callers can errors.Is
@@ -85,7 +85,7 @@ func decodeStrict(raw []byte, path string) (*Catalog, []error, error) {
 }
 
 // dispatchAllStanzas runs the two-pass dispatch:
-// - First pass: every non-umbrella stanza → bear.Domain via the
+// - First pass: every non-umbrella stanza → domain.Domain via the
 // dispatch map; results indexed by Tag for the second-pass
 // resolver to consume.
 // - Second pass: umbrella stanzas dispatched with a resolveChildren
@@ -94,11 +94,11 @@ func decodeStrict(raw []byte, path string) (*Catalog, []error, error) {
 // Returns the slice of built domains (positionally aligned with
 // cat.Domains; failed dispatches leave nil placeholders) and the
 // list of dispatch+validate errors.
-func dispatchAllStanzas(cat *Catalog, path string) ([]*bear.Domain, []error) {
+func dispatchAllStanzas(cat *Catalog, path string) ([]*domain.Domain, []error) {
 	var errs []error
-	leaf := map[string]*bear.Domain{}
+	leaf := map[string]*domain.Domain{}
 	var umbrellas []int
-	built := make([]*bear.Domain, len(cat.Domains))
+	built := make([]*domain.Domain, len(cat.Domains))
 
 	for i, s := range cat.Domains {
 		if s.Blueprint == "umbrella" {
@@ -122,12 +122,12 @@ func dispatchAllStanzas(cat *Catalog, path string) ([]*bear.Domain, []error) {
 }
 
 // dispatchOne runs Dispatch + Domain.Validate for a single stanza,
-// appending any error encountered to errs. Returns the *bear.Domain
+// appending any error encountered to errs. Returns the *domain.Domain
 // pointer so the caller can register leaf domains.
 func dispatchOne(s Stanza, i int, path string,
-	resolver func([]string) ([]*bear.Domain, error),
+	resolver func([]string) ([]*domain.Domain, error),
 	errs *[]error,
-) *bear.Domain {
+) *domain.Domain {
 	d, err := Dispatch(s, resolver)
 	if err != nil {
 		*errs = append(*errs, fmt.Errorf("%s: domain[%d] tag=%q: %w", path, i, s.Tag, err))
@@ -143,9 +143,9 @@ func dispatchOne(s Stanza, i int, path string,
 // newChildResolver returns a resolveChildren closure that maps each
 // child Tag to a previously-built leaf domain. Missing children are
 // returned as a single error listing every offender.
-func newChildResolver(leaf map[string]*bear.Domain) func([]string) ([]*bear.Domain, error) {
-	return func(tags []string) ([]*bear.Domain, error) {
-		kids := make([]*bear.Domain, 0, len(tags))
+func newChildResolver(leaf map[string]*domain.Domain) func([]string) ([]*domain.Domain, error) {
+	return func(tags []string) ([]*domain.Domain, error) {
+		kids := make([]*domain.Domain, 0, len(tags))
 		var missing []string
 		for _, t := range tags {
 			if d, ok := leaf[t]; ok {

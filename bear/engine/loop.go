@@ -9,7 +9,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // Run is the daemon main loop: wires the FSEvent watcher, the mtime
@@ -25,16 +25,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// Initialize the bearcli pool before any trigger source fires
 	// (deploy fix). engine.Apply also calls this — sync.Once
-	// inside package bear makes the second call a no-op — but the
-	// auto-tag fast-pass calls bear.ApplyForeignTagEscape /
-	// bear.ApplyDailyDefaultTag directly, bypassing engine.Apply. Without
+	// inside package domain makes the second call a no-op — but the
+	// auto-tag fast-pass calls domain.ApplyForeignTagEscape /
+	// domain.ApplyDailyDefaultTag directly, bypassing engine.Apply. Without
 	// this pre-loop init, the first 2s fast-pass tick fires before any
 	// FSEvent burst and hits "bearcli pool not initialized".
 	bearcliConcurrency := d.opts.BearcliConcurrency
 	if bearcliConcurrency <= 0 {
 		bearcliConcurrency = DefaultBearcliConcurrency
 	}
-	bear.SetBearcliConcurrency(bearcliConcurrency)
+	domain.SetBearcliConcurrency(bearcliConcurrency)
 
 	log.Printf(
 		"noxctl daemon ready; debounce=%s, max-burst=%s, mtime-poll=%s, autotag-poll=%s, watch=%s, domains=%d",

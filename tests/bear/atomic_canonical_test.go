@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // TestWriteMasterHeader_UmbrellaUsesDefaultChild locks spec component 4:
@@ -23,17 +23,17 @@ import (
 // umbrella master should land in a tagged leaf domain so the resulting
 // atom enters its canonical regen pipeline.
 func TestWriteMasterHeader_UmbrellaUsesDefaultChild(t *testing.T) {
-	leaf := &bear.Domain{
+	leaf := &domain.Domain{
 		Tag:          "quicknote/daily",
 		CanonicalTag: "#quicknote/daily",
 		IndexTitle:   "✱ Quicknote Daily",
-		ParseMeta:    bear.DefaultParseMetaCanonical,
-		RenderMaster: bear.DefaultRenderMasterFlat,
+		ParseMeta:    domain.DefaultParseMetaCanonical,
+		RenderMaster: domain.DefaultRenderMasterFlat,
 	}
-	umbrella := bear.NewUmbrellaDomain("quicknote", "✱ Quicknote", "quicknote/daily",
-		[]*bear.Domain{leaf})
+	umbrella := domain.NewUmbrellaDomain("quicknote", "✱ Quicknote", "quicknote/daily",
+		[]*domain.Domain{leaf})
 
-	body := umbrella.RenderMaster(umbrella, map[string][]bear.Note{})
+	body := umbrella.RenderMaster(umbrella, map[string][]domain.Note{})
 
 	// Bootstrap form: the inner `tags=` parameter lives doubly-encoded
 	// inside the outer `text=` payload. DefaultChild tag (quicknote/daily)
@@ -58,13 +58,13 @@ func TestWriteMasterHeader_UmbrellaUsesDefaultChild(t *testing.T) {
 // deterministic datetime stamping.
 func TestUpsertAtomic_StampsH1WhenAbsent(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 13, 15, 25, 0, 0, time.Local)
-	bear.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
+	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
-	d := bear.NewFlatListDomain("library/quotes", "✱ Quotes")
+	d := domain.NewFlatListDomain("library/quotes", "✱ Quotes")
 	d.UnknownBucket = "_unknown"
 
 	in := "#library/quotes\nbody content\n"
-	out := bear.RenderAtomicCanonicalForTest(t, d, "Note Title", "_unknown", in)
+	out := domain.RenderAtomicCanonicalForTest(t, d, "Note Title", "_unknown", in)
 
 	wantHead := "# 13 May 2026 at 15:25"
 	if !strings.HasPrefix(out, wantHead+"\n") {
@@ -80,13 +80,13 @@ func TestUpsertAtomic_StampsH1WhenAbsent(t *testing.T) {
 // the body zone; this regression test locks the new contract.
 func TestUpsertAtomic_PreservesNonTagPreamble(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 13, 15, 25, 0, 0, time.Local)
-	bear.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
+	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
-	d := bear.NewFlatListDomain("library/quotes", "✱ Quotes")
+	d := domain.NewFlatListDomain("library/quotes", "✱ Quotes")
 	d.UnknownBucket = "_unknown"
 
 	in := "# Existing title\nuser preamble line\n#library/quotes | [[✱ Quotes]]\n---\nmain content\n"
-	out := bear.RenderAtomicCanonicalForTest(t, d, "Note Title", "_unknown", in)
+	out := domain.RenderAtomicCanonicalForTest(t, d, "Note Title", "_unknown", in)
 
 	lines := strings.Split(out, "\n")
 	if len(lines) < 4 {
@@ -116,12 +116,12 @@ func TestUpsertAtomic_PreservesNonTagPreamble(t *testing.T) {
 // pushing the caret one row too far below the HR in Bear's editor.
 func TestRenderAtomicCanonical_EmptyBodyEndsWithSingleTrailingNewline(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 16, 0, 35, 0, 0, time.Local)
-	bear.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
+	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
-	d := bear.NewFlatListDomain("quicknote/daily", "✱ Daily")
+	d := domain.NewFlatListDomain("quicknote/daily", "✱ Daily")
 	d.UnknownBucket = "_flat"
 
-	out := bear.RenderAtomicCanonicalForTest(t, d, "ignored", "_flat", "")
+	out := domain.RenderAtomicCanonicalForTest(t, d, "ignored", "_flat", "")
 
 	if !strings.HasSuffix(out, "\n---\n\n") {
 		t.Fatalf("empty-body canonical must end with `\\n---\\n\\n`; got tail %q\n  full:\n%s",

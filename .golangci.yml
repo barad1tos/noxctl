@@ -58,8 +58,8 @@ linters:
       min-complexity: 15
     dupl:
  # Tokens, not lines. Tuned by bisection after extracting every real
- # duplication into bear/factory.go (NewFlatTableDomain,
- # NewFlatListDomain, NewHubRoutedDomain) and bear.SortTitles helper.
+ # duplication into bear/domain/factory.go (NewFlatTableDomain,
+ # NewFlatListDomain, NewHubRoutedDomain) and domain.SortTitles helper.
  # Bisect map after refactor:
  # threshold ≤ 20 → 9 findings, all genuine Go idioms (error
  # wrapping `if err != nil { return fmt.Errorf }`,

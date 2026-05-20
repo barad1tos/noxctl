@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 func TestPinRegistryLoadMissing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pins.json")
-	registry, err := bear.LoadPinRegistry(path)
+	registry, err := domain.LoadPinRegistry(path)
 	if err != nil {
 		t.Fatalf("Load missing: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestPinRegistryLoadMissing(t *testing.T) {
 func TestPinRegistrySaveAndLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pins.json")
-	registry, err := bear.LoadPinRegistry(path)
+	registry, err := domain.LoadPinRegistry(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestPinRegistrySaveAndLoadRoundTrip(t *testing.T) {
 		t.Fatalf("save: %v", saveErr)
 	}
 
-	reloaded, err := bear.LoadPinRegistry(path)
+	reloaded, err := domain.LoadPinRegistry(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestPinRegistryLoadCorrupt(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not json {"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	registry, err := bear.LoadPinRegistry(path)
+	registry, err := domain.LoadPinRegistry(path)
 	if err != nil {
 		t.Fatalf("corrupt should not error: got %v", err)
 	}
@@ -65,7 +65,7 @@ func TestPinRegistrySaveAtomic(t *testing.T) {
 	// After Save, no.tmp file should remain in the directory.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pins.json")
-	registry, err := bear.LoadPinRegistry(path)
+	registry, err := domain.LoadPinRegistry(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestPinRegistrySaveAtomic(t *testing.T) {
 func TestPinRegistrySaveSkipsWhenClean(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pins.json")
-	registry, err := bear.LoadPinRegistry(path)
+	registry, err := domain.LoadPinRegistry(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestPinRegistrySaveSkipsWhenClean(t *testing.T) {
 }
 
 func TestPinRegistryIsPinnedUnpinned(t *testing.T) {
-	registry, _ := bear.LoadPinRegistry(filepath.Join(t.TempDir(), "p.json"))
+	registry, _ := domain.LoadPinRegistry(filepath.Join(t.TempDir(), "p.json"))
 	if registry.IsPinned("missing", time.Now()) {
 		t.Error("missing atom should not be pinned")
 	}
@@ -146,7 +146,7 @@ func TestPinRegistryIsPinnedCalendarExpiry(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			registry, _ := bear.LoadPinRegistry(filepath.Join(t.TempDir(), "p.json"))
+			registry, _ := domain.LoadPinRegistry(filepath.Join(t.TempDir(), "p.json"))
 			registry.RecordPinAt("X", tc.domain, tc.pinAt)
 
 			if !registry.IsPinned("X", tc.stillValid) {
@@ -160,7 +160,7 @@ func TestPinRegistryIsPinnedCalendarExpiry(t *testing.T) {
 }
 
 func TestPinRegistryIsPinnedDecadalNeverExpires(t *testing.T) {
-	registry, _ := bear.LoadPinRegistry(filepath.Join(t.TempDir(), "p.json"))
+	registry, _ := domain.LoadPinRegistry(filepath.Join(t.TempDir(), "p.json"))
 	pinAt := time.Date(2026, 5, 7, 14, 0, 0, 0, time.Local)
 	registry.RecordPinAt("X", "quicknote/decadal", pinAt)
 
@@ -171,7 +171,7 @@ func TestPinRegistryIsPinnedDecadalNeverExpires(t *testing.T) {
 }
 
 func TestPinRegistryIsPinnedUnknownDomainTreatedAsExpired(t *testing.T) {
-	registry, _ := bear.LoadPinRegistry(filepath.Join(t.TempDir(), "p.json"))
+	registry, _ := domain.LoadPinRegistry(filepath.Join(t.TempDir(), "p.json"))
 	pinAt := time.Date(2026, 5, 7, 14, 0, 0, 0, time.Local)
 	registry.RecordPinAt("X", "quicknote/garbage", pinAt)
 
@@ -181,12 +181,12 @@ func TestPinRegistryIsPinnedUnknownDomainTreatedAsExpired(t *testing.T) {
 }
 
 // TestPinAtomicWritePerm asserts that PinRegistry.Save (routed through
-// bear.AtomicWriteJSON) writes pins.json with mode 0o600 — closes the
+// domain.AtomicWriteJSON) writes pins.json with mode 0o600 — closes the
 // fsync gap and the perm trap in one verification.
 func TestPinAtomicWritePerm(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pins.json")
-	registry, err := bear.LoadPinRegistry(path)
+	registry, err := domain.LoadPinRegistry(path)
 	if err != nil {
 		t.Fatal(err)
 	}

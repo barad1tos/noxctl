@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // TestBearcliFixtures_FreshUntitled drives the fresh-clicked-untitled
@@ -18,13 +18,13 @@ import (
 // renderAtomicCanonical.
 func TestBearcliFixtures_FreshUntitled(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 13, 15, 25, 0, 0, time.Local)
-	bear.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
+	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
 	note := loadBearcliFixture(t, "fresh_untitled.json")
-	d := bear.NewFlatListDomain("library/quotes", "✱ Quotes")
+	d := domain.NewFlatListDomain("library/quotes", "✱ Quotes")
 	d.UnknownBucket = "_unknown"
 
-	out := bear.RenderAtomicCanonicalForTest(t, d, note.Title, "_unknown", note.Content)
+	out := domain.RenderAtomicCanonicalForTest(t, d, note.Title, "_unknown", note.Content)
 	wantHead := "# 13 May 2026 at 15:25"
 	if !strings.HasPrefix(out, wantHead+"\n") {
 		t.Errorf("fresh-untitled atom did not stamp datetime H1:\n  got first line: %q\n  want: %q\n  full: %s",
@@ -37,13 +37,13 @@ func TestBearcliFixtures_FreshUntitled(t *testing.T) {
 // typed H1 must NOT be re-stamped — the user's title wins.
 func TestBearcliFixtures_UserAuthoredH1(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 13, 15, 25, 0, 0, time.Local)
-	bear.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
+	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
 	note := loadBearcliFixture(t, "user_authored_h1.json")
-	d := bear.NewFlatListDomain("library/quotes", "✱ Quotes")
+	d := domain.NewFlatListDomain("library/quotes", "✱ Quotes")
 	d.UnknownBucket = "_unknown"
 
-	out := bear.RenderAtomicCanonicalForTest(t, d, note.Title, "_unknown", note.Content)
+	out := domain.RenderAtomicCanonicalForTest(t, d, note.Title, "_unknown", note.Content)
 	if !strings.HasPrefix(out, "# My custom title\n") {
 		t.Errorf("user H1 was overwritten:\n  got first line: %q\n  full: %s",
 			strings.SplitN(out, "\n", 2)[0], out)
@@ -57,10 +57,10 @@ func TestBearcliFixtures_UserAuthoredH1(t *testing.T) {
 // preserved between H1 and the canonical tag-line (spec component 5).
 func TestBearcliFixtures_PreambleBody(t *testing.T) {
 	note := loadBearcliFixture(t, "preamble_body.json")
-	d := bear.NewFlatListDomain("library/quotes", "✱ Quotes")
+	d := domain.NewFlatListDomain("library/quotes", "✱ Quotes")
 	d.UnknownBucket = "_unknown"
 
-	out := bear.RenderAtomicCanonicalForTest(t, d, note.Title, "_unknown", note.Content)
+	out := domain.RenderAtomicCanonicalForTest(t, d, note.Title, "_unknown", note.Content)
 	lines := strings.Split(out, "\n")
 	if len(lines) < 4 {
 		t.Fatalf("output too short: %s", out)
@@ -82,10 +82,10 @@ func TestBearcliFixtures_PreambleBody(t *testing.T) {
 // the input shape — no auto-recovery happens (spec component 6: dropped).
 func TestBearcliFixtures_LegacyStaleH1(t *testing.T) {
 	note := loadBearcliFixture(t, "legacy_stale_h1.json")
-	d := bear.NewFlatListDomain("library/quotes", "_unknown")
+	d := domain.NewFlatListDomain("library/quotes", "_unknown")
 	d.UnknownBucket = "_unknown"
 
-	out := bear.RenderAtomicCanonicalForTest(t, d, note.Title, "_unknown", note.Content)
+	out := domain.RenderAtomicCanonicalForTest(t, d, note.Title, "_unknown", note.Content)
 	// Existing stale H1 IS a recognized H1 per spec recognition rules —
 	// daemon leaves it alone. Manual cleanup is the path forward (spec
 	// component 6: user manually cleared orphans).
@@ -94,7 +94,7 @@ func TestBearcliFixtures_LegacyStaleH1(t *testing.T) {
 	}
 }
 
-func loadBearcliFixture(t *testing.T, name string) bear.Note {
+func loadBearcliFixture(t *testing.T, name string) domain.Note {
 	t.Helper()
 	// findRepoRootFromTest is defined in new_note_regex_test.go (same
 	// package bear_test) — reuse rather than duplicate.
@@ -104,7 +104,7 @@ func loadBearcliFixture(t *testing.T, name string) bear.Note {
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-	var note bear.Note
+	var note domain.Note
 	if unmarshalErr := json.Unmarshal(data, &note); unmarshalErr != nil {
 		t.Fatalf("unmarshal %s: %v", path, unmarshalErr)
 	}

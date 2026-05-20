@@ -48,7 +48,7 @@ const lockOpenFlags = unix.O_CREAT | unix.O_RDWR | unix.O_CLOEXEC | unix.O_NOFOL
 // AcquireApply opens lockPath, writes the sentinel, blocks on LOCK_EX
 // (or fails fast if noWait), and returns a release closure that
 // unlocks + closes + cleans the sentinel. lockPath parent dir is
-// created with mode 0o700 if absent (matching bear.AtomicWriteJSON).
+// created with mode 0o700 if absent (matching domain.AtomicWriteJSON).
 //
 // ctx is currently informational — flock blocks at syscall level and
 // does not honor ctx. SIGINT during acquire surfaces via the signal

@@ -1,4 +1,4 @@
-// Package bear_test holds external tests for github.com/barad1tos/noxctl/bear. Living
+// Package bear_test holds external tests for github.com/barad1tos/noxctl/domain. Living
 // outside the bear package itself keeps source files unmixed with test
 // files; the trade-off is the tests can only exercise the exported API.
 //
@@ -12,55 +12,55 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 func TestParseMetaFromSubTag(t *testing.T) {
-	d := &bear.Domain{Tag: "english", CanonicalTag: "#english", IndexTitle: "✱ English"}
+	d := &domain.Domain{Tag: "english", CanonicalTag: "#english", IndexTitle: "✱ English"}
 	cases := []struct {
 		name string
 		body string
-		want bear.AtomicMeta
+		want domain.AtomicMeta
 	}{
 		{
 			name: "happy path with master backlink",
 			body: "# Homework\n#english/homework | [[✱ English]]\n---\n\nbody",
-			want: bear.AtomicMeta{Bucket: "homework"},
+			want: domain.AtomicMeta{Bucket: "homework"},
 		},
 		{
 			name: "hub-routed canonical (target != master)",
 			body: "# X\n#english/rules | [[english · rules]]\n---\n",
-			want: bear.AtomicMeta{Bucket: "rules"},
+			want: domain.AtomicMeta{Bucket: "rules"},
 		},
 		{
 			name: "no sub-tag — empty meta",
 			body: "# X\n#english | [[✱ English]] | foo\n---\n",
-			want: bear.AtomicMeta{},
+			want: domain.AtomicMeta{},
 		},
 		{
 			name: "extra tags before pipe",
 			body: "# X\n#english/vocabulary #other | [[✱ English]]\n---\n",
-			want: bear.AtomicMeta{Bucket: "vocabulary"},
+			want: domain.AtomicMeta{Bucket: "vocabulary"},
 		},
 		{
 			name: "with section in third segment",
 			body: "# X\n#english/homework | [[✱ English]] | week-3\n---\n",
-			want: bear.AtomicMeta{Bucket: "homework", Section: "week-3"},
+			want: domain.AtomicMeta{Bucket: "homework", Section: "week-3"},
 		},
 		{
 			name: "wrong family — empty",
 			body: "# X\n#claude/sessions | [[✱ Claude]]\n---\n",
-			want: bear.AtomicMeta{},
+			want: domain.AtomicMeta{},
 		},
 		{
 			name: "no header zone separator — still scans",
 			body: "# X\n#english/rules | [[✱ English]]\n",
-			want: bear.AtomicMeta{Bucket: "rules"},
+			want: domain.AtomicMeta{Bucket: "rules"},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := bear.ParseMetaFromSubTag(d, tc.body)
+			got := domain.ParseMetaFromSubTag(d, tc.body)
 			if got != tc.want {
 				t.Errorf("got %+v, want %+v", got, tc.want)
 			}
@@ -69,12 +69,12 @@ func TestParseMetaFromSubTag(t *testing.T) {
 }
 
 func TestRenderMasterFlatGrouped(t *testing.T) {
-	d := &bear.Domain{Tag: "english", CanonicalTag: "#english", IndexTitle: "✱ English"}
-	groups := map[string][]bear.Note{
+	d := &domain.Domain{Tag: "english", CanonicalTag: "#english", IndexTitle: "✱ English"}
+	groups := map[string][]domain.Note{
 		"homework": {{ID: "1", Title: "Verb tenses"}, {ID: "2", Title: "Adjectives"}},
 		"rules":    {{ID: "3", Title: "Articles"}},
 	}
-	out := bear.RenderMasterFlatGrouped(d, groups, []string{"homework", "rules"})
+	out := domain.RenderMasterFlatGrouped(d, groups, []string{"homework", "rules"})
 	if !strings.HasPrefix(out, "# ✱ English\n#english | [Нова нотатка](") {
 		t.Errorf("missing master header, got prefix: %q", out[:min(80, len(out))])
 	}
@@ -106,8 +106,8 @@ func TestRenderMasterFlatGrouped(t *testing.T) {
 }
 
 func TestRenderMasterFlatGroupedSkipsEmptyBuckets(t *testing.T) {
-	d := &bear.Domain{Tag: "x", CanonicalTag: "#x", IndexTitle: "✱ X"}
-	out := bear.RenderMasterFlatGrouped(d, map[string][]bear.Note{}, []string{"a", "b"})
+	d := &domain.Domain{Tag: "x", CanonicalTag: "#x", IndexTitle: "✱ X"}
+	out := domain.RenderMasterFlatGrouped(d, map[string][]domain.Note{}, []string{"a", "b"})
 	if strings.Contains(out, "## a") || strings.Contains(out, "## b") {
 		t.Error("empty groups should produce no `##` sections")
 	}
@@ -115,7 +115,7 @@ func TestRenderMasterFlatGroupedSkipsEmptyBuckets(t *testing.T) {
 
 func TestParseMasterFlatGrouped(t *testing.T) {
 	master := "# ✱ English\n#english\n---\n\n## homework (2)\n- [[Verb tenses]]\n- [[Adjectives]]\n\n## rules (1)\n- [[Articles]]\n"
-	got := bear.ParseMasterFlatGrouped(nil, master)
+	got := domain.ParseMasterFlatGrouped(nil, master)
 	want := map[string]string{
 		"Verb tenses": "homework",
 		"Adjectives":  "homework",
@@ -133,7 +133,7 @@ func TestParseMasterFlatGrouped(t *testing.T) {
 
 func TestParseMasterFlatGroupedExtractsBearURLIDs(t *testing.T) {
 	master := "## sessions (1)\n- [Foo](bear://x-callback-url/open-note?id=ABC-123)\n"
-	got := bear.ParseMasterFlatGrouped(nil, master)
+	got := domain.ParseMasterFlatGrouped(nil, master)
 	if got["ABC-123"] != "sessions" {
 		t.Errorf("expected ABC-123 → sessions, got %v", got)
 	}
@@ -141,7 +141,7 @@ func TestParseMasterFlatGroupedExtractsBearURLIDs(t *testing.T) {
 
 func TestParseMasterFlatGroupedIgnoresH3(t *testing.T) {
 	master := "## homework (3)\n- [[A]]\n### sub-section\n- [[B]]\n## rules (1)\n- [[C]]\n"
-	got := bear.ParseMasterFlatGrouped(nil, master)
+	got := domain.ParseMasterFlatGrouped(nil, master)
 	// ## homework is current section; H3 doesn't switch buckets, so B stays
 	// in homework. ## rules switches; C goes there.
 	if got["A"] != "homework" || got["B"] != "homework" || got["C"] != "rules" {
@@ -150,11 +150,11 @@ func TestParseMasterFlatGroupedIgnoresH3(t *testing.T) {
 }
 
 func TestSubTagCanonical(t *testing.T) {
-	d := &bear.Domain{Tag: "claude", CanonicalTag: "#claude"}
-	if got := bear.SubTagCanonical(d, "sessions"); got != "#claude/sessions" {
+	d := &domain.Domain{Tag: "claude", CanonicalTag: "#claude"}
+	if got := domain.SubTagCanonical(d, "sessions"); got != "#claude/sessions" {
 		t.Errorf("got %q", got)
 	}
-	if got := bear.SubTagCanonical(d, ""); got != "#claude" {
+	if got := domain.SubTagCanonical(d, ""); got != "#claude" {
 		t.Errorf("empty bucket should fall back to top-level: got %q", got)
 	}
 }
@@ -169,7 +169,7 @@ func TestSubTagCanonical(t *testing.T) {
 // (`інше`) because the body lacked a canonical-header line. With this fix
 // the tag-tree signal is honored.
 func TestBucketFromSubTag(t *testing.T) {
-	d := &bear.Domain{Tag: "development"}
+	d := &domain.Domain{Tag: "development"}
 	cases := []struct {
 		name string
 		tags []string
@@ -188,7 +188,7 @@ func TestBucketFromSubTag(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := bear.BucketFromSubTag(d, c.tags)
+			got := domain.BucketFromSubTag(d, c.tags)
 			if got != c.want {
 				t.Errorf("BucketFromSubTag(tags=%v) = %q, want %q", c.tags, got, c.want)
 			}
@@ -201,8 +201,8 @@ func TestBucketFromSubTag(t *testing.T) {
 // tag, not a sub-tag) never match BucketFromSubTag for a poetry domain
 // since the prefix `library/poetry/` doesn't appear in any tag.
 func TestBucketFromSubTag_NoOpForFlatBlueprint(t *testing.T) {
-	d := &bear.Domain{Tag: "library/poetry"}
-	got := bear.BucketFromSubTag(d, []string{"library/poetry"})
+	d := &domain.Domain{Tag: "library/poetry"}
+	got := domain.BucketFromSubTag(d, []string{"library/poetry"})
 	if got != "" {
 		t.Errorf("flat-blueprint poetry: BucketFromSubTag should be no-op, got %q", got)
 	}

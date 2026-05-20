@@ -1,18 +1,18 @@
 // Package engine_test — auto-tag fast-pass tests for the daemon.
 //
 // Validates the 7th-case fast-pass body, the skip-while-regen-in-progress
-// behavior, the BearcliBackend semaphore (respected via bear.runBearcli,
+// behavior, the BearcliBackend semaphore (respected via domain.runBearcli,
 // no bypass), and the disabled-poll path (AutoTagPollInterval == 0 → no
 // ticker, no work). Drives the real Daemon.Run select loop with a fake
-// FsWatcher and a fake bear.BearcliBackend stamped on ctx via
-// bear.ContextWithBackend. All tests wrap the body in
+// FsWatcher and a fake domain.BearcliBackend stamped on ctx via
+// domain.ContextWithBackend. All tests wrap the body in
 // testing/synctest.Test so time.NewTicker and the virtual clock advance
 // deterministically.
 //
-// Test seam: bear.BearcliBackend is the SAME seam used by
+// Test seam: domain.BearcliBackend is the SAME seam used by
 // tests/bear/engine/apply_parallel_test.go. Both ApplyForeignTagEscape
 // and ApplyDailyDefaultTag route their bearcli list/overwrite calls
-// through bear.runBearcli, which consults BackendFromContext(ctx) and
+// through domain.runBearcli, which consults BackendFromContext(ctx) and
 // dispatches to the fake. DaemonOpts gains ZERO new test fields — the
 // seam is one layer deeper than the daemon, so the daemon never has to
 // know about test fakes.
@@ -36,12 +36,12 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
-// fakeAutoTagBackend records every bear.runBearcli call routed through
+// fakeAutoTagBackend records every domain.runBearcli call routed through
 // the BearcliBackend seam. Returns canned JSON for "list" (one
 // untagged note unless overridden), and {"id":..."ok":true} stub for
 // "overwrite". Test scenarios pre-populate listPayload + assert via
@@ -66,7 +66,7 @@ func newFakeAutoTagBackend(notes []byte) *fakeAutoTagBackend {
 	return &fakeAutoTagBackend{listPayload: notes}
 }
 
-// Run satisfies bear.BearcliBackend.
+// Run satisfies domain.BearcliBackend.
 func (f *fakeAutoTagBackend) Run(_ context.Context, args []string, stdin string) ([]byte, error) {
 	f.count.Add(1)
 	kind := "other"
@@ -135,18 +135,18 @@ func autoTagOptsFor(t *testing.T, pollInterval time.Duration, features engine.Fe
 	// to receive a non-nil *Domain matching `quicknote/daily`. Register
 	// the real DailyDomain here so domainsByTag["quicknote/daily"]
 	// resolves correctly inside handleAutoTagTick.
-	return autoTagOptsForDomains(t, pollInterval, features, []*bear.Domain{testutil.Domain(t, "quicknote/daily")})
+	return autoTagOptsForDomains(t, pollInterval, features, []*domain.Domain{testutil.Domain(t, "quicknote/daily")})
 }
 
 // countAutoTagStamps counts "auto-tag:" prefix lines emitted by
-// bear.ApplyDailyDefaultTag (see bear/autotag.go:56). Each occurrence
+// domain.ApplyDailyDefaultTag (see bear/autotag.go:56). Each occurrence
 // equals one note stamped with #quicknote/daily.
 func countAutoTagStamps(buf *bytes.Buffer) int {
 	return strings.Count(buf.String(), "auto-tag:")
 }
 
 // countForeignEscapes counts "foreign-tag escape:" prefix lines from
-// bear.ApplyForeignTagEscape (see bear/foreigntag.go). Each = one
+// domain.ApplyForeignTagEscape (see bear/foreigntag.go). Each = one
 // foreign-tag escape applied.
 func countForeignEscapes(buf *bytes.Buffer) int {
 	return strings.Count(buf.String(), "foreign-tag escape:")
@@ -180,7 +180,7 @@ func startDaemonRun(t *testing.T, fake *fakeAutoTagBackend, opts engine.DaemonOp
 
 	buf := captureLog(t)
 	ctx, cancel := context.WithCancel(t.Context())
-	ctx = bear.ContextWithBackend(ctx, fake)
+	ctx = domain.ContextWithBackend(ctx, fake)
 	t.Cleanup(cancel)
 
 	if before != nil {
@@ -348,7 +348,7 @@ func TestDaemonAutoTagPoll_Disabled(t *testing.T) {
 // actually rewrites a note. Keeps the rest of the DaemonOpts shape
 // identical to `autoTagOptsFor` so existing wiring (SkipFlock,
 // MtimePollInterval=0, etc.) carries through.
-func autoTagOptsForDomains(t *testing.T, pollInterval time.Duration, features engine.Features, domains []*bear.Domain) engine.DaemonOpts {
+func autoTagOptsForDomains(t *testing.T, pollInterval time.Duration, features engine.Features, domains []*domain.Domain) engine.DaemonOpts {
 	t.Helper()
 	inner := applyOptsFor(t, domains)
 	inner.SkipFlock = true
@@ -393,7 +393,7 @@ func aphorismListPayload(t *testing.T) []byte {
 func fourPassDaemonOpts(t *testing.T, features engine.Features) engine.DaemonOpts {
 	t.Helper()
 	return autoTagOptsForDomains(t, 200*time.Millisecond, features,
-		[]*bear.Domain{testutil.Domain(t, "quicknote/daily"), testutil.Domain(t, "library/aphorisms")})
+		[]*domain.Domain{testutil.Domain(t, "quicknote/daily"), testutil.Domain(t, "library/aphorisms")})
 }
 
 // TestDaemonAutoTagPoll_FourPassesInOrder asserts:
