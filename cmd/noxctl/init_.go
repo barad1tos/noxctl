@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -52,6 +53,17 @@ func runInit(_ *cobra.Command, args []string) error {
 			return fmt.Errorf("noxctl init: %s already exists; pass --force to overwrite", path)
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("noxctl init: stat %s: %w", path, err)
+		}
+	}
+
+	// Bootstrap intermediate directories so `noxctl init
+	// some/subdir/noxctl.toml` works even when `some/subdir/` does
+	// not exist yet — saves the operator a separate `mkdir -p` step
+	// and keeps the failure message about the file itself, not a
+	// cryptic "no such file or directory" on the parent.
+	if dir := filepath.Dir(path); dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("noxctl init: mkdir %s: %w", dir, err)
 		}
 	}
 

@@ -12,7 +12,6 @@ package importcmd_test
 
 import (
 	"bytes"
-	"context"
 	"strings"
 	"testing"
 
@@ -62,10 +61,14 @@ func TestEmitWithNotes_FlatTableShape(t *testing.T) {
 	}
 }
 
-// TestEmitWithNotes_HubRoutedShape covers the author-grouped fallback:
-// notes carry the tag but no sub-tag pattern, and three or more
-// distinct `## <Author>` H2 headers exist across them.
-func TestEmitWithNotes_HubRoutedShape(t *testing.T) {
+// TestEmitWithNotes_AtomH2NotInferredAsHub locks the design call
+// that atom-body H2 sections do NOT signal hub-routed. The H2s
+// belong to the operator's note content (Sections, References,
+// quotes); the catalog blueprint must not be inferred from them.
+// Notes carrying multiple H2 headers without a uniform sub-tag fall
+// through to flat-list, and the rationale steers the operator to
+// pick hub-routed manually if they want bucket-per-hub routing.
+func TestEmitWithNotes_AtomH2NotInferredAsHub(t *testing.T) {
 	notes := []bear.Note{
 		{ID: "1", Title: "A", Tags: []string{"#library/quotes"}, Content: "# A\n## Shakespeare\nquote\n"},
 		{ID: "2", Title: "B", Tags: []string{"#library/quotes"}, Content: "# B\n## Plato\nquote\n"},
@@ -74,14 +77,11 @@ func TestEmitWithNotes_HubRoutedShape(t *testing.T) {
 	var buf bytes.Buffer
 	importcmd.EmitWithNotesForTest(&buf, "library/quotes", notes)
 	out := buf.String()
-	for _, want := range []string{
-		`blueprint   = "hub-routed"`,
-		`hub_h2_prefix  = "Group"`,
-		"hub-routed groups them per author",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("hub-routed output missing %q\n%s", want, out)
-		}
+	if !strings.Contains(out, `blueprint   = "flat-list"`) {
+		t.Errorf("atom-body H2s should NOT infer hub-routed; got:\n%s", out)
+	}
+	if strings.Contains(out, "hub-routed") && !strings.Contains(out, "manually") {
+		t.Errorf("output mentions hub-routed without the manual-switch hint:\n%s", out)
 	}
 }
 
@@ -116,8 +116,3 @@ func TestEmitWithNotes_IndexTitleCapitalize(t *testing.T) {
 		t.Errorf("expected ✱-capitalized leaf segment in index_title; got:\n%s", buf.String())
 	}
 }
-
-// _ keeps the context import live for tests that wire the seam
-// through context.Background()-style noop arguments; importing
-// without using it would fail the unused-import lint.
-var _ = context.Background

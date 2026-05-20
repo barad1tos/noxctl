@@ -64,6 +64,17 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	masters, atomics := classify(d, notes)
+	if len(masters)+len(atomics) == 0 {
+		// Nothing to destroy — skip the type-to-confirm prompt
+		// entirely. A managed tag with zero notes is a legitimate
+		// state (e.g. immediately after a previous destroy or
+		// before the first apply); the operator-facing message
+		// should reflect "no-op" rather than "are you sure?".
+		_, _ = fmt.Fprintf(opts.Stdout,
+			"noxctl destroy %s: tag is managed but carries no notes; nothing to do.\n",
+			opts.Tag)
+		return nil
+	}
 	renderPreview(opts.Stdout, opts.Tag, masters, atomics)
 
 	if !opts.AutoApprove {
@@ -137,15 +148,24 @@ func renderPreview(w io.Writer, tag string, masters, atomics []bear.Note) {
 }
 
 // promptConfirm reads one line from stdin and accepts only an exact
-// match against the tag. Anything else (typo, EOF, empty line)
-// returns ErrAborted. Type-to-confirm is the human-side guard
-// against fat-fingered destroy invocations; the tag name is the
-// natural shibboleth — long enough to defeat muscle-memory yes,
-// short enough to be typeable.
+// match against the tag. EOF or a wrong-tag line returns ErrAborted;
+// a genuine I/O failure on stdin (closed fd, EBADF) returns a
+// distinct wrapped error so the operator sees the real cause instead
+// of a misleading "aborted" message.
+//
+// Type-to-confirm is the human-side guard against fat-fingered
+// destroy invocations; the tag name is the natural shibboleth —
+// long enough to defeat muscle-memory yes, short enough to be
+// typeable.
 func promptConfirm(out io.Writer, in io.Reader, tag string) error {
 	_, _ = fmt.Fprintf(out, "\nType %q to confirm (anything else aborts): ", tag)
 	scanner := bufio.NewScanner(in)
 	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("destroy: read confirmation: %w", err)
+		}
+		// Scan returned false with no error → EOF / closed stream;
+		// treat as a deliberate abort (Ctrl-D, empty pipe).
 		return ErrAborted
 	}
 	if strings.TrimSpace(scanner.Text()) != tag {
@@ -166,6 +186,10 @@ func apply(
 	stderr io.Writer,
 ) (trashed, stripped, failed int) {
 	for _, m := range masters {
+		if err := ctx.Err(); err != nil {
+			_, _ = fmt.Fprintf(stderr, "destroy: canceled mid-sweep (%v)\n", err)
+			return trashed, stripped, failed
+		}
 		if err := bear.TrashNote(ctx, m.ID); err != nil {
 			_, _ = fmt.Fprintf(stderr, "destroy: trash %q (%s): %v\n", m.Title, m.ID, err)
 			failed++
@@ -174,6 +198,10 @@ func apply(
 		trashed++
 	}
 	for _, a := range atomics {
+		if err := ctx.Err(); err != nil {
+			_, _ = fmt.Fprintf(stderr, "destroy: canceled mid-sweep (%v)\n", err)
+			return trashed, stripped, failed
+		}
 		newContent, changed := StripCanonical(a.Content, d.CanonicalTag)
 		if !changed {
 			continue
@@ -213,6 +241,21 @@ func StripCanonical(content, canonicalTag string) (string, bool) {
 		return content, false
 	}
 	return strings.Join(out, "\n"), true
+}
+
+// PromptConfirmForTest exposes the type-to-confirm gate to tests in
+// tests/bear/cli/destroy/. Production callers reach the same logic
+// through Run; the seam exists because the project test-location
+// convention forbids in-package _test.go files.
+func PromptConfirmForTest(out io.Writer, in io.Reader, tag string) error {
+	return promptConfirm(out, in, tag)
+}
+
+// RenderPreviewForTest exposes the preview renderer to tests so the
+// "N atomics / ... and X more" overflow shape can be locked in
+// without going through a full Run + bearcli round trip.
+func RenderPreviewForTest(w io.Writer, tag string, masters, atomics []bear.Note) {
+	renderPreview(w, tag, masters, atomics)
 }
 
 // startsWithCanonical reports whether `line` begins with the

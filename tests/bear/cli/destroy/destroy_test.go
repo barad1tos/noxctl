@@ -6,9 +6,13 @@
 package destroy_test
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/cli/destroy"
 )
 
@@ -58,6 +62,90 @@ func TestStripCanonical_PrefixGuard(t *testing.T) {
 	got, changed := destroy.StripCanonical(body, "#library")
 	if changed {
 		t.Errorf("prefix-collision: #library matched #libraryother / #library-prose\nresult:\n%s", got)
+	}
+}
+
+// TestPromptConfirm pins the type-to-confirm gate's accept / abort
+// contract. Mismatched tag, empty line, EOF all collapse to
+// ErrAborted; exact match (with surrounding whitespace tolerated)
+// accepts. This is the human-side safety guard on a destructive
+// verb — every case below should be considered load-bearing.
+func TestPromptConfirm(t *testing.T) {
+	cases := []struct {
+		name      string
+		stdin     string
+		tag       string
+		wantAbort bool
+	}{
+		{"exact match accepts", "library/poetry\n", "library/poetry", false},
+		{"trailing whitespace tolerated", "  library/poetry  \n", "library/poetry", false},
+		{"mismatch aborts", "library/poet\n", "library/poetry", true},
+		{"empty line aborts", "\n", "library/poetry", true},
+		{"EOF aborts", "", "library/poetry", true},
+		{"prefix collision aborts", "library/poetry-extra\n", "library/poetry", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			err := destroy.PromptConfirmForTest(&out, strings.NewReader(tc.stdin), tc.tag)
+			gotAbort := errors.Is(err, destroy.ErrAborted)
+			if gotAbort != tc.wantAbort {
+				t.Errorf("abort=%v err=%v want abort=%v", gotAbort, err, tc.wantAbort)
+			}
+			if !tc.wantAbort && err != nil {
+				t.Errorf("expected accept; got err=%v", err)
+			}
+		})
+	}
+}
+
+// TestRenderPreview_TruncatesAtomicsAboveFive pins the atomic-list
+// overflow shape: at most 5 names are spelled out, the remainder
+// rendered as "... and N more.". A regression that bumps the limit
+// or changes the truncation copy must show up here.
+func TestRenderPreview_TruncatesAtomicsAboveFive(t *testing.T) {
+	atomics := make([]bear.Note, 8)
+	for i := range atomics {
+		atomics[i] = bear.Note{
+			ID:    fmt.Sprintf("id%c", 'a'+i),
+			Title: fmt.Sprintf("Atom%c", 'A'+i),
+		}
+	}
+	var buf bytes.Buffer
+	destroy.RenderPreviewForTest(&buf, "library/test", nil, atomics)
+	out := buf.String()
+	// First five names appear in full.
+	for i := range 5 {
+		want := fmt.Sprintf("Atom%c", 'A'+i)
+		if !strings.Contains(out, want) {
+			t.Errorf("preview missing first-five name %q\n%s", want, out)
+		}
+	}
+	// Remainder collapsed.
+	if !strings.Contains(out, "... and 3 more.") {
+		t.Errorf("preview missing overflow line; got:\n%s", out)
+	}
+	// Sixth onward NOT listed by name.
+	if strings.Contains(out, "AtomF") {
+		t.Errorf("preview should not name AtomF (slot 6); got:\n%s", out)
+	}
+}
+
+// TestRenderPreview_NoTruncationAtFiveOrFewer pins the inverse: at
+// exactly 5 atomics the "and N more" line must NOT render. Catches
+// off-by-one bugs in the overflow guard.
+func TestRenderPreview_NoTruncationAtFiveOrFewer(t *testing.T) {
+	atomics := []bear.Note{
+		{ID: "1", Title: "A"},
+		{ID: "2", Title: "B"},
+		{ID: "3", Title: "C"},
+		{ID: "4", Title: "D"},
+		{ID: "5", Title: "E"},
+	}
+	var buf bytes.Buffer
+	destroy.RenderPreviewForTest(&buf, "library/test", nil, atomics)
+	if strings.Contains(buf.String(), "more.") {
+		t.Errorf("5 atomics should not trigger overflow line; got:\n%s", buf.String())
 	}
 }
 

@@ -38,12 +38,17 @@ type Options struct {
 //   - All notes share a common single-segment sub-tag (e.g. every
 //     note carries `#tag/Books`) → emit flat-table with the observed
 //     sub-tag set as `buckets`.
-//   - Several distinct `## Author` H2 headers across notes → emit
-//     hub-routed with `hub_h2_prefix = "<Tag>"` (operator picks the
-//     real prefix).
 //   - Otherwise → emit flat-list and note the fallback.
-func Run(_ context.Context, opts Options) error {
-	notes, err := bear.ListNotesForTag(context.TODO(), opts.Tag)
+//
+// hub-routed deliberately NOT auto-detected: the structural signal
+// (Tier-2 hub notes routing buckets via canonical lines) is the
+// same shape flat-table emits, so a reliable disambiguation needs
+// operator input. Notes inside a hub-routed atom carry their own
+// H2 sections (Sections, References, etc.) — counting those would
+// classify content structure as catalog structure. Operators who
+// want hub-routed pick it themselves after running import.
+func Run(ctx context.Context, opts Options) error {
+	notes, err := bear.ListNotesForTag(ctx, opts.Tag)
 	if err != nil {
 		return fmt.Errorf("import: list notes for tag %q: %w", opts.Tag, err)
 	}
@@ -92,15 +97,10 @@ func infer(tag string, notes []bear.Note) suggestion {
 			buckets: buckets,
 		}
 	}
-	if hubLikelyShape(notes) {
-		return suggestion{
-			blueprint: "hub-routed",
-			rationale: "multiple `## <Author>` H2 headers found across notes — hub-routed groups them per author.",
-		}
-	}
 	return suggestion{
 		blueprint: "flat-list",
-		rationale: "no obvious bucket structure detected — flat-list is the safe fallback.",
+		rationale: "no obvious bucket structure detected — flat-list is the safe fallback. " +
+			"Switch to hub-routed manually if you want Tier-2 hub notes routing buckets.",
 	}
 }
 
@@ -137,23 +137,6 @@ func commonSubTagBuckets(tag string, notes []bear.Note) ([]string, bool) {
 	return out, true
 }
 
-// hubLikelyShape returns true when the note set looks like
-// author-grouped content — at least three distinct `## <Name>` H2
-// headers across the notes. The threshold is a heuristic; operators
-// always review the suggestion before committing.
-func hubLikelyShape(notes []bear.Note) bool {
-	h2s := make(map[string]struct{})
-	for _, n := range notes {
-		for line := range strings.SplitSeq(n.Content, "\n") {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "## ") {
-				h2s[strings.TrimSpace(trimmed[3:])] = struct{}{}
-			}
-		}
-	}
-	return len(h2s) >= 3
-}
-
 // emit writes the candidate stanza followed by a rationale + manual
 // next-step hint. The stanza is plain TOML so the operator can pipe
 // the command output straight into their config or copy a slice.
@@ -168,13 +151,9 @@ func emit(w io.Writer, tag string, noteCount int, s suggestion) {
 	_, _ = fmt.Fprintf(w, "  tag         = %q\n", tag)
 	_, _ = fmt.Fprintf(w, "  index_title = %q\n", suggestIndexTitle(tag))
 	_, _ = fmt.Fprintf(w, "  blueprint   = %q\n", s.blueprint)
-	switch s.blueprint {
-	case "flat-table":
+	if s.blueprint == "flat-table" {
 		_, _ = fmt.Fprintf(w, "  buckets        = %s\n", tomlStringSlice(s.buckets))
 		_, _ = fmt.Fprintln(w, `  unknown_bucket = "Other"`)
-	case "hub-routed":
-		_, _ = fmt.Fprintln(w, `  unknown_bucket = "Unknown"`)
-		_, _ = fmt.Fprintln(w, `  hub_h2_prefix  = "Group"`)
 	}
 }
 

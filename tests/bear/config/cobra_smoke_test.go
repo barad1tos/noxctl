@@ -103,7 +103,7 @@ func TestCobraSmoke(t *testing.T) {
 		{"init-help-template", []string{"init", "--help"}, "template", true},
 		{"destroy-help-auto-approve", []string{"destroy", "--help"}, "--auto-approve", true},
 		{"destroy-help-confirm", []string{"destroy", "--help"}, "type-to-confirm", true},
-		{"import-help-heuristic", []string{"import", "--help"}, "heuristically", true},
+		{"import-help-uniform-subtag", []string{"import", "--help"}, "Uniform sub-tag", true},
 		{"destroy-no-arg", []string{"destroy", "--config", validFixture}, "accepts 1 arg", false},
 		{"import-no-arg", []string{"import", "--config", validFixture}, "accepts 1 arg", false},
 	}
@@ -169,6 +169,29 @@ func TestCobraInitWritesTemplate(t *testing.T) {
 	vOut, vErr := cmd.CombinedOutput()
 	if vErr != nil {
 		t.Errorf("validate on init-generated template failed: %v\n%s", vErr, vOut)
+	}
+
+	// --force overwrite path: replace the existing file with a fresh
+	// template. Pre-stamp a sentinel string so we can prove the
+	// re-write actually happened (and didn't just leave the prior
+	// body in place).
+	if writeErr := os.WriteFile(target, []byte("# sentinel\n"), 0o644); writeErr != nil {
+		t.Fatalf("sentinel write: %v", writeErr)
+	}
+	cmd = newCmd(bin, []string{"init", "--force", target})
+	fOut, fErr := cmd.CombinedOutput()
+	if fErr != nil {
+		t.Fatalf("init --force failed: %v\n%s", fErr, fOut)
+	}
+	after, rErr := os.ReadFile(target)
+	if rErr != nil {
+		t.Fatalf("re-read after --force: %v", rErr)
+	}
+	if strings.Contains(string(after), "sentinel") {
+		t.Errorf("--force did not replace the sentinel body:\n%s", after)
+	}
+	if !strings.Contains(string(after), "[[domain]]") {
+		t.Errorf("--force wrote something other than the template; body:\n%s", after)
 	}
 }
 

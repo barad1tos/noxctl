@@ -24,16 +24,28 @@ var importCmd = &cobra.Command{
 	Short: "Print a candidate [[domain]] stanza for an existing Bear tag",
 	Long: `import scans every Bear note carrying the supplied tag
 and prints a [[domain]] block you can paste into noxctl.toml. The
-blueprint is chosen heuristically:
+blueprint is chosen by one of two paths:
 
   - 0 notes               → flat-list (lowest-friction starter)
   - Uniform sub-tag       → flat-table with the observed buckets
-  - Many ## H2 headers    → hub-routed (author-grouped shape)
   - Anything else         → flat-list (safe fallback)
 
+The "uniform sub-tag" check is strict: EVERY note must carry the
+same #tag/<bucket> pattern for flat-table to win. A single outlier
+(notes carrying only #tag with no sub-tag) makes the heuristic
+fall through to the next branch. Clean up outliers in Bear before
+re-running import if you expect flat-table inference.
+
+hub-routed and the other Tier-2-hub blueprints (hub-routed-with-
+subtag, grouped-vertical, umbrella) are NOT auto-detected — their
+structural signal overlaps with flat-table at the canonical-line
+level, and atom-body H2 sections belong to the operator's content,
+not the catalog. Switch to hub-routed manually in the emitted
+stanza if you want bucket-per-hub routing.
+
 import never writes to noxctl.toml. After reviewing the suggested
-fields (index_title, bucket names, hub_h2_prefix), paste the block
-into your config and run 'noxctl validate' to confirm the schema.`,
+fields (index_title, bucket names), paste the block into your
+config and run 'noxctl validate' to confirm the schema.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runImport,
 }
