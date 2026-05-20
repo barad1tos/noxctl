@@ -92,22 +92,16 @@ func (d *Domain) ResolveURLDomain() *Domain {
 	return d
 }
 
-// effectiveQuickPlaceholderH1 returns d.QuickPlaceholderH1 when set,
+// EffectiveQuickPlaceholderH1 returns d.QuickPlaceholderH1 when set,
 // otherwise the package default DefaultQuickPlaceholderH1. Centralizing
 // the fallback here keeps empty-string-means-default semantics out of
 // every caller. Co-located with newNoteRawTag / ResolveURLDomain because
 // it's a *Domain config accessor, not an H1 emission primitive.
-func (d *Domain) effectiveQuickPlaceholderH1() string {
+func (d *Domain) EffectiveQuickPlaceholderH1() string {
 	if d.QuickPlaceholderH1 == "" {
 		return DefaultQuickPlaceholderH1
 	}
 	return d.QuickPlaceholderH1
-}
-
-// EffectiveQuickPlaceholderH1ForTest exposes effectiveQuickPlaceholderH1
-// to tests/bear. Production code calls the unexported method directly.
-func (d *Domain) EffectiveQuickPlaceholderH1ForTest() string {
-	return d.effectiveQuickPlaceholderH1()
 }
 
 // HubTitle maps bucket → Tier-2 hub note title. Defaults to identity

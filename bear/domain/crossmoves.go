@@ -71,7 +71,7 @@ func BuildFlatListMasterClaims(ctx context.Context, domains []*Domain) (map[stri
 // from bearcli surface so the caller can decide whether to abort the
 // cycle or fall back to per-domain processing.
 func readDomainMaster(ctx context.Context, d *Domain) (string, error) {
-	idxID, err := d.findIndexID(ctx)
+	idxID, err := d.FindIndexID(ctx)
 	if err != nil {
 		return "", err
 	}

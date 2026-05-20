@@ -69,12 +69,12 @@ func hasCyrillicRun(s string) bool {
 // when set, it returns the override verbatim.
 func TestEffectiveQuickPlaceholderH1_FallsBackToDefault(t *testing.T) {
 	d := &domain.Domain{Tag: "x", CanonicalTag: "#x", IndexTitle: "X"}
-	if got := d.EffectiveQuickPlaceholderH1ForTest(); got != domain.DefaultQuickPlaceholderH1 {
+	if got := d.EffectiveQuickPlaceholderH1(); got != domain.DefaultQuickPlaceholderH1 {
 		t.Errorf("empty field should yield default %q; got %q",
 			domain.DefaultQuickPlaceholderH1, got)
 	}
 	d.QuickPlaceholderH1 = "Custom"
-	if got := d.EffectiveQuickPlaceholderH1ForTest(); got != "Custom" {
+	if got := d.EffectiveQuickPlaceholderH1(); got != "Custom" {
 		t.Errorf("override should win; got %q", got)
 	}
 }
