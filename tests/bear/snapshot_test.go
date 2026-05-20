@@ -21,7 +21,9 @@
 package bear_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"runtime"
 	"sort"
@@ -89,14 +91,26 @@ func TestSnapshotDomainRenderInputs(t *testing.T) {
 	}
 }
 
-// TestSnapshotDomainRenderInputs_LintUntrackedConstant locks the wire
-// value (residue scanner) and (diff renderer) both
-// encode against. Renaming the constant value silently breaks JSON-output
-// stability for every downstream consumer.
+// TestSnapshotDomainRenderInputs_LintUntrackedConstant locks the
+// JSON wire value the untracked-scan emitter and the diff renderer
+// both serialize against. Renaming the constant silently breaks
+// `noxctl plan --json` output for every downstream consumer.
+//
+// Asserted via json.Marshal so the comparison is runtime (not
+// const-folded at compile time): the test must fail when the
+// constant changes value, even though the constant and the literal
+// "untracked" both appear in this file.
 func TestSnapshotDomainRenderInputs_LintUntrackedConstant(t *testing.T) {
-	const want = "untracked"
-	if got := string(audit.LintUntracked); got != want {
-		t.Fatalf("string(audit.LintUntracked) = %q, want %q (wire format locked by Plans 03-03/04)", got, want)
+	const wantWire = `"category":"untracked"`
+	payload := struct {
+		Category audit.LintCategory `json:"category"`
+	}{Category: audit.LintUntracked}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if !bytes.Contains(encoded, []byte(wantWire)) {
+		t.Fatalf("audit.LintUntracked must JSON-marshal containing %s; got %s", wantWire, encoded)
 	}
 }
 
