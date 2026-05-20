@@ -35,21 +35,3 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
-
-  # Go modules — cyrillic-lint analyzer sub-module.
-  - package-ecosystem: "gomod"
-    directory: "/tools/cyrillic-lint"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    cooldown:
-      default-days: 3
-      semver-major-days: 7
-    open-pull-requests-limit: 3
-    labels:
-      - "dependencies"
-      - "go"
-      - "tools"
-    commit-message:
-      prefix: "chore"
-      include: "scope"

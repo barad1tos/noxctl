@@ -56,22 +56,6 @@ repos:
         pass_filenames: false
         types: [go]
 
-      - id: cyrillic-lint
-        name: cyrillic-lint
-        # singlechecker resolves package patterns against the module of
-        # the CWD's go.mod, so we build the analyzer (sub-module) first,
-        # then invoke it from the repo root where ./bear/... and
-        # ./cmd/... resolve.
-        # Use --git-common-dir so the cache binary lives in the shared
-        # `.git/` for both main checkouts (where `.git` is a directory)
-        # and worktrees (where `.git` is a file pointing at
-        # .git/worktrees/<name>/, and --git-common-dir still resolves to
-        # the parent .git/).
-        entry: bash -c 'GD=$(git rev-parse --git-common-dir) && go -C tools/cyrillic-lint build -o "$GD/cyrillic-lint" . && "$GD/cyrillic-lint" ./bear/... ./cmd/...'
-        language: system
-        pass_filenames: false
-        types: [go]
-
       - id: golangci-lint
         name: golangci-lint
         entry: golangci-lint run
