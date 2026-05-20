@@ -37,7 +37,6 @@ By participating, you agree to uphold the [Code of Conduct](.github/CODE_OF_COND
 - Tests live under `tests/<pkg>/`. Zero `*_test.go` files in production package directories — refactor before reaching for an in-package exception.
 - Lint thresholds are load-bearing: `gocognit` and `gocyclo` ≤ 15, `lll` ≤ 120, `dupl` ≥ 30 tokens. Extract a helper rather than raising a threshold.
 - Doc comments use engineering rationale ("the daemon's self-write gate") instead of internal review-loop vocabulary.
-- No Cyrillic letters in committed Go source — identifiers, comments, log strings, error messages, doc-comments must stay ASCII / English. Quoted data that has to round-trip through Bear unchanged (note titles in fixtures, hub headings in `bear/domain/locales/*.toml`, real-vault content in assertions) is the only exception.
 - Commit messages follow Conventional Commits with a 72-character header. Body lines have no hard wrap.
 
 ## Filing a bug
