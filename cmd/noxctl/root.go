@@ -18,6 +18,13 @@ var (
 
 // Persistent flag bindings — populated by Cobra during flag parsing,
 // consumed by PersistentPreRunE and subcommand bodies.
+// defaultConfigPath is the single source of truth for the
+// noxctl.toml location every subcommand falls back to when --config
+// is not supplied. Lives in root.go so the cobra `--config` flag
+// default + the `noxctl init` positional-arg fallback agree by
+// construction.
+const defaultConfigPath = "./noxctl.toml"
+
 var (
 	cfgPath string
 	verbose bool
@@ -43,7 +50,7 @@ func init() {
 	rootCmd.SetVersionTemplate(fmt.Sprintf(
 		"noxctl {{.Version}} (commit %s, built %s)\n", commit, date,
 	))
-	rootCmd.PersistentFlags().StringVar(&cfgPath, "config", "./noxctl.toml",
+	rootCmd.PersistentFlags().StringVar(&cfgPath, "config", defaultConfigPath,
 		"path to noxctl.toml (no walk-up; explicit only)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false,
 		"verbose stderr output")

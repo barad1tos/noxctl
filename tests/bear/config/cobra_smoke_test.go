@@ -96,10 +96,16 @@ func TestCobraSmoke(t *testing.T) {
 		{"audit-help-readonly", []string{"audit", "--help"}, "read-only", true},
 		{"lint-help-apply", []string{"lint", "--help"}, "--apply", true},
 		{"lint-help-default-report", []string{"lint", "--help"}, "Report-only", true},
-		{"init-stub", []string{"init", "--config", validFixture}, "", true},
-		{"destroy-stub", []string{"destroy", "library/poetry", "--config", validFixture}, "", true},
-		{"import-stub", []string{"import", "library/poetry", "--config", validFixture}, "", true},
+		// init/destroy/import shipped as real subcommands; smoke the
+		// flag surface so a future refactor cannot silently regress
+		// them back to stubs.
+		{"init-help-force", []string{"init", "--help"}, "--force", true},
+		{"init-help-template", []string{"init", "--help"}, "template", true},
+		{"destroy-help-auto-approve", []string{"destroy", "--help"}, "--auto-approve", true},
+		{"destroy-help-confirm", []string{"destroy", "--help"}, "type-to-confirm", true},
+		{"import-help-uniform-subtag", []string{"import", "--help"}, "Uniform sub-tag", true},
 		{"destroy-no-arg", []string{"destroy", "--config", validFixture}, "accepts 1 arg", false},
+		{"import-no-arg", []string{"import", "--config", validFixture}, "accepts 1 arg", false},
 	}
 
 	for _, tc := range cases {
@@ -124,106 +130,68 @@ func TestCobraSmoke(t *testing.T) {
 	}
 }
 
-// TestCobraStubStdoutEmpty asserts stub messages go ONLY to stderr.
-// Stdout must stay pipe-friendly (reserved for structured output).
-// The combined-output assertion above can't catch a stdout leak;
-// this test splits the streams.
-func TestCobraStubStdoutEmpty(t *testing.T) {
+// TestCobraInitWritesTemplate asserts `noxctl init <path>` writes a
+// valid TOML starter that subsequently passes `noxctl validate`
+// without any Bear-side I/O. Pins both the round-trip (init →
+// validate happy path) and the refuse-to-overwrite contract.
+func TestCobraInitWritesTemplate(t *testing.T) {
 	bin := buildBinary(t)
-	root := repoRoot(t)
-	validFixture := filepath.Join(root, "tests", "bear", "config", "testdata", "valid-minimal.toml")
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "noxctl.toml")
 
-	stubs := []struct {
-		name string
-		args []string
-	}{
-		// apply, daemon, and plan are real subcommands (plan's stdout
-		// is the rendered diff, not empty). Only init/destroy/import
-		// remain stubbed in v1.
-		{"init", []string{"init", "--config", validFixture}},
-		{"destroy", []string{"destroy", "library/poetry", "--config", validFixture}},
-		{"import", []string{"import", "library/poetry", "--config", validFixture}},
+	// First run writes a fresh template.
+	cmd := newCmd(bin, []string{"init", target})
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("init failed: %v\n%s", err, out)
 	}
-
-	for _, s := range stubs {
-		t.Run(s.name, func(t *testing.T) {
-			cmd := newCmd(bin, s.args)
-			var stdout, stderr bytes.Buffer
-			cmd.Stdout = &stdout
-			cmd.Stderr = &stderr
-			if err := cmd.Run(); err != nil {
-				t.Fatalf("stub %s exited %v; stderr=%s", s.name, err, stderr.String())
-			}
-			if stdout.Len() != 0 {
-				t.Errorf("stub %s leaked %d bytes to stdout: %q", s.name, stdout.Len(), stdout.String())
-			}
-			if !strings.Contains(stderr.String(), "not yet implemented") {
-				t.Errorf("stub %s missing canonical message on stderr: %q", s.name, stderr.String())
-			}
-		})
+	body, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("template not written: %v", err)
 	}
-}
-
-// TestCobraStubsNoConfig asserts stubs print the "not yet implemented"
-// message and exit 0 even when invoked from a directory that has no
-// ./noxctl.toml. Regression guard: stubs originally wired
-// PersistentPreRunE preflight, which forced a config-load on every
-// invocation; running the stub in a fresh dir surfaced
-// "open ./noxctl.toml: no such file" instead of the helpful notice.
-// The fix detached preflight from stubCmd entirely; this test pins
-// that contract so a future re-introduction of preflight gets caught
-// by CI.
-func TestCobraStubsNoConfig(t *testing.T) {
-	bin := buildBinary(t)
-	freshDir := t.TempDir()
-
-	stubs := []struct {
-		name string
-		args []string
-		want string
-	}{
-		// apply, daemon, and plan load the config eagerly. Only
-		// init/destroy/import remain stubbed in v1.
-		{"init", []string{"init"}, ""},
-		{"destroy", []string{"destroy", "library/poetry"}, ""},
-		{"import", []string{"import", "library/poetry"}, ""},
+	for _, want := range []string{"[meta]", `version = "1"`, "[[domain]]", "flat-list", "flat-table", "hub-routed"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("template missing %q; full body:\n%s", want, body)
+		}
 	}
 
-	for _, s := range stubs {
-		t.Run(s.name, func(t *testing.T) {
-			assertStubNoConfig(t, bin, freshDir, s.name, s.args, s.want)
-		})
+	// Second run on the same path must refuse without --force.
+	cmd = newCmd(bin, []string{"init", target})
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Errorf("init re-run should fail without --force; output=%s", out)
 	}
-}
+	if !strings.Contains(string(out), "already exists") {
+		t.Errorf("re-run error should mention 'already exists': %s", out)
+	}
 
-// assertStubNoConfig runs a stub from freshDir (no ./noxctl.toml) and
-// verifies the canonical "not yet implemented" contract: exit 0, empty
-// stdout, stderr containing both the canonical phrase and the
-// stub-specific token, and crucially NO config-load error leaking
-// through. Extracted so TestCobraStubsNoConfig stays under the project
-// gocognit ≤ 15 budget.
-func assertStubNoConfig(t *testing.T, bin, dir, name string, args []string, want string) {
-	t.Helper()
-	cmd := newCmd(bin, args)
-	cmd.Dir = dir
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("stub %s exited %v from fresh dir; stderr=%s", name, err, stderr.String())
+	// The generated template should pass `noxctl validate`.
+	cmd = newCmd(bin, []string{"validate", target})
+	vOut, vErr := cmd.CombinedOutput()
+	if vErr != nil {
+		t.Errorf("validate on init-generated template failed: %v\n%s", vErr, vOut)
 	}
-	if stdout.Len() != 0 {
-		t.Errorf("stub %s leaked %d bytes to stdout: %q", name, stdout.Len(), stdout.String())
+
+	// --force overwrite path: replace the existing file with a fresh
+	// template. Pre-stamp a sentinel string so we can prove the
+	// re-write actually happened (and didn't just leave the prior
+	// body in place).
+	if writeErr := os.WriteFile(target, []byte("# sentinel\n"), 0o644); writeErr != nil {
+		t.Fatalf("sentinel write: %v", writeErr)
 	}
-	se := stderr.String()
-	if !strings.Contains(se, "not yet implemented") {
-		t.Errorf("stub %s missing canonical message: %q", name, se)
+	cmd = newCmd(bin, []string{"init", "--force", target})
+	fOut, fErr := cmd.CombinedOutput()
+	if fErr != nil {
+		t.Fatalf("init --force failed: %v\n%s", fErr, fOut)
 	}
-	if !strings.Contains(se, want) {
-		t.Errorf("stub %s missing %q in stderr: %q", name, want, se)
+	after, rErr := os.ReadFile(target)
+	if rErr != nil {
+		t.Fatalf("re-read after --force: %v", rErr)
 	}
-	if strings.Contains(se, "no such file") {
-		t.Errorf("stub %s leaked config-load error in fresh dir: %q", name, se)
+	if strings.Contains(string(after), "sentinel") {
+		t.Errorf("--force did not replace the sentinel body:\n%s", after)
+	}
+	if !strings.Contains(string(after), "[[domain]]") {
+		t.Errorf("--force wrote something other than the template; body:\n%s", after)
 	}
 }
 

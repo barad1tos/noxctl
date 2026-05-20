@@ -14,6 +14,12 @@ func main() {
 		if errors.Is(err, errInterrupted) {
 			os.Exit(ExitInterrupted) // 130 = POSIX 128 + SIGINT
 		}
+		if errors.Is(err, errDestroyAborted) {
+			// runDestroy already wrote "noxctl destroy: aborted" to
+			// stderr; suppress Cobra's redundant "Error: ..." by
+			// silencing here. Exit 1 — operator declined.
+			os.Exit(ExitError)
+		}
 		if errors.Is(err, errDriftDetected) {
 			os.Exit(ExitDiffPresent) // 2 — Terraform -detailed-exitcode
 		}
