@@ -80,9 +80,10 @@ func (f *fakeAutoTagBackend) Run(_ context.Context, args []string, stdin string)
 	case "list":
 		return f.listPayload, nil
 	case "show":
-		// overwriteWithRetry calls showHash first to obtain the
+		// overwriteWithRetry calls ShowHash first to obtain the
 		// optimistic-concurrency hash; empty-hash is treated as fault
-		// (bear/core.go:120). Return a stable non-empty hash so the
+		// (bear/bearcli/overwrite.go::ShowHash). Return a stable
+		// non-empty hash so the
 		// downstream "overwrite" call proceeds and the test can observe it.
 		return []byte(`{"hash":"deadbeef"}`), nil
 	case "overwrite":
