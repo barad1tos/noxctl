@@ -6,12 +6,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/barad1tos/noxctl/bear/cli/plan"
+	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/engine"
 )
 
 // errDriftDetected is the cmd-level sentinel that main.go's exit
-// mapper recognizes. plan.Run returns plan.ErrDriftDetected; runPlan
+// mapper recognizes. cli.RunPlan returns cli.ErrDriftDetected; runPlan
 // translates so the rest of the cmd/noxctl error-mapping code stays
 // unchanged (Terraform-style detailed-exitcode: 2 = diff present).
 var errDriftDetected = errors.New("noxctl: drift detected")
@@ -56,19 +56,19 @@ Exit codes: 0=no drift, 2=drift exists, 1=error, 130=interrupted.`,
 }
 
 // runPlan is the thin RunE shim that adapts cobra.Command state +
-// cmd-level globals into a plan.Options struct, then delegates to
-// plan.Run. All test-worthy business logic lives in bear/cli/plan.
+// cmd-level globals into a cli.PlanOptions struct, then delegates to
+// cli.RunPlan. All test-worthy business logic lives in bear/cli/plan.
 func runPlan(cmd *cobra.Command, args []string) error {
 	color, err := engine.ParseColorMode(planColor)
 	if err != nil {
 		return err
 	}
-	if err = plan.ValidateOutput(planOutput); err != nil {
+	if err = cli.ValidateOutput(planOutput); err != nil {
 		return err
 	}
 
 	legacyPath, target := pinPaths()
-	runErr := plan.Run(cmd.Context(), plan.Options{
+	runErr := cli.RunPlan(cmd.Context(), cli.PlanOptions{
 		Color:     color,
 		Output:    planOutput,
 		Args:      args,
@@ -83,9 +83,9 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	// exit-code dispatch (errors.Is on errDriftDetected, errInterrupted)
 	// continues to fire — keeps the detailed-exitcode contract intact.
 	switch {
-	case errors.Is(runErr, plan.ErrDriftDetected):
+	case errors.Is(runErr, cli.ErrDriftDetected):
 		return errDriftDetected
-	case errors.Is(runErr, plan.ErrInterrupted):
+	case errors.Is(runErr, cli.ErrInterrupted):
 		return errInterrupted
 	}
 	return runErr

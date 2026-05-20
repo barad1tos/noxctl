@@ -1,15 +1,14 @@
-// Package importcmd implements the `noxctl import <bear-tag>`
-// subcommand body. Scans an untagged-by-noxctl Bear tag, classifies
-// its note shape, and emits a candidate [[domain]] stanza to stdout.
+package cli
+
+// importcmd.go implements the `noxctl import <bear-tag>` subcommand
+// body. Scans an untagged-by-noxctl Bear tag, classifies its note
+// shape, and emits a candidate [[domain]] stanza to stdout.
 //
 // import never edits noxctl.toml. The operator copy-pastes the
 // suggested stanza into their config after reviewing — keeps the
 // catalog under operator authorship and lets them tweak the
 // generated values (index_title localization, bucket names,
 // blueprint choice) before commit.
-//
-// Package name is `importcmd` to avoid the Go reserved word.
-package importcmd
 
 import (
 	"context"
@@ -21,13 +20,13 @@ import (
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
-// Options is the input bundle for Run.
-type Options struct {
+// ImportOptions is the input bundle for RunImport.
+type ImportOptions struct {
 	Tag    string    // REQUIRED — Bear tag to scan, e.g. "research/papers"
 	Stdout io.Writer // stanza + summary land here (typically os.Stdout)
 }
 
-// Run scans the supplied Bear tag, infers a likely blueprint based
+// RunImport scans the supplied Bear tag, infers a likely blueprint based
 // on note count and structural shape, and writes a candidate
 // [[domain]] stanza plus a one-paragraph rationale to opts.Stdout.
 // Never writes to noxctl.toml — the operator owns that file.
@@ -47,7 +46,7 @@ type Options struct {
 // H2 sections (Sections, References, etc.) — counting those would
 // classify content structure as catalog structure. Operators who
 // want hub-routed pick it themselves after running import.
-func Run(ctx context.Context, opts Options) error {
+func RunImport(ctx context.Context, opts ImportOptions) error {
 	notes, err := domain.ListNotesForTag(ctx, opts.Tag)
 	if err != nil {
 		return fmt.Errorf("import: list notes for tag %q: %w", opts.Tag, err)

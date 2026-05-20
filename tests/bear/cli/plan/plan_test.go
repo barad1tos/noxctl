@@ -7,37 +7,37 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear/cli/plan"
+	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
 func TestErrDriftDetectedSentinelDeclared(t *testing.T) {
-	if plan.ErrDriftDetected == nil {
-		t.Fatal("plan.ErrDriftDetected sentinel is nil")
+	if cli.ErrDriftDetected == nil {
+		t.Fatal("cli.ErrDriftDetected sentinel is nil")
 	}
-	if !errors.Is(plan.ErrDriftDetected, plan.ErrDriftDetected) {
-		t.Error("errors.Is(plan.ErrDriftDetected, plan.ErrDriftDetected) = false; want true")
+	if !errors.Is(cli.ErrDriftDetected, cli.ErrDriftDetected) {
+		t.Error("errors.Is(cli.ErrDriftDetected, cli.ErrDriftDetected) = false; want true")
 	}
-	if !strings.Contains(plan.ErrDriftDetected.Error(), "drift") {
-		t.Errorf("plan.ErrDriftDetected.Error() = %q; should mention 'drift'",
-			plan.ErrDriftDetected.Error())
+	if !strings.Contains(cli.ErrDriftDetected.Error(), "drift") {
+		t.Errorf("cli.ErrDriftDetected.Error() = %q; should mention 'drift'",
+			cli.ErrDriftDetected.Error())
 	}
 }
 
 func TestValidateOutputRejectsUnknownFormat(t *testing.T) {
-	if err := plan.ValidateOutput("yaml"); err == nil {
+	if err := cli.ValidateOutput("yaml"); err == nil {
 		t.Fatal("ValidateOutput(yaml) expected error; got nil")
 	}
-	if err := plan.ValidateOutput("text"); err != nil {
+	if err := cli.ValidateOutput("text"); err != nil {
 		t.Errorf("ValidateOutput(text) unexpected error: %v", err)
 	}
-	if err := plan.ValidateOutput("json"); err != nil {
+	if err := cli.ValidateOutput("json"); err != nil {
 		t.Errorf("ValidateOutput(json) unexpected error: %v", err)
 	}
 }
 
 func TestScopeDomainsRejectsUnknownTag(t *testing.T) {
-	_, err := plan.ScopeDomains(nil, "unknown/tag")
+	_, err := cli.ScopeDomains(nil, "unknown/tag")
 	if err == nil {
 		t.Fatal("ScopeDomains(nil, unknown) expected error; got nil")
 	}
@@ -54,7 +54,7 @@ func TestScopeDomainsRejectsUnknownTag(t *testing.T) {
 func TestLoadDomains_NoArgsReturnsFullCatalog(t *testing.T) {
 	tmp := t.TempDir()
 	var stderr bytes.Buffer
-	domains, err := plan.LoadDomains(
+	domains, err := cli.LoadDomains(
 		nil,
 		testutil.CatalogPath(t),
 		filepath.Join(tmp, "legacy-pins.json"),
@@ -80,7 +80,7 @@ func TestLoadDomains_SingleTagArgScopes(t *testing.T) {
 	tmp := t.TempDir()
 	var stderr bytes.Buffer
 	const wantTag = "library/poetry"
-	domains, err := plan.LoadDomains(
+	domains, err := cli.LoadDomains(
 		[]string{wantTag},
 		testutil.CatalogPath(t),
 		filepath.Join(tmp, "legacy-pins.json"),
@@ -105,7 +105,7 @@ func TestLoadDomains_SingleTagArgScopes(t *testing.T) {
 func TestLoadDomains_UnknownTagSurfacesError(t *testing.T) {
 	tmp := t.TempDir()
 	var stderr bytes.Buffer
-	_, err := plan.LoadDomains(
+	_, err := cli.LoadDomains(
 		[]string{"library/no-such-tag"},
 		testutil.CatalogPath(t),
 		filepath.Join(tmp, "legacy-pins.json"),

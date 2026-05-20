@@ -5,7 +5,7 @@
 // each input shape.
 //
 // The heuristic itself lives in the unexported `infer` function;
-// tests reach it through `importcmd.EmitWithNotesForTest`, a thin
+// tests reach it through `cli.EmitWithNotesForTest`, a thin
 // production-package seam that runs the same emit pass over a
 // caller-supplied note set (no bearcli round trip required).
 package importcmd_test
@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear/cli/importcmd"
+	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -24,7 +24,7 @@ import (
 // it out in the rationale.
 func TestEmitWithNotes_EmptyTag(t *testing.T) {
 	var buf bytes.Buffer
-	importcmd.EmitWithNotesForTest(&buf, "research/papers", nil)
+	cli.EmitWithNotesForTest(&buf, "research/papers", nil)
 	out := buf.String()
 	for _, want := range []string{
 		"research/papers",
@@ -48,7 +48,7 @@ func TestEmitWithNotes_FlatTableShape(t *testing.T) {
 		{ID: "3", Title: "Note C", Tags: []string{"#research/papers", "#research/papers/Math"}},
 	}
 	var buf bytes.Buffer
-	importcmd.EmitWithNotesForTest(&buf, "research/papers", notes)
+	cli.EmitWithNotesForTest(&buf, "research/papers", notes)
 	out := buf.String()
 	for _, want := range []string{
 		`blueprint   = "flat-table"`,
@@ -75,7 +75,7 @@ func TestEmitWithNotes_AtomH2NotInferredAsHub(t *testing.T) {
 		{ID: "3", Title: "C", Tags: []string{"#library/quotes"}, Content: "# C\n## Aristotle\nquote\n"},
 	}
 	var buf bytes.Buffer
-	importcmd.EmitWithNotesForTest(&buf, "library/quotes", notes)
+	cli.EmitWithNotesForTest(&buf, "library/quotes", notes)
 	out := buf.String()
 	if !strings.Contains(out, `blueprint   = "flat-list"`) {
 		t.Errorf("atom-body H2s should NOT infer hub-routed; got:\n%s", out)
@@ -94,7 +94,7 @@ func TestEmitWithNotes_Fallback(t *testing.T) {
 		{ID: "2", Title: "B", Tags: []string{"#inbox"}, Content: "# B\nmore body\n"},
 	}
 	var buf bytes.Buffer
-	importcmd.EmitWithNotesForTest(&buf, "inbox", notes)
+	cli.EmitWithNotesForTest(&buf, "inbox", notes)
 	out := buf.String()
 	for _, want := range []string{
 		`blueprint   = "flat-list"`,
@@ -111,7 +111,7 @@ func TestEmitWithNotes_Fallback(t *testing.T) {
 // prefixed with the `✱ ` glyph the existing catalogs use.
 func TestEmitWithNotes_IndexTitleCapitalize(t *testing.T) {
 	var buf bytes.Buffer
-	importcmd.EmitWithNotesForTest(&buf, "library/quotes", nil)
+	cli.EmitWithNotesForTest(&buf, "library/quotes", nil)
 	if !strings.Contains(buf.String(), `index_title = "✱ Quotes"`) {
 		t.Errorf("expected ✱-capitalized leaf segment in index_title; got:\n%s", buf.String())
 	}

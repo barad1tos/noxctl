@@ -1,8 +1,9 @@
-// Package recap renders the Ansible-style PRE-PASSES + PLAY RECAP
-// block to an io.Writer based on an engine.ApplyResult. Pure formatting
-// helper extracted from cmd/noxctl/recap.go so the unit tests can live
-// under tests/bear/cli/recap/ as an external package.
-package recap
+package cli
+
+// recap.go renders the Ansible-style PRE-PASSES + PLAY RECAP block
+// to an io.Writer based on an engine.ApplyResult. Pure formatting
+// helper extracted from cmd/noxctl/recap.go so the unit tests can
+// live under tests/bear/cli/recap/ as an external package.
 
 import (
 	"fmt"
@@ -14,7 +15,7 @@ import (
 	"github.com/barad1tos/noxctl/bear/engine"
 )
 
-// Render writes the PRE-PASSES + PLAY RECAP blocks to out as
+// RenderRecap writes the PRE-PASSES + PLAY RECAP blocks to out as
 // structured stdout output. When quiet is true, the section
 // headers and OK rows are suppressed but FAILURE rows still emit so
 // the operator never misses a non-zero failed=N count.
@@ -29,7 +30,7 @@ import (
 //
 // Nil result is a no-op: callers may pass result==nil when engine.Apply
 // returned a top-level error before populating any counts.
-func Render(out io.Writer, result *engine.ApplyResult, quiet bool) {
+func RenderRecap(out io.Writer, result *engine.ApplyResult, quiet bool) {
 	if result == nil {
 		return
 	}

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear/cli/recap"
+	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/engine"
 )
 
@@ -28,7 +28,7 @@ func TestRenderRecap_FullOutput_HappyPath(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	recap.Render(&buf, result, false)
+	cli.RenderRecap(&buf, result, false)
 	out := buf.String()
 
 	// Headers present in non-quiet mode.
@@ -66,7 +66,7 @@ func TestRenderRecap_QuietSuppressesHeadersAndOK(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	recap.Render(&buf, result, true)
+	cli.RenderRecap(&buf, result, true)
 	out := buf.String()
 
 	if strings.Contains(out, "PRE-PASSES") {
@@ -95,7 +95,7 @@ func TestRenderRecap_QuietPreservesFailureRows(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	recap.Render(&buf, result, true)
+	cli.RenderRecap(&buf, result, true)
 	out := buf.String()
 
 	// Failures must NEVER be silent — even in quiet mode.
@@ -116,7 +116,7 @@ func TestRenderRecap_QuietPreservesFailureRows(t *testing.T) {
 
 func TestRenderRecap_NilResultIsNoOp(t *testing.T) {
 	var buf bytes.Buffer
-	recap.Render(&buf, nil, false)
+	cli.RenderRecap(&buf, nil, false)
 	if buf.Len() != 0 {
 		t.Errorf("nil result should produce no output; got: %s", buf.String())
 	}

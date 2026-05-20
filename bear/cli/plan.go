@@ -1,14 +1,10 @@
-// Package plan implements the noxctl plan subcommand business logic.
+package cli
+
+// plan.go implements the noxctl plan subcommand business logic.
 //
 // cmd/noxctl/plan.go reduces to cobra-wiring + flag parsing; this
-// package handles ParseColorMode validation, the TOML loader, domain
+// file handles ParseColorMode validation, the TOML loader, domain
 // scoping, and result rendering.
-//
-// Layering note: this package sits in the CLI helper layer and
-// crosses the bear/ ↔ bear/config/ boundary on purpose — bear/ core
-// code never imports bear/config, but CLI helpers must (they are the
-// boundary translator).
-package plan
 
 import (
 	"context"
@@ -35,10 +31,10 @@ var ErrDriftDetected = errors.New("noxctl plan: drift detected")
 // + SIGINT).
 var ErrInterrupted = errors.New("noxctl plan: interrupted")
 
-// Options carries the resolved CLI inputs for Run. Callers parse the
+// PlanOptions carries the resolved CLI inputs for RunPlan. Callers parse the
 // raw string flags (--color, --output) once in their cobra layer and
 // pass the validated values here.
-type Options struct {
+type PlanOptions struct {
 	Color     engine.ColorMode
 	Output    string   // "text" or "json"; validated by ValidateOutput
 	Args      []string // positional args from cobra (0 or 1 tag)
@@ -60,7 +56,7 @@ func ValidateOutput(output string) error {
 	return nil
 }
 
-// Run is the plan orchestrator. Loads the domain slice from the TOML
+// RunPlan is the plan orchestrator. Loads the domain slice from the TOML
 // catalog, dispatches to engine.Plan, renders the result, and returns
 // one of (nil, ErrDriftDetected, ErrInterrupted, error).
 //
@@ -70,7 +66,7 @@ func ValidateOutput(output string) error {
 // pool to be live. Apply and daemon paths set this themselves;
 // plan's path was missed, surfacing as "bearcli pool not initialized"
 // errors for every domain when `noxctl plan` ran standalone.
-func Run(ctx context.Context, opts Options) error {
+func RunPlan(ctx context.Context, opts PlanOptions) error {
 	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
 
 	domains, err := LoadDomains(opts.Args,

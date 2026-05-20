@@ -123,7 +123,7 @@ var ErrVerifyFailed = errors.New("noxctl verify: gate failed")
 var ErrVerifyRuntimeError = errors.New("noxctl verify: runtime error")
 
 // ErrVerifyInterrupted is returned when SIGINT or SIGTERM canceled
-// the run mid-flight. Symmetric with `plan.ErrInterrupted`. The cmd
+// the run mid-flight. Symmetric with `cli.ErrInterrupted`. The cmd
 // layer maps this to `errInterrupted`, which `main.go` dispatches to
 // `ExitInterrupted = 130` — the project-wide POSIX 128 + SIGINT
 // convention. Without this, a Ctrl-C during `--with-apply` would
@@ -158,7 +158,7 @@ func Run(ctx context.Context, opts Options) error {
 	// Bridge SIGINT / SIGTERM into ctx cancellation so the apply-
 	// idempotency check's engine.Apply call can yield cleanly and
 	// finalize can translate to ErrVerifyInterrupted (exit 130 at
-	// the cmd layer). Mirrors plan.Run's signal handling — verify
+	// the cmd layer). Mirrors cli.RunPlan's signal handling — verify
 	// owns the same boundary.
 	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -219,7 +219,7 @@ func defaultIOAndPool(opts *Options) {
 // INTERRUPTED/FAIL/ERROR/nil dispatch.
 //
 // Render happens BEFORE the ctx-cancellation check so the operator
-// sees what completed before SIGINT arrived — matches plan.Run's
+// sees what completed before SIGINT arrived — matches cli.RunPlan's
 // render-then-translate ordering and gives the operator
 // post-mortem visibility instead of a silent stop.
 func finalize(opts Options, ctx context.Context, result *Result) error {

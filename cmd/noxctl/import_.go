@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/barad1tos/noxctl/bear/cli/importcmd"
+	"github.com/barad1tos/noxctl/bear/cli"
 )
 
 // importCmd scans an untracked Bear tag and prints a candidate
@@ -53,7 +53,7 @@ config and run 'noxctl validate' to confirm the schema.`,
 // runImport is the import RunE.
 func runImport(cmd *cobra.Command, args []string) error {
 	return runWithSignalContext(cmd, func(ctx context.Context) error {
-		return importcmd.Run(ctx, importcmd.Options{
+		return cli.RunImport(ctx, cli.ImportOptions{
 			Tag:    args[0],
 			Stdout: os.Stdout,
 		})
