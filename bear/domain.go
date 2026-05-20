@@ -8,46 +8,29 @@
 package bear
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"log"
-	"os/exec"
 	"strings"
-	"time"
+
+	"github.com/barad1tos/noxctl/bear/bearcli"
+	"github.com/barad1tos/noxctl/bear/note"
 )
 
-// ErrHashConflict is returned by runBearcli when an `overwrite --base hash`
-// call is rejected because the underlying note changed since we read its hash.
-// Callers can `errors.Is` against this and decide to re-fetch + retry once.
-var ErrHashConflict = errors.New("bear: optimistic hash mismatch")
+// ErrHashConflict + BearcliTimeout + bearcli command-line constants
+// (FlagFormat, FlagFields, FlagBase, FormatJSON, FieldsIDTitle,
+// FieldsAutoTag) now live in bear/bearcli. bear/ re-exports the
+// most-used ones via bear/bearcli_aliases.go for backward
+// compatibility.
 
-// BearcliTimeout is the per-call deadline for bearcli subprocess invocations.
-// Each bearcli call typically completes in <500ms; 10s tolerates pathological
-// cases (Bear app paging in, sqlite-wal contention) without letting a hang
-// freeze the daemon's regen pipeline indefinitely.
-const BearcliTimeout = 10 * time.Second
-
-// Bear CLI constants — single source of truth for command-line literals.
-const (
-	bearcliBin    = "/Applications/Bear.app/Contents/MacOS/bearcli"
-	flagFormat    = "--format"
-	flagFields    = "--fields"
-	flagBase      = "--base"
-	formatJSON    = "json"
-	fieldsIDTitle = "id,title"
-	// fieldsAutoTag is the bearcli --fields list every auto-tag fast-
-	// pass needs: ID + title + tag set + body. Three call sites in
-	// bear/auto_tag.go used the same literal string before extraction.
-	fieldsAutoTag = "id,title,tags,content"
-
-	// HubMarker splits a Hub note's auto-zone (above) from the curator-managed
-	// zone (below). Same convention is reused across all domains' hubs and
-	// master notes that may carry hand-written commentary.
-	//cyrillic:permit
-	HubMarker = "## ✱ Куратор"
-)
+// HubMarker splits a Hub note's auto-zone (above) from the
+// curator-managed zone (below). Same convention is reused across all
+// domains' hubs and master notes that may carry hand-written
+// commentary.
+//
+//cyrillic:permit
+const HubMarker = "## ✱ Куратор"
 
 // Cyrillic alphabet ordering for the ByAuthor sort comparator. Latin first,
 // then Ukrainian, then Russian-only, then anything else.
@@ -61,23 +44,16 @@ const (
 	ruOrder = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
 )
 
-// Note is the bearcli JSON shape we care about across all domains. We only
-// unmarshal into it from bearcli output — never marshal — so all fields use
-// plain JSON tags without `omitempty`.
+// Note is re-exported here as a type alias so existing call sites
+// (bear.Note across 30+ files) keep compiling unchanged. The canonical
+// definition lives in bear/note/note.go — a leaf package every layer
+// (bearcli, render, fastpass, audit) imports without forming a cycle
+// back through bear/.
 //
-// Tags is populated by listNotes (and any other caller that requests `tags`
-// in the bearcli --fields list). Sub-tag-preserving blueprints consult it
-// via BucketFromSubTag when the canonical-header line is absent — sticky-
-// creation: a note created via Bear's sidebar with `#development/noxctl`
-// stays in `noxctl`, not the UnknownBucket fallback.
-type Note struct {
-	ID      string    `json:"id"`
-	Title   string    `json:"title"`
-	Content string    `json:"content"`
-	Hash    string    `json:"hash"`
-	Tags    []string  `json:"tags"`
-	Created time.Time `json:"created"`
-}
+// New code should prefer the bear/note import; this alias exists for
+// migration compatibility and may be removed once every caller has
+// been moved over.
+type Note = note.Note
 
 // AtomicMeta is the structured form of an atomic note's canonical header line.
 // Semantics of `bucket` and `section` differ per domain; see ParseMeta callback.
@@ -454,65 +430,12 @@ func (d *Domain) skipNote(n Note) bool {
 }
 
 // bearcliKindFromArgs classifies bearcli args by their sub-command (the
-// first element) for the per-kind metrics counter. Unknown sub-commands
-// fold into "other" — defensive, since today only the canonical six are
-// exercised but a future bearcli flag would surface as a known-unknown
-// rather than a panic.
-func bearcliKindFromArgs(args []string) string {
-	if len(args) == 0 {
-		return "other"
-	}
-	switch args[0] {
-	case "list", "cat", "show", "overwrite", "create", "find":
-		return args[0]
-	}
-	return "other"
-}
-
-// runBearcli invokes the Bear CLI with args + optional stdin under the given
-// context. The context is wrapped in a per-call BearcliTimeout so a hung bearcli
-// invocation can't stall the daemon's regen pipeline. Detects the optimistic
-// hash-mismatch case via stderr substring and returns ErrHashConflict so
-// callers can retry with a fresh hash.
-//
-// Every call routes through acquireBearcli to honor the global
-// bearcli_concurrency semaphore. acquire happens BEFORE the
-// per-call timeout so a long wait on the semaphore is bounded by ctx,
-// not by BearcliTimeout — preventing a saturated pool from burning every
-// goroutine's 10s timeout budget while still queued.
-//
-// Test seam: if a BearcliBackend is stamped on ctx (only test fixtures do
-// this), the call is dispatched through the backend instead of the real
-// exec.Command. The semaphore is acquired regardless so the metrics layer
-// stays accurate even under fake-backed tests.
+// first element) for the per-kind metrics counter. bearcliKindFromArgs
+// and runBearcli now live in bear/bearcli; the in-package runBearcli
+// shim below delegates to bearcli.Run so existing call sites compile
+// unchanged.
 func runBearcli(ctx context.Context, args []string, stdin string) ([]byte, error) {
-	release, err := acquireBearcli(ctx, bearcliKindFromArgs(args))
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-
-	if backend := BackendFromContext(ctx); backend != nil {
-		return backend.Run(ctx, args, stdin)
-	}
-
-	callCtx, cancel := context.WithTimeout(ctx, BearcliTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(callCtx, bearcliBin, args...)
-	if stdin != "" {
-		cmd.Stdin = strings.NewReader(stdin)
-	}
-	var out, errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-	if runErr := cmd.Run(); runErr != nil {
-		stderr := errBuf.String()
-		if strings.Contains(stderr, "hash") && strings.Contains(strings.ToLower(stderr), "mismatch") {
-			return nil, fmt.Errorf("bearcli %v: %w (%s)", args, ErrHashConflict, strings.TrimSpace(stderr))
-		}
-		return nil, fmt.Errorf("bearcli %v failed: %w: %s", args, runErr, stderr)
-	}
-	return out.Bytes(), nil
+	return bearcli.Run(ctx, args, stdin)
 }
 
 // HeaderZone returns everything before the first standalone '---' separator.

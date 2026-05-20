@@ -119,7 +119,7 @@ func (f *fakeBackend) Records() []fakeCall {
 }
 
 // bearcliKindFromArgs mirrors the unexported classifier in
-// bear/bearcli_pool.go so test assertions can speak the same vocabulary
+// bear/bearcli/pool.go so test assertions can speak the same vocabulary
 // as the production metrics counters.
 func bearcliKindFromArgs(args []string) string {
 	if len(args) == 0 {
