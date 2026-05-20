@@ -75,7 +75,7 @@ func TestRenderMasterFlatGrouped(t *testing.T) {
 		"homework": {{ID: "1", Title: "Verb tenses"}, {ID: "2", Title: "Adjectives"}},
 		"rules":    {{ID: "3", Title: "Articles"}},
 	}
-	out := render.RenderMasterFlatGrouped(d, groups, []string{"homework", "rules"})
+	out := render.MasterFlatGrouped(d, groups, []string{"homework", "rules"})
 	if !strings.HasPrefix(out, "# ✱ English\n#english | [Нова нотатка](") {
 		t.Errorf("missing master header, got prefix: %q", out[:min(80, len(out))])
 	}
@@ -108,7 +108,7 @@ func TestRenderMasterFlatGrouped(t *testing.T) {
 
 func TestRenderMasterFlatGroupedSkipsEmptyBuckets(t *testing.T) {
 	d := &domain.Domain{Tag: "x", CanonicalTag: "#x", IndexTitle: "✱ X"}
-	out := render.RenderMasterFlatGrouped(d, map[string][]domain.Note{}, []string{"a", "b"})
+	out := render.MasterFlatGrouped(d, map[string][]domain.Note{}, []string{"a", "b"})
 	if strings.Contains(out, "## a") || strings.Contains(out, "## b") {
 		t.Error("empty groups should produce no `##` sections")
 	}

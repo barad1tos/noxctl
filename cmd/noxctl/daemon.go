@@ -94,11 +94,11 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Emit the startup marker `noxctl verify --check daemon-log` rewinds
-	// to. Wording preserved from the legacy daemon (`regen-watchd
-	// starting`) so the verify-gate scanner keeps matching post-rebrand
-	// without touching the constant in bear/cli/verify/checks.go.
-	log.Printf("regen-watchd starting; watching dir %s, domains=%d",
-		opts.BearDBDir, len(domains))
+	// to. Sourced from engine.DaemonStartupLogMarker so this emit and
+	// the verify-side scanner share one source of truth — rename the
+	// marker in bear/engine/daemon.go and both sides follow.
+	log.Printf("%s; watching dir %s, domains=%d",
+		engine.DaemonStartupLogMarker, opts.BearDBDir, len(domains))
 
 	d, err := engine.NewDaemon(opts)
 	if err != nil {

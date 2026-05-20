@@ -110,7 +110,7 @@ func DefaultRenderHub3Tier(
 //
 // ...
 func DefaultRenderMaster3Tier(d *domain.Domain, groups map[string][]domain.Note) string {
-	return RenderVerticalSections(d, defaultMaster3TierSections(d, groups))
+	return VerticalSections(d, defaultMaster3TierSections(d, groups))
 }
 
 // defaultMaster3TierSections builds the section list for poetry/articles-
@@ -171,7 +171,7 @@ func DefaultRenderMasterFlat(d *domain.Domain, groups map[string][]domain.Note) 
 	for index, note := range all {
 		bullets[index] = domain.AtomicWikilink(d, note)
 	}
-	return RenderVerticalSections(d, []Section{{Bullets: bullets}})
+	return VerticalSections(d, []Section{{Bullets: bullets}})
 }
 
 // ParseMetaFlatTable extracts the bucket from a strict canonical header

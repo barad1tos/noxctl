@@ -3,7 +3,7 @@
 //
 // snapshot_test.go locks down the snapshot facade contract:
 //
-//  1. domain.SnapshotDomainRenderInputs returns (DomainRenderInputs{Groups:
+//  1. domain.SnapshotDomainRenderInputs returns (RenderInputs{Groups:
 //     non-nil empty map}, nil) for a Domain whose tag matches zero notes
 //     in the live Bear corpus. Empty-but-non-nil is the contract the
 //     engine.Plan core and the residue scanner both depend on — they
@@ -15,13 +15,15 @@
 // The empty-tag case exercises the live bearcli boundary by design: it
 // is the smallest end-to-end shape that proves the facade calls
 // listNotes → computeMasterOverrides → computeHubOverrides → groupAtomics
-// in the same order Apply does (bear/regen.go::RunRegen).
+// in the same order Apply does (bear/domain/regen.go::RunRegen).
 // On hosts without bearcli installed (CI containers, non-darwin) the
 // test skips with a clear marker rather than spuriously failing.
 package bear_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"runtime"
 	"sort"
@@ -51,7 +53,7 @@ func skipIfNoBearcli(t *testing.T) {
 
 // TestSnapshotDomainRenderInputs locks the facade's empty-tag contract:
 // a Domain whose tag yields zero notes from bearcli must produce
-// DomainRenderInputs with Groups initialized to an empty map (not nil)
+// RenderInputs with Groups initialized to an empty map (not nil)
 // and Notes nil-or-empty. The contract matters because ranges
 // over.Groups without a nil-guard.
 //
@@ -89,14 +91,31 @@ func TestSnapshotDomainRenderInputs(t *testing.T) {
 	}
 }
 
-// TestSnapshotDomainRenderInputs_LintUntrackedConstant locks the wire
-// value (residue scanner) and (diff renderer) both
-// encode against. Renaming the constant value silently breaks JSON-output
-// stability for every downstream consumer.
+// TestSnapshotDomainRenderInputs_LintUntrackedConstant locks the
+// underlying string value of `audit.LintUntracked` against a
+// regression where a future rename of the constant silently shifts
+// what every operator-facing renderer and JSON-marshal call site
+// would emit downstream.
+//
+// Asserted via json.Marshal of a local struct so the comparison
+// runs at runtime — a direct `string(audit.LintUntracked) == "x"`
+// check would be constant-folded by the compiler under the current
+// value and trip IntelliJ's always-false inspection. The local
+// struct's `json:"category"` tag is purely a wire-format harness;
+// `audit.Finding` itself does not yet serialize to JSON in
+// production paths, so the test locks the constant value (not a
+// shipping wire schema).
 func TestSnapshotDomainRenderInputs_LintUntrackedConstant(t *testing.T) {
-	const want = "untracked"
-	if got := string(audit.LintUntracked); got != want {
-		t.Fatalf("string(audit.LintUntracked) = %q, want %q (wire format locked by Plans 03-03/04)", got, want)
+	const wantWire = `"category":"untracked"`
+	payload := struct {
+		Category audit.LintCategory `json:"category"`
+	}{Category: audit.LintUntracked}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if !bytes.Contains(encoded, []byte(wantWire)) {
+		t.Fatalf("audit.LintUntracked must JSON-marshal containing %s; got %s", wantWire, encoded)
 	}
 }
 

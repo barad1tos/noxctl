@@ -84,13 +84,10 @@ func driftDomainList(res *engine.PlanResult) []string {
 
 // daemonLogStartupMarker is the line the daemon emits on every fresh
 // boot. `checkDaemonLog` rewinds to the most recent occurrence and
-// scans forward from there — older history is by design out of scope.
-//
-// TODO(rebrand): when the `regen-watchd` binary renames to `noxctl
-// daemon` (or whatever the post-migration name is), this marker
-// must follow. Best done by reading it from a single constant
-// shared with the daemon's startup-log emit site (`bear/engine/daemon.go`).
-const daemonLogStartupMarker = "regen-watchd starting"
+// scans forward from there — older history is by design out of
+// scope. Sourced from engine.DaemonStartupLogMarker so the daemon
+// emit site and this check site share one source of truth.
+const daemonLogStartupMarker = engine.DaemonStartupLogMarker
 
 // daemonLogWarnPattern matches the three categories of post-startup
 // warnings that should never appear in a clean session. Anchored to

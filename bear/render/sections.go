@@ -7,7 +7,7 @@ import (
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
-// Section is one labeled bucket emitted by RenderVerticalSections.
+// Section is one labeled bucket emitted by VerticalSections.
 // Header is the text rendered after `## ` (caller controls the count
 // format, e.g. "Книги (44)" or "Власні" without a count). Bullets hold
 // the pre-formatted bullet bodies (no leading `- `, no trailing newline).
@@ -23,7 +23,7 @@ type Section struct {
 	Bullets []string
 }
 
-// RenderVerticalSections is the single emission helper shared by every
+// VerticalSections is the single emission helper shared by every
 // master renderer. Output shape:
 //
 //	# <IndexTitle>
@@ -43,9 +43,7 @@ type Section struct {
 // blank-line layout, count format, and bullet syntax. Domains that need
 // custom data shape supply a section-builder; the rendering itself never
 // varies.
-//
-//nolint:revive // public API; rename is breaking change for callers
-func RenderVerticalSections(d *domain.Domain, sections []Section) string {
+func VerticalSections(d *domain.Domain, sections []Section) string {
 	var body strings.Builder
 	WriteMasterHeader(&body, d)
 	for _, section := range sections {

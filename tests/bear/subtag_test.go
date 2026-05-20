@@ -62,7 +62,7 @@ func TestRenderHubFlatSubTag(t *testing.T) {
 		{ID: "1", Title: "Beta"},
 		{ID: "2", Title: "Alpha"},
 	}
-	out := render.RenderHubFlatSubTag(d, "sessions", notes, nil)
+	out := render.HubFlatSubTag(d, "sessions", notes, nil)
 	// Bootstrap URL form — outer URL starts with `?text=` (encoded body).
 	// The inner URL's `tags=claude` lives doubly-encoded inside text= as
 	// `tags%3Dclaude`.
@@ -88,7 +88,7 @@ func TestRenderMasterHubList(t *testing.T) {
 		"memory":   {{Title: "c"}},
 		"empty":    {}, // should not render
 	}
-	out := render.RenderMasterHubList(d, groups, []string{"sessions", "memory", "empty"})
+	out := render.MasterHubList(d, groups, []string{"sessions", "memory", "empty"})
 	if !strings.HasPrefix(out, "# ✱ Claude\n#claude | [Нова нотатка](") {
 		t.Errorf("missing master header, got prefix: %q", out[:min(80, len(out))])
 	}

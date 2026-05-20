@@ -49,14 +49,14 @@ func FetchHubContents(ctx context.Context, d *Domain) (map[string]string, error)
 	return hubs, nil
 }
 
-// DomainRenderInputs bundles the read-only inputs the engine needs to
+// RenderInputs bundles the read-only inputs the engine needs to
 // render a domain's master + hubs without writing. Returned by
 // SnapshotDomainRenderInputs as a single value to keep the engine
 // public-API surface narrow — facade pattern over bulk-exporting
 // listNotes/computeMasterOverrides/computeHubOverrides/groupAtomics.
 //
 //nolint:revive // public API surface; rename is breaking change for callers
-type DomainRenderInputs struct {
+type RenderInputs struct {
 	Notes  []Note            // every atom + hub + master under d.Tag
 	Groups map[string][]Note // bucket → atoms, post-override-merge
 }
@@ -74,10 +74,10 @@ type DomainRenderInputs struct {
 // Returns Groups as an initialized empty map (not nil) when d has zero
 // atoms; downstream consumers can range over the result safely without
 // nil-checks. Errors propagate from listNotes verbatim.
-func SnapshotDomainRenderInputs(ctx context.Context, d *Domain) (DomainRenderInputs, error) {
+func SnapshotDomainRenderInputs(ctx context.Context, d *Domain) (RenderInputs, error) {
 	notes, err := d.listNotes(ctx)
 	if err != nil {
-		return DomainRenderInputs{}, fmt.Errorf("SnapshotDomainRenderInputs(%s): %w", d.Tag, err)
+		return RenderInputs{}, fmt.Errorf("SnapshotDomainRenderInputs(%s): %w", d.Tag, err)
 	}
 	masterOverrides := d.computeMasterOverrides(notes)
 	hubOverrides := d.computeHubOverrides(notes)
@@ -98,5 +98,5 @@ func SnapshotDomainRenderInputs(ctx context.Context, d *Domain) (DomainRenderInp
 	if groups == nil {
 		groups = map[string][]Note{}
 	}
-	return DomainRenderInputs{Notes: notes, Groups: groups}, nil
+	return RenderInputs{Notes: notes, Groups: groups}, nil
 }

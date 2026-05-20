@@ -10,7 +10,7 @@
 // The fake BearcliBackend captures every list/show/overwrite call so
 // each test asserts both the operator-facing render shape and the
 // underlying bearcli traffic — the read-only invariant only holds
-// when AuditDomains never emits an "overwrite" verb.
+// when Scan never emits an "overwrite" verb.
 package lint_test
 
 import (
@@ -186,7 +186,7 @@ func TestRun_ApplyMode_InvokesAutoFix(t *testing.T) {
 // contract: a ctx already canceled at entry produces no panic, no
 // hang, and the bearcli backend records zero list calls because the
 // per-domain loop bails on the ctx.Err check before issuing any
-// I/O. AuditDomains' contract is that a canceled context short-
+// I/O. Scan' contract is that a canceled context short-
 // circuits each domain's listNotes call.
 func TestRun_CanceledContext_Aborts(t *testing.T) {
 	armBearcliPool(t)

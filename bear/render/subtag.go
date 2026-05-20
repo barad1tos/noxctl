@@ -22,7 +22,7 @@ import (
 //
 // Hub naming uses U+00B7 MIDDLE DOT (`·`) padded with spaces — `claude · sessions`.
 // The space-dot-space form keeps wikilink targets unambiguous and survives
-// Bear's title sanitisation.
+// Bear's title sanitization.
 
 // HubTitleSeparator is the visual separator between top-tag and bucket in
 // hub note titles produced by HubTitleSubTag (`<top> · <bucket>`).
@@ -65,7 +65,7 @@ func HubBacklinkSubTag(d *domain.Domain, bucket string) string {
 	return "[[" + d.Tag + HubTitleSeparator + bucket + "]]"
 }
 
-// RenderHubFlatSubTag produces a Tier-2 hub note's auto-zone for the
+// HubFlatSubTag produces a Tier-2 hub note's auto-zone for the
 // sub-tag preserving hub-routed pattern. Hub body is a flat alphabetical
 // bullet list of its atomics — no internal H2 sections, no `## HubH2Prefix`
 // header (that lives in the master). Phone-friendly.
@@ -75,9 +75,7 @@ func HubBacklinkSubTag(d *domain.Domain, bucket string) string {
 //	---
 //	- [[atom1]]
 //	- [[atom2]]
-//
-//nolint:revive // public API; rename is breaking change for callers
-func RenderHubFlatSubTag(d *domain.Domain, bucket string, notes []domain.Note, _ map[string][]string) string {
+func HubFlatSubTag(d *domain.Domain, bucket string, notes []domain.Note, _ map[string][]string) string {
 	hubTitle := d.HubTitle(bucket)
 	canonicalTag := d.ResolveCanonicalTag(bucket)
 	sorted := append([]domain.Note(nil), notes...)
@@ -93,7 +91,7 @@ func RenderHubFlatSubTag(d *domain.Domain, bucket string, notes []domain.Note, _
 	return body.String()
 }
 
-// RenderMasterHubList produces the sub-tag preserving master body — a
+// MasterHubList produces the sub-tag preserving master body — a
 // `## Категорії (N)` heading followed by a wikilink-per-line list of every
 // hub bucket with its count. No atomic-level bullets at master level; the
 // user clicks into a hub to see atomics.
@@ -105,9 +103,7 @@ func RenderHubFlatSubTag(d *domain.Domain, bucket string, notes []domain.Note, _
 //	- [[<top> · sessions]] (15)
 //	- [[<top> · memory]] (18)
 //	-...
-//
-//nolint:revive // public API; rename is breaking change for callers
-func RenderMasterHubList(d *domain.Domain, groups map[string][]domain.Note, columns []string) string {
+func MasterHubList(d *domain.Domain, groups map[string][]domain.Note, columns []string) string {
 	ordered := OrderFlatColumns(groups, columns)
 	nonEmpty := make([]string, 0, len(ordered))
 	total := 0
@@ -122,7 +118,7 @@ func RenderMasterHubList(d *domain.Domain, groups map[string][]domain.Note, colu
 	for index, bucket := range nonEmpty {
 		bullets[index] = fmt.Sprintf("[[%s]] (%d)", d.HubTitle(bucket), len(groups[bucket]))
 	}
-	return RenderVerticalSections(d, []Section{{
+	return VerticalSections(d, []Section{{
 		Header:  fmt.Sprintf("%s (%d)", domain.T("master.section.categories"), total),
 		Bullets: bullets,
 	}})
@@ -154,9 +150,9 @@ func NewHubRoutedSubTagDomain(tag, indexTitle, unknownBucket string, buckets []s
 		IsHubNote:          IsHubNoteSubTag,
 		HubTitleFor:        HubTitleSubTag,
 		BucketFromHubTitle: BucketFromHubTitleSubTag,
-		RenderHub:          RenderHubFlatSubTag,
+		RenderHub:          HubFlatSubTag,
 		RenderMaster: func(d *domain.Domain, groups map[string][]domain.Note) string {
-			return RenderMasterHubList(d, groups, columns)
+			return MasterHubList(d, groups, columns)
 		},
 	}
 }

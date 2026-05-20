@@ -103,9 +103,9 @@ func applyDomainBootstrapOne(
 	// NOT to the bootstrap pass. `domain.RenderCanonicalForBootstrap` always
 	// re-stamps with `d.UnknownBucket`, so rewriting a per-domain-bucketed
 	// note here would ping-pong with the next per-domain regen tick.
-	// Bug surfaced 2026-05-17: 19,040 rewrites of the same notes (Я: 2544,
-	// В себя: 2208, …) across a 50 min window before the kill-switch
-	// fired. The bootstrap pass MUST only stamp truly fresh notes.
+	// Bug surfaced 2026-05-17: 19,040 rewrites of the same notes
+	// across a 50 min window before the kill-switch fired.
+	// The bootstrap pass MUST only stamp truly fresh notes.
 	if hasCanonicalLineForLeaf(note.Content, d.Tag) {
 		return false
 	}

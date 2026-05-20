@@ -55,6 +55,15 @@ const (
 	// bearcli regen).
 	DefaultDebouncePause = 2 * time.Second
 
+	// DaemonStartupLogMarker is the literal line prefix the daemon
+	// emits on every fresh boot. The verify-gate scanner
+	// (bear/cli/verify/checks.go) rewinds to the most recent
+	// occurrence and scans forward from there. Defined here so the
+	// emit site (cmd/noxctl/daemon.go) and the check site share one
+	// source of truth — rename the daemon binary and only this
+	// constant moves with it.
+	DaemonStartupLogMarker = "regen-watchd starting"
+
 	// DefaultMaxBurstWindow caps the wait when the user keeps typing —
 	// 1 minute brackets a typical note-editing burst without letting
 	// the daemon stall indefinitely.

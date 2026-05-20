@@ -23,7 +23,7 @@ import (
 // alphabetical via SortTitles.
 func SectionedMasterRenderer() func(*domain.Domain, map[string][]domain.Note) string {
 	return func(d *domain.Domain, groups map[string][]domain.Note) string {
-		return RenderVerticalSections(d, BuildMasterSections(d, groups))
+		return VerticalSections(d, BuildMasterSections(d, groups))
 	}
 }
 
