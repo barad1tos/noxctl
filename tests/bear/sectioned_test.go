@@ -344,9 +344,9 @@ func TestSectionedMasterRenderer_Reinvocable(t *testing.T) {
 	d := domainWithSections("", []domain.MasterSection{{
 		Title: "All", Buckets: []string{"x", "y"}, ShowBulletCounts: true,
 	}})
-	render := render.SectionedMasterRenderer()
-	first := render(d, groups)
-	second := render(d, groups)
+	renderer := render.SectionedMasterRenderer()
+	first := renderer(d, groups)
+	second := renderer(d, groups)
 	if first != second {
 		t.Errorf("renderer produced divergent output on second call:\nfirst:\n%s\nsecond:\n%s", first, second)
 	}

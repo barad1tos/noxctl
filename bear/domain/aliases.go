@@ -21,16 +21,15 @@ import (
 // and the alias eventually becomes dead — at that point this file
 // shrinks naturally.
 
-// Internal lowercase aliases for bearcli command-line constants.
-// Existing call sites in bear/* use the unexported names (flagFormat,
-// formatJSON, etc.) and the file count makes a rename churn-y; the
-// aliases keep them working without touching every line.
+// Internal lowercase aliases for bearcli command-line constants used
+// by the per-domain regen pipeline (fetches.go, snapshot.go,
+// untracked.go, upserts.go). fastpass + audit reach `bearcli.X`
+// directly so they don't go through these wrappers.
 const (
 	flagFormat    = bearcli.FlagFormat
 	flagFields    = bearcli.FlagFields
 	formatJSON    = bearcli.FormatJSON
 	fieldsIDTitle = bearcli.FieldsIDTitle
-	fieldsAutoTag = bearcli.FieldsAutoTag
 )
 
 // IsAuxNote reports whether a note is an auto-generated master or
@@ -50,16 +49,6 @@ type BearcliBackend = bearcli.Backend
 
 // BearcliMetrics is the backward-compatible alias for bearcli.Metrics.
 type BearcliMetrics = bearcli.Metrics
-
-// BearcliTimeout exposes bearcli.Timeout under the original name. The
-// alias preserves the type (time.Duration) so existing comparisons
-// like `ctx.WithTimeout(ctx, BearcliTimeout)` keep working.
-const BearcliTimeout = bearcli.Timeout
-
-// ErrHashConflict is the sentinel returned by the overwrite path when
-// bearcli rejects the write because the underlying note changed since
-// the hash was read. Bound to bearcli.ErrHashConflict for compat.
-var ErrHashConflict = bearcli.ErrHashConflict
 
 // SetBearcliConcurrency forwards to bearcli.SetConcurrency.
 func SetBearcliConcurrency(n int) { bearcli.SetConcurrency(n) }
@@ -81,11 +70,6 @@ func BearcliMetricsSnapshot() BearcliMetrics { return bearcli.MetricsSnapshot() 
 // ContextWithBackend forwards to bearcli.ContextWithBackend.
 func ContextWithBackend(parent context.Context, backend BearcliBackend) context.Context {
 	return bearcli.ContextWithBackend(parent, backend)
-}
-
-// BackendFromContext forwards to bearcli.BackendFromContext.
-func BackendFromContext(ctx context.Context) BearcliBackend {
-	return bearcli.BackendFromContext(ctx)
 }
 
 // ListNotesForTag forwards to bearcli.ListNotesForTag, returning the

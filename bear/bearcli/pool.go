@@ -172,9 +172,9 @@ func ResetPoolForTest(n int) {
 func ResetMetrics() {
 	poolMu.Lock()
 	defer poolMu.Unlock()
-	cap := metrics.capacity.Load()
+	current := metrics.capacity.Load()
 	metrics = poolMetrics{}
-	metrics.capacity.Store(cap)
+	metrics.capacity.Store(current)
 }
 
 // AcquireForTest is a test-only export of the unexported Acquire.

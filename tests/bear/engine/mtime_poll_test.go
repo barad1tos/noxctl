@@ -73,7 +73,7 @@ func (fakeFileInfo) Sys() any             { return nil }
 // apply_parallel_test.go (same package) so the inner ApplyOpts shape
 // stays in one place (dupl ≥30 tokens trips on duplicated literals
 // otherwise).
-func pollOptsFor(t *testing.T, fs *fakeStat, pollInterval, debounce time.Duration) engine.DaemonOpts {
+func pollOptsFor(t *testing.T, stat *fakeStat, pollInterval, debounce time.Duration) engine.DaemonOpts {
 	t.Helper()
 	inner := applyOptsFor(t, nil)
 	inner.SkipFlock = true
@@ -84,7 +84,7 @@ func pollOptsFor(t *testing.T, fs *fakeStat, pollInterval, debounce time.Duratio
 		MaxBurstWindow:    10 * time.Second,
 		SelfWriteEpsilon:  2 * time.Second,
 		MtimePollInterval: pollInterval,
-		StatFn:            fs.Stat,
+		StatFn:            stat.Stat,
 	}
 }
 
@@ -120,8 +120,8 @@ func countCycles(buf *bytes.Buffer) int {
 func TestDaemonPoll_StatAndTrigger(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		base := time.Now()
-		fs := &fakeStat{mtimes: []time.Time{base, base.Add(1 * time.Second)}}
-		opts := pollOptsFor(t, fs, 100*time.Millisecond, 50*time.Millisecond)
+		stat := &fakeStat{mtimes: []time.Time{base, base.Add(1 * time.Second)}}
+		opts := pollOptsFor(t, stat, 100*time.Millisecond, 50*time.Millisecond)
 		fw := newFakeWatcher()
 		d := engine.NewDaemonWithWatcher(opts, fw)
 		t.Cleanup(func() { _ = d.Close() })
@@ -141,7 +141,7 @@ func TestDaemonPoll_StatAndTrigger(t *testing.T) {
 		cancel()
 		<-errCh
 
-		if got := fs.calls.Load(); got < 2 {
+		if got := stat.calls.Load(); got < 2 {
 			t.Errorf("fakeStat.calls = %d, want >= 2 (at least one initial-record + one change-detect)", got)
 		}
 	})
@@ -151,8 +151,8 @@ func TestDaemonPoll_StatAndTrigger(t *testing.T) {
 // no ticker is created and StatFn is never invoked from the poll path.
 func TestDaemonPoll_ZeroDisables(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		fs := &fakeStat{mtimes: []time.Time{time.Now()}}
-		opts := pollOptsFor(t, fs, 0 /* disabled */, 50*time.Millisecond)
+		stat := &fakeStat{mtimes: []time.Time{time.Now()}}
+		opts := pollOptsFor(t, stat, 0 /* disabled */, 50*time.Millisecond)
 		fw := newFakeWatcher()
 		d := engine.NewDaemonWithWatcher(opts, fw)
 		t.Cleanup(func() { _ = d.Close() })
@@ -170,7 +170,7 @@ func TestDaemonPoll_ZeroDisables(t *testing.T) {
 		cancel()
 		<-errCh
 
-		if got := fs.calls.Load(); got != 0 {
+		if got := stat.calls.Load(); got != 0 {
 			t.Errorf("fakeStat.calls = %d, want 0 (MtimePollInterval=0 must not start a ticker)", got)
 		}
 	})
@@ -208,7 +208,7 @@ func TestDaemonPoll_ZeroDisables(t *testing.T) {
 func TestDaemonPoll_SelfWriteGate(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		base := time.Now()
-		fs := &fakeStat{mtimes: []time.Time{
+		stat := &fakeStat{mtimes: []time.Time{
 			base,                             // tick 1 (T=1s)
 			base.Add(10 * time.Millisecond),  // updatePollBaseline after cycle 1
 			base.Add(500 * time.Millisecond), // tick 2 (T=2s) — gated
@@ -217,7 +217,7 @@ func TestDaemonPoll_SelfWriteGate(t *testing.T) {
 			base.Add(10 * time.Second),       // tick 5 (T=5s) — no advance
 			base.Add(20 * time.Second),       // tick 6 (T=6s) — past gate, fires
 		}}
-		opts := pollOptsFor(t, fs, 1*time.Second, 50*time.Millisecond)
+		opts := pollOptsFor(t, stat, 1*time.Second, 50*time.Millisecond)
 		opts.SelfWriteEpsilon = 100 * time.Millisecond
 		fw := newFakeWatcher()
 		d := engine.NewDaemonWithWatcher(opts, fw)
@@ -263,8 +263,8 @@ func TestDaemonPoll_SelfWriteGate(t *testing.T) {
 func TestDaemonPoll_DebounceReset(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		base := time.Now()
-		fs := &fakeStat{mtimes: []time.Time{base, base.Add(1 * time.Second)}}
-		opts := pollOptsFor(t, fs, 100*time.Millisecond, 200*time.Millisecond)
+		stat := &fakeStat{mtimes: []time.Time{base, base.Add(1 * time.Second)}}
+		opts := pollOptsFor(t, stat, 100*time.Millisecond, 200*time.Millisecond)
 		fw := newFakeWatcher()
 		d := engine.NewDaemonWithWatcher(opts, fw)
 		t.Cleanup(func() { _ = d.Close() })
@@ -326,11 +326,11 @@ func TestDaemonPoll_DebounceReset(t *testing.T) {
 func TestDaemonPoll_CycleEndResetBaseline(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		base := time.Now()
-		fs := &fakeStat{mtimes: []time.Time{
+		stat := &fakeStat{mtimes: []time.Time{
 			base,                      // tick 1
 			base.Add(1 * time.Second), // updatePollBaseline after cycle 1
 		}}
-		opts := pollOptsFor(t, fs, 200*time.Millisecond, 50*time.Millisecond)
+		opts := pollOptsFor(t, stat, 200*time.Millisecond, 50*time.Millisecond)
 		opts.SelfWriteEpsilon = 50 * time.Millisecond
 		fw := newFakeWatcher()
 		d := engine.NewDaemonWithWatcher(opts, fw)

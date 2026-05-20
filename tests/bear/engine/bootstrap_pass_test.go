@@ -564,12 +564,12 @@ func TestApplyDomainBootstrap_LoopGuard_SkipsAfterCap(t *testing.T) {
 		fake := newFakeAutoTagBackend(payload)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		const cap = 5
-		driveBootstrapNTimes(t, ctx, domainsByTag, cap, 1)
-		assertOverwriteCount(t, fake, cap, "cumulative")
-		// (cap+1)th call — guard MUST fire, zero new overwrites.
+		const noteCap = 5
+		driveBootstrapNTimes(t, ctx, domainsByTag, noteCap, 1)
+		assertOverwriteCount(t, fake, noteCap, "cumulative")
+		// (noteCap+1)th call — guard MUST fire, zero new overwrites.
 		driveBootstrapNTimes(t, ctx, domainsByTag, 1, 0)
-		assertOverwriteCount(t, fake, cap, "post-cap")
+		assertOverwriteCount(t, fake, noteCap, "post-cap")
 	})
 }
 

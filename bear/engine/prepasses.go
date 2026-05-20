@@ -120,8 +120,8 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			log.Printf("duplicates: registry build failed: %v (continuing with plain wikilinks)", err)
 			result.PrePasses["duplicate_registry"] = PrePassCounts{Failed: 1}
 		} else {
-			for _, domain := range opts.Domains {
-				domain.Duplicates = registry
+			for _, d := range opts.Domains {
+				d.Duplicates = registry
 			}
 			result.PrePasses["duplicate_registry"] = PrePassCounts{OK: 1}
 		}
