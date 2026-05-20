@@ -3,7 +3,6 @@ package bear
 import (
 	"fmt"
 	"sort"
-	"strings"
 )
 
 // Grouped-vertical master pattern: one master note per domain, body is a
@@ -21,87 +20,13 @@ import (
 // per-bucket Tier-2 hub adds no navigation value (english, health, leisure,
 // humor).
 
-// BucketFromSubTag scans Bear's note tags for the first `<top>/<sub>` pair
-// matching the domain's family tag and returns `<sub>`. Returns "" when no
-// matching sub-tag exists.
-//
-// Used by groupAtomics as the bucket source for sub-tag-preserving blueprints
-// when the canonical-header line is absent — e.g. notes freshly created via
-// the Bear sidebar tag-picker, before the daemon has had a chance to stamp
-// the `#<top>/<sub> | [[...]]` row into the body. Without this sticky-creation
-// hook, every fresh user-created note rerouted to d.UnknownBucket and the
-// user's explicit sub-tag intent (`#development/ayu-jetbrains`) was lost.
-//
-// Bear tag-tree is invariant at depth=2 per (family/sub-tag), so we
-// require the matched sub-tag to be a single segment with no further `/`.
-// No-op for non-sub-tag blueprints: the prefix `d.Tag + "/"` never matches a
-// hub-routed or flat-table domain's single-segment family tag.
-//
-// bearcli `list --tag` and `list --location` both return tags WITH a leading
-// `#` prefix (Bear's display form); we strip it before prefix-matching so the
-// helper is robust regardless of which list-call populates Note.Tags.
-func BucketFromSubTag(d *Domain, tags []string) string {
-	prefix := d.Tag + "/"
-	for _, tag := range tags {
-		sub, ok := strings.CutPrefix(strings.TrimPrefix(tag, "#"), prefix)
-		if !ok || sub == "" || strings.Contains(sub, "/") {
-			continue
-		}
-		return sub
-	}
-	return ""
-}
-
-// ParseMetaFromSubTag extracts the bucket from the sub-tag in a canonical
-// header line of the form:
-//
-//	#<top>/<sub> | [[<wikilink>]]
-//
-// where the wikilink can target either the master (grouped-vertical) or a
-// per-bucket hub note (hub-routed-with-subtag). Bucket = `<sub>`. Returns an
-// empty AtomicMeta when no `#<top>/<sub>` token is present in the header zone
-// — the caller then falls back to d.UnknownBucket.
-//
-// Differs from ParseMetaFlatTable (reads bucket from segment 3) and
-// DefaultParseMetaCanonical (reads bucket from the wikilink target). Used by
-// every domain whose canonical preserves sub-tags as the source of truth.
-func ParseMetaFromSubTag(d *Domain, body string) AtomicMeta {
-	prefix := d.CanonicalTag + "/"
-	for line := range strings.SplitSeq(HeaderZone(body), "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "#") || !strings.Contains(line, " | ") {
-			continue
-		}
-		parts := DropTrailingNewNoteURLSegment(strings.Split(line, " | "))
-		first := strings.TrimSpace(parts[0])
-		// First field may carry extra tags after a space; the canonical
-		// sub-tag token is the first whitespace-separated word.
-		token := strings.Fields(first)
-		if len(token) == 0 {
-			continue
-		}
-		head := token[0]
-		if !strings.HasPrefix(head, prefix) {
-			continue
-		}
-		bucket := strings.TrimPrefix(head, prefix)
-		if bucket == "" {
-			continue
-		}
-		meta := AtomicMeta{Bucket: bucket}
-		if len(parts) >= 3 {
-			meta.Section = strings.TrimSpace(parts[2])
-		}
-		return meta
-	}
-	return AtomicMeta{}
-}
-
-// RenderMasterFlatGrouped produces the grouped-vertical master body — a
-// stack of `## <bucket> (N)` sections each followed by an alphabetical
-// bullet list of `[[Title]]` (or bear://x-callback for duplicate titles).
-// Buckets are emitted in the order returned by OrderFlatColumns so the
-// caller's fixed sequence wins, with overflow buckets appended alphabetically.
+// RenderMasterFlatGrouped produces the grouped-vertical master body —
+// a stack of `## <bucket> (N)` sections each followed by an
+// alphabetical bullet list of `[[Title]]` (or
+// `bear://x-callback-url/open-note?id=X` for duplicate titles).
+// Buckets are emitted in the order returned by OrderFlatColumns so
+// the caller's fixed sequence wins, with overflow buckets appended
+// alphabetically.
 //
 //	# <IndexTitle>
 //	#<tag>
@@ -112,7 +37,6 @@ func ParseMetaFromSubTag(d *Domain, body string) AtomicMeta {
 //
 //	## rules (7)
 //	- [[atomA]]
-//	-...
 func RenderMasterFlatGrouped(d *Domain, groups map[string][]Note, columns []string) string {
 	return RenderVerticalSections(d, flatGroupedSections(d, groups, columns))
 }
@@ -142,49 +66,19 @@ func flatGroupedSections(d *Domain, groups map[string][]Note, columns []string) 
 	return sections
 }
 
-// ParseMasterFlatGrouped inverts RenderMasterFlatGrouped — walks an existing
-// grouped-vertical master and returns identifier→bucket mapping for every
-// atomic referenced under each `##` section. Pairs with computeMasterOverrides
-// so users can move atomics between buckets by cut/paste in the master.
+// NewGroupedVerticalDomain builds a Domain configured for the
+// grouped-vertical master pattern with sub-tag preservation. Atomics
+// carry canonical headers of the form `#<tag>/<bucket> | [[<indexTitle>]]`;
+// the master renders one `## <bucket> (N)` section per bucket;
+// bidirectional via the master.
 //
-// Identifier semantics match ParseMasterTable: plain `[[Title]]` keys by
-// title; `[Label](bear://x-callback-url/open-note?id=X)` keys by note ID.
-// Lenient by design — leading blank lines, separator rows, hand-curated H3
-// subsections, and bullets without recognizable identifiers are silently
-// skipped without dropping the surrounding section.
-func ParseMasterFlatGrouped(_ *Domain, masterContent string) map[string]string {
-	out := make(map[string]string)
-	var currentBucket string
-	for line := range strings.SplitSeq(masterContent, "\n") {
-		stripped := strings.TrimSpace(line)
-		if strings.HasPrefix(stripped, "## ") && !strings.HasPrefix(stripped, "### ") {
-			currentBucket = stripHeaderCount(stripped, "## ")
-			continue
-		}
-		if currentBucket == "" {
-			continue
-		}
-		if !strings.HasPrefix(stripped, "-") {
-			continue
-		}
-		for _, ident := range extractCellIdentifiers(stripped) {
-			out[ident] = currentBucket
-		}
-	}
-	return out
-}
-
-// NewGroupedVerticalDomain builds a Domain configured for the grouped-vertical
-// master pattern with sub-tag preservation. Atomics carry canonical headers
-// of the form `#<tag>/<bucket> | [[<indexTitle>]]`; the master renders one
-// `## <bucket> (N)` section per bucket; bidirectional via the master.
-//
-// Parameters: `tag` and `indexTitle` identify the domain; `unknownBucket`
-// catches atomics whose canonical lacks a sub-tag (a bare `#<tag>` token
-// without `/...`) — they surface in a final `## <unknownBucket>` section
-// and the user can re-bucket via cut/paste like any other entry.
-// `buckets` defines the priority left-to-right column order; new buckets
-// from atomic canonicals append alphabetically after the priority list.
+// Parameters: `tag` and `indexTitle` identify the domain;
+// `unknownBucket` catches atomics whose canonical lacks a sub-tag
+// (a bare `#<tag>` token without `/...`) — they surface in a final
+// `## <unknownBucket>` section and the user can re-bucket via
+// cut/paste like any other entry. `buckets` defines the priority
+// left-to-right column order; new buckets from atomic canonicals
+// append alphabetically after the priority list.
 func NewGroupedVerticalDomain(tag, indexTitle, unknownBucket string, buckets []string) *Domain {
 	columns := append([]string(nil), buckets...)
 	return &Domain{
