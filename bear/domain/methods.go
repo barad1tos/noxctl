@@ -16,9 +16,9 @@ import (
 	"github.com/barad1tos/noxctl/bear/bearcli"
 )
 
-// tagSuffix returns the part of d.Tag after the last "/", e.g. "poetry" for
+// TagSuffix returns the part of d.Tag after the last "/", e.g. "poetry" for
 // "library/poetry". Used to label log lines and pilot env-vars per domain.
-func (d *Domain) tagSuffix() string {
+func (d *Domain) TagSuffix() string {
 	suffix := d.Tag
 	if slash := strings.LastIndex(suffix, "/"); slash >= 0 {
 		suffix = suffix[slash+1:]
@@ -29,7 +29,7 @@ func (d *Domain) tagSuffix() string {
 // LogPrefix returns "regen[<tag-suffix>]" for log lines, e.g. "regen[poetry]".
 // Disambiguates concurrent multi-domain regens in the daemon log stream.
 func (d *Domain) LogPrefix() string {
-	return "regen[" + d.tagSuffix() + "]"
+	return "regen[" + d.TagSuffix() + "]"
 }
 
 // Logf writes a log line prefixed with the domain's LogPrefix. Centralizes the
@@ -42,8 +42,8 @@ func (d *Domain) Logf(format string, args ...any) {
 // Called by the daemon at startup so misconfiguration surfaces immediately
 // instead of as a deferred nil-pointer-dereference deep in the first regen.
 func (d *Domain) Validate() error {
-	if d.validationError != nil {
-		return d.validationError
+	if d.ValidationError != nil {
+		return d.ValidationError
 	}
 	if d.Tag == "" {
 		return errors.New("Domain.Tag is required")
@@ -86,8 +86,8 @@ func (d *Domain) newNoteRawTag() string {
 // reflects the leaf's tag, backlink, and placeholder H1 — not the
 // umbrella's internal "_umbrella" placeholder. Leaves return self.
 func (d *Domain) ResolveURLDomain() *Domain {
-	if d.defaultChildDomain != nil {
-		return d.defaultChildDomain.ResolveURLDomain()
+	if d.DefaultChildDomain != nil {
+		return d.DefaultChildDomain.ResolveURLDomain()
 	}
 	return d
 }
@@ -110,10 +110,10 @@ func (d *Domain) EffectiveQuickPlaceholderH1ForTest() string {
 	return d.effectiveQuickPlaceholderH1()
 }
 
-// hubTitleFor maps bucket → Tier-2 hub note title. Defaults to identity
+// HubTitle maps bucket → Tier-2 hub note title. Defaults to identity
 // (bucket == title) for legacy hub-routed domains. Sub-tag preserving hubs
 // override to return `<top> · <bucket>`.
-func (d *Domain) hubTitleFor(bucket string) string {
+func (d *Domain) HubTitle(bucket string) string {
 	cb := d.HubTitleFor
 	if cb == nil {
 		return bucket
@@ -121,7 +121,7 @@ func (d *Domain) hubTitleFor(bucket string) string {
 	return cb(d, bucket)
 }
 
-// bucketFromHubTitle inverts hubTitleFor. Returns "" when the title doesn't
+// bucketFromHubTitle inverts HubTitle. Returns "" when the title doesn't
 // belong to this domain (computeHubOverrides treats "" as "skip"). The
 // callback path lets sub-tag preserving domains strip a `<top> · ` prefix
 // before matching against bucket-keyed groups.

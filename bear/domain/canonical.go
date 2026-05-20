@@ -72,7 +72,7 @@ func (s *atomicParseState) consumeHeader(trimmed, authorH2Marker, family string,
 // tag-only check). Claiming such lines as preamble would re-emit them
 // on every regen tick, growing the body without bound — see the May
 // 2026 accumulation cascade triggered by a foreign-tag escape that
-// left `[[✱ Daily]]` debris in the body, which detectAuthor then
+// left `[[✱ Daily]]` debris in the body, which DetectAuthor then
 // mis-identified as a bucket name, which the renderer emitted as
 // `#development/✱ Daily |...`, which preamble then preserved...
 // Sending them to BodyLines instead at least keeps the user's
