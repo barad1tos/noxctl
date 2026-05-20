@@ -59,7 +59,7 @@ func computeDomainHash(ctx context.Context, d *domain.Domain) string {
 // snapshotDomainContent fetches the post-RunRegen master + hub bytes
 // for one domain via the exported domain.FetchMasterContent /
 // domain.FetchHubContents wrappers (which in turn call the bearcli
-// boundary inside package bear). Stripped of the [Нова нотатка]
+// boundary inside package domain). Stripped of the [Нова нотатка]
 // new-note link drift before return — caller can hash directly.
 //
 // Returns ("", nil, nil) for domains without a master note yet

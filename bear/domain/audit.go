@@ -67,16 +67,16 @@ func AutoFixDomain(ctx context.Context, d *Domain, notes []Note) (fixed, failed 
 // ~50% of select-races where the slot wins over ctx.Done().
 func AuditDomains(ctx context.Context, domains []*Domain) []Finding {
 	var findings []Finding
-	for _, domain := range domains {
+	for _, d := range domains {
 		if err := CheckCtx(ctx); err != nil {
 			return findings
 		}
-		notes, err := domain.listNotes(ctx)
+		notes, err := d.listNotes(ctx)
 		if err != nil {
-			log.Printf("audit: %s: list failed: %v", domain.Tag, err)
+			log.Printf("audit: %s: list failed: %v", d.Tag, err)
 			continue
 		}
-		LintAndAuditDomain(domain, notes, func(f Finding) {
+		LintAndAuditDomain(d, notes, func(f Finding) {
 			findings = append(findings, f)
 		})
 	}
@@ -146,18 +146,18 @@ func LogAuditFindings(findings []Finding, logf func(format string, args ...any))
 // I/O, so a canceled sweep stops deterministically instead of racing the
 // pool semaphore for one more list+overwrite round.
 func LintApplyDomains(ctx context.Context, domains []*Domain) {
-	for _, domain := range domains {
+	for _, d := range domains {
 		if err := CheckCtx(ctx); err != nil {
 			return
 		}
-		notes, err := domain.listNotes(ctx)
+		notes, err := d.listNotes(ctx)
 		if err != nil {
-			log.Printf("lint --apply: %s: list failed: %v", domain.Tag, err)
+			log.Printf("lint --apply: %s: list failed: %v", d.Tag, err)
 			continue
 		}
-		fixed, failed := AutoFixDomain(ctx, domain, notes)
+		fixed, failed := AutoFixDomain(ctx, d, notes)
 		if fixed > 0 || failed > 0 {
-			domain.Logf("lint --apply: %d fixed, %d failed", fixed, failed)
+			d.Logf("lint --apply: %d fixed, %d failed", fixed, failed)
 		}
 	}
 }

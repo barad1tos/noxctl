@@ -113,7 +113,7 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	}
 
 	// Step -1: initialize the global bearcli subprocess
-	// pool. SetBearcliConcurrency is sync.Once-gated inside package bear,
+	// pool. SetBearcliConcurrency is sync.Once-gated inside package domain,
 	// so a second Apply in the same process is a no-op. Bench-mode
 	// (--sweep) drives ResetBearcliPoolForTest between cycles to re-arm
 	// at a new capacity; production daemon path is one-shot per process.
