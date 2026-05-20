@@ -1,6 +1,6 @@
-package domain
+package fastpass
 
-// Domain-bootstrap fast-pass — canonicalize any note whose tag set
+// domain.Domain-bootstrap fast-pass — canonicalize any note whose tag set
 // matches a managed leaf domain (most-specific-leaf wins; bare
 // umbrella tag → DefaultChild). Includes the loop guard that
 // prevents bootstrap from re-stamping a note already rewritten on
@@ -14,6 +14,9 @@ import (
 	"log"
 	"strings"
 	"sync"
+
+	"github.com/barad1tos/noxctl/bear/bearcli"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // ApplyDomainBootstrap canonicalizes any note whose tag set matches
@@ -23,29 +26,30 @@ import (
 // pass plus effectiveSelfWriteEpsilon suppresses FSEvent feedback
 // on our own writes. Returns the number of notes actually rewritten
 // (zero when every candidate is already canonical or no notes match).
-func ApplyDomainBootstrap(ctx context.Context, domainsByTag map[string]*Domain) (int, error) {
+func ApplyDomainBootstrap(ctx context.Context, domainsByTag map[string]*domain.Domain) (int, error) {
 	if len(domainsByTag) == 0 {
 		return 0, nil
 	}
 	if bootstrapLoop.disabledSnapshot() {
 		return 0, nil
 	}
-	out, err := runBearcli(
+	out, err := bearcli.Run(
 		ctx,
-		[]string{"list", "--location", "notes", flagFormat, formatJSON, flagFields, fieldsAutoTag},
+		[]string{"list", "--location", "notes", bearcli.FlagFormat, bearcli.FormatJSON, bearcli.FlagFields, bearcli.FieldsAutoTag}, //nolint:lll
 		"",
 	)
 	if err != nil {
 		return 0, fmt.Errorf("ApplyDomainBootstrap list: %w", err)
 	}
-	var notes []autoTagNote
+	var notes []domain.AutoTagNote
 	if err = json.Unmarshal(out, &notes); err != nil {
 		return 0, fmt.Errorf("ApplyDomainBootstrap parse: %w", err)
 	}
 	rewritten := 0
 	warned := make(map[string]struct{}) // : log-once-per-tick per note ID.
+	//nolint:dupl // mirrors sibling fastpass loop; shared scan pattern
 	for _, note := range notes {
-		if err = CheckCtx(ctx); err != nil {
+		if err = domain.CheckCtx(ctx); err != nil {
 			return rewritten, err
 		}
 		if applyDomainBootstrapOne(ctx, note, domainsByTag, warned) {
@@ -64,8 +68,8 @@ func ApplyDomainBootstrap(ctx context.Context, domainsByTag map[string]*Domain) 
 // under the gocognit ≤15 budget.
 func applyDomainBootstrapOne(
 	ctx context.Context,
-	note autoTagNote,
-	domainsByTag map[string]*Domain,
+	note domain.AutoTagNote,
+	domainsByTag map[string]*domain.Domain,
 	warned map[string]struct{},
 ) bool {
 	// Structural-note guard: titles prefixed with `✱ ` mark hub/master/
@@ -96,7 +100,7 @@ func applyDomainBootstrapOne(
 	// Loop-prevention guard: when the note's body ALREADY carries a
 	// canonical tag-line for the leaf, drift fix-up (bucket shifts, URL
 	// shape evolution) belongs to the per-domain `processAtomic` path —
-	// NOT to the bootstrap pass. `RenderCanonicalForBootstrap` always
+	// NOT to the bootstrap pass. `domain.RenderCanonicalForBootstrap` always
 	// re-stamps with `d.UnknownBucket`, so rewriting a per-domain-bucketed
 	// note here would ping-pong with the next per-domain regen tick.
 	// Bug surfaced 2026-05-17: 19,040 rewrites of the same notes (Я: 2544,
@@ -115,10 +119,10 @@ func applyDomainBootstrapOne(
 		return false
 	}
 	canonical := d.RenderCanonicalForBootstrap(note.Content)
-	if equalIgnoringNewNoteLinkStrict(note.Content, canonical) {
+	if domain.EqualIgnoringNewNoteLinkStrict(note.Content, canonical) {
 		return false
 	}
-	if err := overwriteWithRetry(ctx, note.ID, canonical); err != nil {
+	if err := bearcli.OverwriteWithRetry(ctx, note.ID, canonical); err != nil {
 		log.Printf("domain-bootstrap %q: %v", note.Title, err)
 		return false
 	}
@@ -230,7 +234,7 @@ func ResetBootstrapLoopForTest() { resetBootstrapLoopForTest() }
 // Bear materializes the bucket as a sibling sub-tag)
 //
 // Used by `applyDomainBootstrapOne` as the loop-prevention guard
-// against `RenderCanonicalForBootstrap`'s `UnknownBucket` reset. The
+// against `domain.RenderCanonicalForBootstrap`'s `UnknownBucket` reset. The
 // sub-tag form caught us on 2026-05-17 incident #2 — health-domain
 // notes with bucket-as-subtag pattern (`#health/інше | …`) slipped
 // past a strict `#health | ` prefix check and looped against per-
@@ -270,12 +274,12 @@ func hasCanonicalLineForLeaf(content, tag string) bool {
 // 4. Otherwise return nil.
 func matchOwningDomain(
 	noteTags []string,
-	domainsByTag map[string]*Domain,
+	domainsByTag map[string]*domain.Domain,
 	noteID string,
 	warned map[string]struct{},
-) *Domain {
-	var leaves []*Domain
-	var umbrella *Domain
+) *domain.Domain {
+	var leaves []*domain.Domain
+	var umbrella *domain.Domain
 	for _, raw := range noteTags {
 		clean := strings.TrimPrefix(raw, "#")
 		d, ok := domainsByTag[clean]
@@ -307,7 +311,7 @@ func matchOwningDomain(
 // `warned` set is allocated per-tick by `ApplyDomainBootstrap` so an
 // ambiguous note re-warns on the next tick if it still carries
 // ambiguous tags — the visibility we want for stuck-state debugging.
-func mostSpecificOrSkip(leaves []*Domain, noteID string, warned map[string]struct{}) *Domain {
+func mostSpecificOrSkip(leaves []*domain.Domain, noteID string, warned map[string]struct{}) *domain.Domain {
 	longest := leaves[0]
 	tied := false
 	for _, d := range leaves[1:] {
@@ -337,7 +341,7 @@ func mostSpecificOrSkip(leaves []*Domain, noteID string, warned map[string]struc
 // matchDomainByTag returns the first candidate domain whose Tag
 // appears in the note's tag set, or nil. Tags from bearcli carry
 // the leading '#'; strip before comparison.
-func matchDomainByTag(noteTags []string, candidates []*Domain) *Domain {
+func matchDomainByTag(noteTags []string, candidates []*domain.Domain) *domain.Domain {
 	for _, tag := range noteTags {
 		clean := strings.TrimPrefix(tag, "#")
 		for _, d := range candidates {
@@ -349,6 +353,6 @@ func matchDomainByTag(noteTags []string, candidates []*Domain) *Domain {
 	return nil
 }
 
-// autoTagNote is the bearcli JSON shape we need for the auto-tag pre-pass —
-// a slim subset of bear.Note plus the `tags` array that the standard Note
+// domain.AutoTagNote is the bearcli JSON shape we need for the auto-tag pre-pass —
+// a slim subset of bear.Note plus the `tags` array that the standard domain.Note
 // type doesn't carry.

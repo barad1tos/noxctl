@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/fastpass"
 )
 
 func TestHasForeignQuicknoteTag(t *testing.T) {
@@ -26,7 +26,7 @@ func TestHasForeignQuicknoteTag(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := domain.HasForeignQuicknoteTag(tc.tags); got != tc.want {
+			if got := fastpass.HasForeignQuicknoteTag(tc.tags); got != tc.want {
 				t.Errorf("got %v, want %v", got, tc.want)
 			}
 		})
@@ -114,7 +114,7 @@ func TestSubstituteQuicknoteInBody(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := domain.SubstituteQuicknoteInBody(tc.in, tc.replacement)
+			got := fastpass.SubstituteQuicknoteInBody(tc.in, tc.replacement)
 			if got != tc.want {
 				t.Errorf("got:\n%s\nwant:\n%s",
 					strings.ReplaceAll(got, "\n", "\\n\n"),
@@ -159,7 +159,7 @@ func TestFindForeignTagInBody(t *testing.T) {
 	check := func(in, want string) func(*testing.T) {
 		return func(t *testing.T) {
 			t.Helper()
-			if got := domain.FindForeignTagInBody(in); got != want {
+			if got := fastpass.FindForeignTagInBody(in); got != want {
 				t.Errorf("FindForeignTagInBody(%q) = %q, want %q", in, got, want)
 			}
 		}

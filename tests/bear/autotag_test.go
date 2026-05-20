@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/fastpass"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
@@ -194,7 +195,7 @@ func TestApplyForeignTagEscape_UnknownDestinationFallsBackToStripOnly(t *testing
 // did.
 func TestRefreshQuicknotePlaceholder_MarkerPresent(t *testing.T) {
 	in := "# Quicknote\n#quicknote/daily | [[✱ Daily]] | [Нова нотатка](bear://x-callback-url/create?tags=quicknote%2Fdaily&open_note=yes)\n---\n\n"
-	out, refreshed := domain.RefreshPlaceholderH1ForTest(in, "Quicknote", "16 May 2026 at 00:35")
+	out, refreshed := fastpass.RefreshPlaceholderH1ForTest(in, "Quicknote", "16 May 2026 at 00:35")
 
 	if !refreshed {
 		t.Fatalf("marker present but refreshed=false")
@@ -226,7 +227,7 @@ func TestRefreshQuicknotePlaceholder_MarkerAbsent(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, refreshed := domain.RefreshPlaceholderH1ForTest(tc.in, "Quicknote", "16 May 2026 at 00:35")
+			out, refreshed := fastpass.RefreshPlaceholderH1ForTest(tc.in, "Quicknote", "16 May 2026 at 00:35")
 			if refreshed {
 				t.Errorf("expected refreshed=false; got true\n  in:  %q\n  out: %q", tc.in, out)
 			}
@@ -330,7 +331,7 @@ func TestApplyQuicknotePlaceholderRefresh_MarkerNote_GetsTimestampStamped(t *tes
 		Content: "# Quicknote\n#quicknote/daily | [[✱ Daily]]\n---\n\n",
 	})
 
-	refreshed, err := domain.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
+	refreshed, err := fastpass.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
 	if err != nil {
 		t.Fatalf("ApplyQuicknotePlaceholderRefresh: %v", err)
 	}
@@ -362,7 +363,7 @@ func TestApplyQuicknotePlaceholderRefresh_NonMarkerNote_Skipped(t *testing.T) {
 		Content: "# 15 May 2026 at 22:00\n#quicknote/daily | [[✱ Daily]]\n---\n\nold body\n",
 	})
 
-	refreshed, err := domain.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
+	refreshed, err := fastpass.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
 	if err != nil {
 		t.Fatalf("ApplyQuicknotePlaceholderRefresh: %v", err)
 	}
@@ -386,7 +387,7 @@ func TestApplyQuicknotePlaceholderRefresh_LegacyForwardsToGenericScan(t *testing
 	ctx := domain.ContextWithBackend(context.Background(), backend)
 	domain.ResetBearcliPoolForTest(1)
 
-	_, err := domain.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
+	_, err := fastpass.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
 	if err != nil {
 		t.Fatalf("ApplyQuicknotePlaceholderRefresh: %v", err)
 	}
@@ -418,7 +419,7 @@ func TestApplyPlaceholderRefresh_DispatchesToDomainByTitleAndTag(t *testing.T) {
 	})
 
 	domainsByTag := domain.DomainsByTag([]*domain.Domain{testutil.Domain(t, "quicknote/daily")})
-	refreshed, err := domain.ApplyPlaceholderRefresh(ctx, domainsByTag)
+	refreshed, err := fastpass.ApplyPlaceholderRefresh(ctx, domainsByTag)
 	if err != nil {
 		t.Fatalf("ApplyPlaceholderRefresh: %v", err)
 	}
@@ -448,7 +449,7 @@ func TestApplyPlaceholderRefresh_SkipsUntaggedNotes(t *testing.T) {
 	})
 
 	domainsByTag := domain.DomainsByTag([]*domain.Domain{testutil.Domain(t, "quicknote/daily")})
-	refreshed, err := domain.ApplyPlaceholderRefresh(ctx, domainsByTag)
+	refreshed, err := fastpass.ApplyPlaceholderRefresh(ctx, domainsByTag)
 	if err != nil {
 		t.Fatalf("ApplyPlaceholderRefresh: %v", err)
 	}
@@ -470,7 +471,7 @@ func TestApplyPlaceholderRefresh_ListArgsAreGlobal(t *testing.T) {
 	domain.ResetBearcliPoolForTest(1)
 
 	domainsByTag := domain.DomainsByTag([]*domain.Domain{testutil.Domain(t, "quicknote/daily")})
-	_, err := domain.ApplyPlaceholderRefresh(ctx, domainsByTag)
+	_, err := fastpass.ApplyPlaceholderRefresh(ctx, domainsByTag)
 	if err != nil {
 		t.Fatalf("ApplyPlaceholderRefresh: %v", err)
 	}

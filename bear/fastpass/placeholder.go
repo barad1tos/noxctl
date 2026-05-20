@@ -1,4 +1,4 @@
-package domain
+package fastpass
 
 // Placeholder-refresh fast-pass: scans notes whose H1 still carries the
 // Bear-stamped `# Quicknote` placeholder (or domain-specific override)
@@ -12,6 +12,9 @@ import (
 	"fmt"
 	"log"
 	"strings"
+
+	"github.com/barad1tos/noxctl/bear/bearcli"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // ApplyPlaceholderRefresh scans notes whose H1 still carries the
@@ -19,35 +22,36 @@ import (
 // the H1 with a fresh datetime stamp. Self-cleaning: once H1 is
 // rewritten, the marker is gone, so the next tick skips the same
 // note. Returns the number of notes actually rewritten.
-func ApplyPlaceholderRefresh(ctx context.Context, domainsByTag map[string]*Domain) (int, error) {
+func ApplyPlaceholderRefresh(ctx context.Context, domainsByTag map[string]*domain.Domain) (int, error) {
 	placeholderToDomains := buildPlaceholderIndex(domainsByTag)
 	if len(placeholderToDomains) == 0 {
 		return 0, nil
 	}
 
-	out, err := runBearcli(
+	out, err := bearcli.Run(
 		ctx,
 		[]string{
 			"list",
 			"--sort", "created:desc",
 			"--limit", "20",
-			flagFormat, formatJSON,
-			flagFields, fieldsAutoTag,
+			bearcli.FlagFormat, bearcli.FormatJSON,
+			bearcli.FlagFields, bearcli.FieldsAutoTag,
 		},
 		"",
 	)
 	if err != nil {
 		return 0, fmt.Errorf("ApplyPlaceholderRefresh list: %w", err)
 	}
-	var notes []autoTagNote
+	var notes []domain.AutoTagNote
 	if err = json.Unmarshal(out, &notes); err != nil {
 		return 0, fmt.Errorf("ApplyPlaceholderRefresh parse: %w", err)
 	}
 
 	refreshed := 0
-	stamp := nowForNewNoteLink().Format(h1DatetimeFormat)
+	stamp := domain.NowForNewNoteLink().Format(domain.H1DatetimeFormat)
+	//nolint:dupl // mirrors sibling fastpass loop; shared scan pattern
 	for _, note := range notes {
-		if err = CheckCtx(ctx); err != nil {
+		if err = domain.CheckCtx(ctx); err != nil {
 			return refreshed, err
 		}
 		if refreshOnePlaceholder(ctx, note, placeholderToDomains, stamp) {
@@ -57,12 +61,12 @@ func ApplyPlaceholderRefresh(ctx context.Context, domainsByTag map[string]*Domai
 	return refreshed, nil
 }
 
-// buildPlaceholderIndex inverts domainsByTag into placeholder→[]*Domain.
+// buildPlaceholderIndex inverts domainsByTag into placeholder→[]*domain.Domain.
 // Multiple domains may share the same placeholder (e.g. all default to
-// DefaultQuickPlaceholderH1); the per-note tag check in the loop
+// domain.DefaultQuickPlaceholderH1); the per-note tag check in the loop
 // disambiguates which one a given Title=="<placeholder>" note belongs to.
-func buildPlaceholderIndex(domainsByTag map[string]*Domain) map[string][]*Domain {
-	out := make(map[string][]*Domain, len(domainsByTag))
+func buildPlaceholderIndex(domainsByTag map[string]*domain.Domain) map[string][]*domain.Domain {
+	out := make(map[string][]*domain.Domain, len(domainsByTag))
 	for _, d := range domainsByTag {
 		if d == nil {
 			continue
@@ -81,8 +85,8 @@ func buildPlaceholderIndex(domainsByTag map[string]*Domain) map[string][]*Domain
 // gocognit ≤15 budget.
 func refreshOnePlaceholder(
 	ctx context.Context,
-	note autoTagNote,
-	placeholderToDomains map[string][]*Domain,
+	note domain.AutoTagNote,
+	placeholderToDomains map[string][]*domain.Domain,
 	stamp string,
 ) bool {
 	candidates, ok := placeholderToDomains[note.Title]
@@ -97,7 +101,7 @@ func refreshOnePlaceholder(
 	if !didRefresh {
 		return false
 	}
-	if err := overwriteWithRetry(ctx, note.ID, newContent); err != nil {
+	if err := bearcli.OverwriteWithRetry(ctx, note.ID, newContent); err != nil {
 		log.Printf("placeholder refresh %q failed: %v", note.Title, err)
 		return false
 	}
@@ -109,11 +113,11 @@ func refreshOnePlaceholder(
 // for binary compatibility. Forwards to ApplyPlaceholderRefresh with
 // a one-element domain map. Slated for removal once external callers
 // migrate.
-func ApplyQuicknotePlaceholderRefresh(ctx context.Context, dailyDomain *Domain) (int, error) {
+func ApplyQuicknotePlaceholderRefresh(ctx context.Context, dailyDomain *domain.Domain) (int, error) {
 	if dailyDomain == nil {
 		return 0, fmt.Errorf("ApplyQuicknotePlaceholderRefresh: dailyDomain is nil")
 	}
-	return ApplyPlaceholderRefresh(ctx, map[string]*Domain{dailyDomain.Tag: dailyDomain})
+	return ApplyPlaceholderRefresh(ctx, map[string]*domain.Domain{dailyDomain.Tag: dailyDomain})
 }
 
 // ApplyDomainBootstrap canonicalizes any note whose `Tags` array

@@ -190,7 +190,7 @@ func (d *Domain) upsertAtomicBacklink(
 ) (string, error) {
 	parts := d.parseAtomicContent(content, bucket)
 	if parts.H1Line == "" || isEmptyH1(parts.H1Line) {
-		parts.H1Line = "# " + nowForNewNoteLink().Format(h1DatetimeFormat)
+		parts.H1Line = "# " + NowForNewNoteLink().Format(H1DatetimeFormat)
 	}
 	contentBody := strings.Trim(strings.Join(parts.BodyLines, "\n"), "\n ")
 	desired := d.renderAtomicCanonical(
@@ -225,7 +225,7 @@ func RenderAtomicCanonicalForTest(t interface{ Helper() }, d *Domain, noteTitle,
 	_ = noteTitle
 	parts := d.parseAtomicContent(content, bucket)
 	if parts.H1Line == "" || isEmptyH1(parts.H1Line) {
-		parts.H1Line = "# " + nowForNewNoteLink().Format(h1DatetimeFormat)
+		parts.H1Line = "# " + NowForNewNoteLink().Format(H1DatetimeFormat)
 	}
 	contentBody := strings.Trim(strings.Join(parts.BodyLines, "\n"), "\n ")
 	return d.renderAtomicCanonical(
@@ -258,7 +258,7 @@ func RenderAtomicCanonicalForTest(t interface{ Helper() }, d *Domain, noteTitle,
 func (d *Domain) RenderCanonicalForBootstrap(existingContent string) string {
 	parts := d.parseAtomicContent(existingContent, d.UnknownBucket)
 	if parts.H1Line == "" || isEmptyH1(parts.H1Line) {
-		parts.H1Line = "# " + nowForNewNoteLink().Format(h1DatetimeFormat)
+		parts.H1Line = "# " + NowForNewNoteLink().Format(H1DatetimeFormat)
 	}
 	if len(parts.PreambleLines) > 0 {
 		parts.BodyLines = append(append([]string{}, parts.PreambleLines...), parts.BodyLines...)

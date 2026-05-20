@@ -268,7 +268,7 @@ func (d *Domain) collectHubOverrides(
 	if hubBucket == "" {
 		return
 	}
-	for _, ident := range parseHubBulletIdentifiers(hub.Content) {
+	for _, ident := range ParseHubBulletIdentifiers(hub.Content) {
 		atom, ok := resolveAtom(ident, atomByID, atomByTitle)
 		if !ok {
 			continue
@@ -308,12 +308,12 @@ func resolveAtom(
 	return candidates[0], true
 }
 
-// parseHubBulletIdentifiers extracts every atomic identifier from a Hub
+// ParseHubBulletIdentifiers extracts every atomic identifier from a Hub
 // note's bullet list — wikilink targets (`[[Title]]` → "Title") and note
 // IDs embedded in `bear://x-callback-url/open-note?id=X` markdown links.
 // Lines that don't start with `- ` are ignored, so H2/H3 section headers,
 // blank lines, and curator-zone prose pass through silently.
-func parseHubBulletIdentifiers(content string) []string {
+func ParseHubBulletIdentifiers(content string) []string {
 	var out []string
 	for line := range strings.SplitSeq(content, "\n") {
 		trimmed := strings.TrimSpace(line)

@@ -10,6 +10,7 @@ import (
 	"log"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/fastpass"
 )
 
 // tripped both gocognit and dupl thresholds.
@@ -56,7 +57,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			name:    "foreign_tag",
 			label:   "foreign-tag escape",
 			fn: func() error {
-				_, err := domain.ApplyForeignTagEscape(ctx, domainsByTag)
+				_, err := fastpass.ApplyForeignTagEscape(ctx, domainsByTag)
 				return err
 			},
 		},
@@ -65,7 +66,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			name:    "auto_tag",
 			label:   "auto-tag",
 			fn: func() error {
-				_, err := domain.ApplyDailyDefaultTag(ctx, domainsByTag[opts.DailyDefaultTag])
+				_, err := fastpass.ApplyDailyDefaultTag(ctx, domainsByTag[opts.DailyDefaultTag])
 				return err
 			},
 		},
@@ -74,7 +75,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			name:    "domain_bootstrap",
 			label:   "domain-bootstrap canonicalize",
 			fn: func() error {
-				_, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+				_, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 				return err
 			},
 		},
@@ -83,7 +84,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			name:    "placeholder_refresh",
 			label:   "placeholder refresh",
 			fn: func() error {
-				_, err := domain.ApplyPlaceholderRefresh(ctx, domainsByTag)
+				_, err := fastpass.ApplyPlaceholderRefresh(ctx, domainsByTag)
 				return err
 			},
 		},
@@ -92,7 +93,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			name:    "cross_domain",
 			label:   "cross-domain moves",
 			fn: func() error {
-				return domain.ApplyCrossDomainMoves(ctx, opts.Domains, opts.Pins)
+				return fastpass.ApplyCrossDomainMoves(ctx, opts.Domains, opts.Pins)
 			},
 		},
 		{
@@ -100,7 +101,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			name:    "time_promotion",
 			label:   "time-promotion",
 			fn: func() error {
-				return domain.ApplyTimeBasedPromotion(ctx, opts.Domains, opts.Pins, opts.PromotionRules)
+				return fastpass.ApplyTimeBasedPromotion(ctx, opts.Domains, opts.Pins, opts.PromotionRules)
 			},
 		},
 	}

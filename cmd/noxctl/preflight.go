@@ -15,6 +15,7 @@ import (
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
+	"github.com/barad1tos/noxctl/bear/fastpass"
 	"github.com/barad1tos/noxctl/bear/state"
 )
 
@@ -160,19 +161,19 @@ func dailyDefaultTagFromCatalog(cat *config.Catalog) string {
 }
 
 // promotionRulesFromCatalog maps `[[promotion]]` stanzas onto the
-// engine-side `domain.PromotionRule` slice. Empty input or nil catalog
+// engine-side `fastpass.PromotionRule` slice. Empty input or nil catalog
 // yields a nil slice — time-promotion fast-pass treats nil as disabled.
 //
 // CLI boundary helper: `bear/` never imports `bear/config/`, so the
 // TOML-to-Domain bridge lives in `cmd/noxctl/` alongside the rest
 // of the catalog wiring.
-func promotionRulesFromCatalog(cat *config.Catalog) []domain.PromotionRule {
+func promotionRulesFromCatalog(cat *config.Catalog) []fastpass.PromotionRule {
 	if cat == nil || len(cat.Promotions) == 0 {
 		return nil
 	}
-	out := make([]domain.PromotionRule, 0, len(cat.Promotions))
+	out := make([]fastpass.PromotionRule, 0, len(cat.Promotions))
 	for _, p := range cat.Promotions {
-		out = append(out, domain.PromotionRule{From: p.From, To: p.To, Boundary: p.Boundary})
+		out = append(out, fastpass.PromotionRule{From: p.From, To: p.To, Boundary: p.Boundary})
 	}
 	return out
 }

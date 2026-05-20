@@ -5,10 +5,10 @@ import (
 	"time"
 )
 
-// nowForNewNoteLink is the time source for StampDatetimeH1's daemon-side
+// NowForNewNoteLink is the time source for StampDatetimeH1's daemon-side
 // H1 stamp. Tests override this via SetNowForNewNoteLinkForTest to get
 // deterministic output. Production code always reads time.Now.
-var nowForNewNoteLink = time.Now
+var NowForNewNoteLink = time.Now
 
 // DefaultQuickPlaceholderH1 is the single source of truth for the H1
 // marker string that x-callback new-note bootstrap URLs embed when a
@@ -23,21 +23,21 @@ var nowForNewNoteLink = time.Now
 // placeholder-refresh scan, and tests.
 const DefaultQuickPlaceholderH1 = "Quicknote"
 
-// h1DatetimeFormat is the time.Format layout for the daemon-stamped H1
+// H1DatetimeFormat is the time.Format layout for the daemon-stamped H1
 // line on atoms that arrive without one. Spec-frozen as
 // "2 January 2006 at 15:04" — extracted to a constant so the canonical
 // shape lives in one place across upsertAtomicBacklink,
 // RenderCanonicalForBootstrap, RenderAtomicCanonicalForTest, and the
 // H1-stamp emitter below.
-const h1DatetimeFormat = "2 January 2006 at 15:04"
+const H1DatetimeFormat = "2 January 2006 at 15:04"
 
 // SetNowForNewNoteLinkForTest swaps the time source used by StampDatetimeH1
 // for deterministic test output. The original value is restored at test
 // cleanup. Tests-only — production code never calls this.
 func SetNowForNewNoteLinkForTest(t interface{ Cleanup(func()) }, fn func() time.Time) {
-	prev := nowForNewNoteLink
-	nowForNewNoteLink = fn
-	t.Cleanup(func() { nowForNewNoteLink = prev })
+	prev := NowForNewNoteLink
+	NowForNewNoteLink = fn
+	t.Cleanup(func() { NowForNewNoteLink = prev })
 }
 
 // StampDatetimeH1 prepends a `# <NOW>` H1 line to body when body has no
@@ -49,7 +49,7 @@ func SetNowForNewNoteLinkForTest(t interface{ Cleanup(func()) }, fn func() time.
 //
 // Idempotent: a second call on the stamped output recognizes the new H1
 // and returns the body unchanged. Time source is the package-level
-// nowForNewNoteLink so tests can swap via SetNowForNewNoteLinkForTest.
+// NowForNewNoteLink so tests can swap via SetNowForNewNoteLinkForTest.
 //
 // Format: "2 January 2026 at 15:04" (e.g. "13 May 2026 at 15:25"). Same
 // shape the legacy newNoteLink emitted in its title= URL parameter so
@@ -59,7 +59,7 @@ func StampDatetimeH1(body string) string {
 	if hasRecognizedH1(body) {
 		return body
 	}
-	stamp := nowForNewNoteLink().Format(h1DatetimeFormat)
+	stamp := NowForNewNoteLink().Format(H1DatetimeFormat)
 	return "# " + stamp + "\n" + body
 }
 

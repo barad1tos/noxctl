@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/fastpass"
 	"github.com/barad1tos/noxctl/bear/state"
 )
 
@@ -76,7 +77,7 @@ type ApplyOpts struct {
 	// disables time-promotion entirely. Each rule names a source tag,
 	// a target tag, and the calendar boundary that triggers the move.
 	// Wired from [[promotion]] blocks in the TOML catalog.
-	PromotionRules []domain.PromotionRule
+	PromotionRules []fastpass.PromotionRule
 }
 
 // DefaultBearcliConcurrency is the ship-default capacity for
