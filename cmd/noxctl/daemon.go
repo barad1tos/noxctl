@@ -11,8 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/config"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/state"
 )
@@ -69,7 +69,7 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	pins, _ := bear.LoadPinRegistry(target)
+	pins, _ := domain.LoadPinRegistry(target)
 
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

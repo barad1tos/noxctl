@@ -1,4 +1,4 @@
-// Package testutil exposes the single source of truth for *bear.Domain
+// Package testutil exposes the single source of truth for *domain.Domain
 // test fixtures. Tests in this repo MUST NOT import the
 // library/llm/it/personal/quicknote constructor packages directly —
 // resolve fixtures through Domain/Domains/LoadDomains here instead.
@@ -8,7 +8,7 @@
 // All helpers acceptb testing.TB and fail the test on any lookup miss,
 // keeping the call sites short. The catalog is parsed once per
 // process via sync.OnceValues; every accessor reuses the cached slice
-// (no repeated TOML reads, every *bear.Domain pointer for a given tag
+// (no repeated TOML reads, every *domain.Domain pointer for a given tag
 // is stable across calls so pointer-identity assertions stay
 // deterministic).
 package testutil
@@ -19,8 +19,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/config"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // catalogPathOnce resolves examples/personal.toml absolutely. The
@@ -41,9 +41,9 @@ var catalogPathOnce = sync.OnceValue(func() string {
 
 // catalogOnce parses examples/personal.toml exactly once per process.
 // Subsequent accessor calls reuse the cached slice — no repeated TOML
-// I/O, every accessor for a given tag returns the same *bear.Domain
+// I/O, every accessor for a given tag returns the same *domain.Domain
 // pointer.
-var catalogOnce = sync.OnceValues(func() ([]*bear.Domain, error) {
+var catalogOnce = sync.OnceValues(func() ([]*domain.Domain, error) {
 	domains, _, err := config.Load(catalogPathOnce())
 	return domains, err
 })
@@ -60,7 +60,7 @@ func CatalogPath(tb testing.TB) string {
 // LoadDomains returns the parsed domain slice from examples/personal.toml.
 // Fails the test on parse error. Reuses the cached parse via
 // sync.OnceValues.
-func LoadDomains(tb testing.TB) []*bear.Domain {
+func LoadDomains(tb testing.TB) []*domain.Domain {
 	tb.Helper()
 	domains, err := catalogOnce()
 	if err != nil {
@@ -73,14 +73,14 @@ func LoadDomains(tb testing.TB) []*bear.Domain {
 // underlying *config.Catalog is intentionally discarded — tests that
 // need catalog metadata (Meta, Features) should call config.Load
 // directly via the cached path constant.
-func LoadCatalog(tb testing.TB) []*bear.Domain {
+func LoadCatalog(tb testing.TB) []*domain.Domain {
 	return LoadDomains(tb)
 }
 
 // Domain returns the single domain whose Tag equals the supplied tag.
-// Fails the test if no match exists. Returns the cached *bear.Domain
+// Fails the test if no match exists. Returns the cached *domain.Domain
 // pointer; repeated calls for the same tag are pointer-identical.
-func Domain(tb testing.TB, tag string) *bear.Domain {
+func Domain(tb testing.TB, tag string) *domain.Domain {
 	tb.Helper()
 	for _, d := range LoadDomains(tb) {
 		if d.Tag == tag {
@@ -93,14 +93,14 @@ func Domain(tb testing.TB, tag string) *bear.Domain {
 
 // Domains returns the slice of domains matching the supplied tags, in
 // the requested order. Fails the test if any tag is missing.
-func Domains(tb testing.TB, tags ...string) []*bear.Domain {
+func Domains(tb testing.TB, tags ...string) []*domain.Domain {
 	tb.Helper()
 	cat := LoadDomains(tb)
-	byTag := make(map[string]*bear.Domain, len(cat))
+	byTag := make(map[string]*domain.Domain, len(cat))
 	for _, d := range cat {
 		byTag[d.Tag] = d
 	}
-	out := make([]*bear.Domain, 0, len(tags))
+	out := make([]*domain.Domain, 0, len(tags))
 	for _, tag := range tags {
 		d, ok := byTag[tag]
 		if !ok {

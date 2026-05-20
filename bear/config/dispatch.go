@@ -3,16 +3,16 @@ package config
 import (
 	"fmt"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
-// buildFunc constructs a *bear.Domain from a stanza. The
+// buildFunc constructs a *domain.Domain from a stanza. The
 // resolveChildren callback is set only for umbrella blueprints; leaf
 // builders ignore it.
-type buildFunc func(s Stanza, resolveChildren func([]string) ([]*bear.Domain, error)) (*bear.Domain, error)
+type buildFunc func(s Stanza, resolveChildren func([]string) ([]*domain.Domain, error)) (*domain.Domain, error)
 
 // dispatch is the closed 6-entry catalog that maps a blueprint string
-// to the corresponding bear.New*Domain factory. Adding a seventh
+// to the corresponding domain.New*Domain factory. Adding a seventh
 // blueprint requires an explicit map entry plus a new builder; there
 // is intentionally no reflection or struct-tag-driven grammar.
 //
@@ -20,8 +20,8 @@ type buildFunc func(s Stanza, resolveChildren func([]string) ([]*bear.Domain, er
 // is the public entry point. DispatchSize is exported for tests.
 var dispatch = map[string]buildFunc{
 	"flat-list":              buildFlatList,
-	"flat-table":             bucketedBuilder("flat-table", bear.NewGroupedVerticalFlatDomain),
-	"grouped-vertical":       bucketedBuilder("grouped-vertical", bear.NewGroupedVerticalDomain),
+	"flat-table":             bucketedBuilder("flat-table", domain.NewGroupedVerticalFlatDomain),
+	"grouped-vertical":       bucketedBuilder("grouped-vertical", domain.NewGroupedVerticalDomain),
 	"hub-routed":             buildHubRouted,
 	"hub-routed-with-subtag": buildHubRoutedSubTag,
 	"umbrella":               buildUmbrella,
@@ -33,9 +33,9 @@ var dispatch = map[string]buildFunc{
 // closure literals in the dispatch map literal would trip dupl, and
 // the factory function remains the only meaningful difference.
 func bucketedBuilder(blueprint string,
-	factory func(tag, indexTitle, unknownBucket string, buckets []string) *bear.Domain,
+	factory func(tag, indexTitle, unknownBucket string, buckets []string) *domain.Domain,
 ) buildFunc {
-	return func(s Stanza, _ func([]string) ([]*bear.Domain, error)) (*bear.Domain, error) {
+	return func(s Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
 		return buildBucketed(blueprint, s, factory)
 	}
 }
@@ -52,14 +52,14 @@ func DispatchSize() int { return len(dispatch) }
 const validBlueprints = "flat-list, flat-table, grouped-vertical, " +
 	"hub-routed, hub-routed-with-subtag, umbrella"
 
-// Dispatch maps a stanza's blueprint string to a *bear.Domain via the
+// Dispatch maps a stanza's blueprint string to a *domain.Domain via the
 // closed catalog. Returns an error wrapping ErrUnknownBlueprint when
 // the blueprint is not one of the 6 supported values.
 //
 // The resolveChildren callback is invoked only for umbrella stanzas;
 // the loader passes a function that resolves child Tag values to
 // previously-built leaf Domains. Non-umbrella callers may pass nil.
-func Dispatch(stanza Stanza, resolveChildren func(tags []string) ([]*bear.Domain, error)) (*bear.Domain, error) {
+func Dispatch(stanza Stanza, resolveChildren func(tags []string) ([]*domain.Domain, error)) (*domain.Domain, error) {
 	builder, ok := dispatch[stanza.Blueprint]
 	if !ok {
 		return nil, fmt.Errorf("%w: %q (valid: %s)",
@@ -172,12 +172,12 @@ func validateBlueprintFields(blueprint string, s Stanza, required []optKey, allo
 // schema level — the loader checks them once before dispatch). Only
 // quick_placeholder_h1 is allowed as an optional field — it flips the
 // master "new-note" link to the x-callback bootstrap URL form (see
-// bear.Domain.QuickPlaceholderH1).
-func buildFlatList(s Stanza, _ func([]string) ([]*bear.Domain, error)) (*bear.Domain, error) {
+// domain.Domain.QuickPlaceholderH1).
+func buildFlatList(s Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
 	if err := validateBlueprintFields("flat-list", s, nil, []optKey{optQuickPlaceH1}); err != nil {
 		return nil, err
 	}
-	d := bear.NewFlatListDomain(s.Tag, s.IndexTitle)
+	d := domain.NewFlatListDomain(s.Tag, s.IndexTitle)
 	if s.QuickPlaceholderH1 != nil {
 		d.QuickPlaceholderH1 = *s.QuickPlaceholderH1
 	}
@@ -189,8 +189,8 @@ func buildFlatList(s Stanza, _ func([]string) ([]*bear.Domain, error)) (*bear.Do
 // positional args are filled BY NAME from the stanza, never by
 // arg-order coincidence.
 func buildBucketed(blueprint string, s Stanza,
-	factory func(tag, indexTitle, unknownBucket string, buckets []string) *bear.Domain,
-) (*bear.Domain, error) {
+	factory func(tag, indexTitle, unknownBucket string, buckets []string) *domain.Domain,
+) (*domain.Domain, error) {
 	if err := validateBlueprintFields(blueprint, s,
 		[]optKey{optBuckets, optUnknownBucket},
 		[]optKey{optBuckets, optUnknownBucket}); err != nil {
@@ -204,7 +204,7 @@ func buildBucketed(blueprint string, s Stanza,
 // When [[domain.master_section]] is present the domain swaps its
 // master from the default 3-tier layout to the generic vertical-
 // sections renderer driven by the predicates the operator declared.
-func buildHubRouted(s Stanza, _ func([]string) ([]*bear.Domain, error)) (*bear.Domain, error) {
+func buildHubRouted(s Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
 	if err := validateBlueprintFields("hub-routed", s,
 		[]optKey{optUnknownBucket, optHubH2Prefix},
 		[]optKey{
@@ -218,7 +218,10 @@ func buildHubRouted(s Stanza, _ func([]string) ([]*bear.Domain, error)) (*bear.D
 	if err := validateMasterSections(s); err != nil {
 		return nil, err
 	}
-	d := bear.NewHubRoutedDomain(s.Tag, s.IndexTitle, *s.UnknownBucket, *s.HubH2Prefix, bear.DefaultRenderMaster3Tier)
+	d := domain.NewHubRoutedDomain(
+		s.Tag, s.IndexTitle, *s.UnknownBucket, *s.HubH2Prefix,
+		domain.DefaultRenderMaster3Tier,
+	)
 	applyHubRoutedOptionals(d, s)
 	applyMasterSections(d, s)
 	return d, nil
@@ -281,13 +284,13 @@ func validateMasterSections(s Stanza) error {
 // domain and swaps RenderMaster to the generic sectioned renderer.
 // No-op when MasterSections is unset — the default 3-tier master
 // stays in place.
-func applyMasterSections(d *bear.Domain, s Stanza) {
+func applyMasterSections(d *domain.Domain, s Stanza) {
 	if s.MasterSections == nil {
 		return
 	}
-	sections := make([]bear.MasterSection, len(*s.MasterSections))
+	sections := make([]domain.MasterSection, len(*s.MasterSections))
 	for i, sec := range *s.MasterSections {
-		sections[i] = bear.MasterSection{
+		sections[i] = domain.MasterSection{
 			Title:            sec.Title,
 			Buckets:          sec.Buckets,
 			Script:           sec.Script,
@@ -296,26 +299,26 @@ func applyMasterSections(d *bear.Domain, s Stanza) {
 		}
 	}
 	d.MasterSections = sections
-	d.RenderMaster = bear.SectionedMasterRenderer()
+	d.RenderMaster = domain.SectionedMasterRenderer()
 }
 
-// countModeFromString maps the TOML enum string to the bear.CountMode
+// countModeFromString maps the TOML enum string to the domain.CountMode
 // constant. Empty → CountModeNotes (the renderer-friendly default).
 // validateMasterSections rejects unknown strings before this runs.
-func countModeFromString(s string) bear.CountMode {
+func countModeFromString(s string) domain.CountMode {
 	if s == "buckets" {
-		return bear.CountModeBuckets
+		return domain.CountModeBuckets
 	}
-	return bear.CountModeNotes
+	return domain.CountModeNotes
 }
 
 // ApplyMasterSectionsForTest exposes applyMasterSections to the
 // external test package. Production callers reach the same logic
 // through buildHubRouted; this seam lets a test drive two consecutive
-// applies on the same *bear.Domain to pin the "no append on repeat"
+// applies on the same *domain.Domain to pin the "no append on repeat"
 // idempotency contract without going through full Dispatch (which
 // constructs a fresh Domain each call and can't catch the regression).
-func ApplyMasterSectionsForTest(d *bear.Domain, s Stanza) {
+func ApplyMasterSectionsForTest(d *domain.Domain, s Stanza) {
 	applyMasterSections(d, s)
 }
 
@@ -332,7 +335,7 @@ func showBulletCountsDefault(p *bool) bool {
 // applyHubRoutedOptionals stamps the optional pointer-typed fields on
 // the constructed Domain. Extracted to keep buildHubRouted under the
 // gocognit ≤15 budget.
-func applyHubRoutedOptionals(d *bear.Domain, s Stanza) {
+func applyHubRoutedOptionals(d *domain.Domain, s Stanza) {
 	if s.OwnGroup != nil {
 		d.OwnGroup = *s.OwnGroup
 	}
@@ -356,17 +359,17 @@ func applyHubRoutedOptionals(d *bear.Domain, s Stanza) {
 // buildHubRoutedSubTag: REQUIRES buckets + unknown_bucket. Sub-tag
 // preserving hubs key off `<top> · <bucket>` titles, so hub_h2_prefix
 // is forbidden (the factory wires its own IsHubNote).
-func buildHubRoutedSubTag(s Stanza, _ func([]string) ([]*bear.Domain, error)) (*bear.Domain, error) {
+func buildHubRoutedSubTag(s Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
 	if err := validateBlueprintFields("hub-routed-with-subtag", s,
 		[]optKey{optBuckets, optUnknownBucket},
 		[]optKey{optBuckets, optUnknownBucket, optSubtag}); err != nil {
 		return nil, err
 	}
-	return bear.NewHubRoutedSubTagDomain(s.Tag, s.IndexTitle, *s.UnknownBucket, *s.Buckets), nil
+	return domain.NewHubRoutedSubTagDomain(s.Tag, s.IndexTitle, *s.UnknownBucket, *s.Buckets), nil
 }
 
 // buildUmbrella: REQUIRES children + default_child. Resolver maps each
-// child Tag to a previously-built *bear.Domain (loader two-pass — leaf
+// child Tag to a previously-built *domain.Domain (loader two-pass — leaf
 // domains first, umbrellas last). The factory wires the reverse
 // ParentMaster pointer on every child; that side effect is by design.
 //
@@ -374,7 +377,7 @@ func buildHubRoutedSubTag(s Stanza, _ func([]string) ([]*bear.Domain, error)) (*
 // targets (spec component 4); safeNewUmbrellaDomain converts the
 // factory's panic-on-misconfig into an error so malformed TOML produces
 // a clean error path instead of crashing the loader.
-func buildUmbrella(s Stanza, resolveChildren func([]string) ([]*bear.Domain, error)) (*bear.Domain, error) {
+func buildUmbrella(s Stanza, resolveChildren func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
 	if err := validateBlueprintFields("umbrella", s,
 		[]optKey{optChildren, optDefaultChild},
 		[]optKey{optChildren, optDefaultChild}); err != nil {
@@ -390,16 +393,16 @@ func buildUmbrella(s Stanza, resolveChildren func([]string) ([]*bear.Domain, err
 	return safeNewUmbrellaDomain(s.Tag, s.IndexTitle, *s.DefaultChild, kids)
 }
 
-// safeNewUmbrellaDomain wraps bear.NewUmbrellaDomain, recovering its
+// safeNewUmbrellaDomain wraps domain.NewUmbrellaDomain, recovering its
 // panic-on-misconfig into a returned error. The factory panics so
 // hardcoded callers fail fast at init; the TOML loader needs a soft
 // error path so malformed user config produces a friendly message
 // instead of crashing the daemon.
-func safeNewUmbrellaDomain(tag, indexTitle, defaultChild string, kids []*bear.Domain) (d *bear.Domain, err error) {
+func safeNewUmbrellaDomain(tag, indexTitle, defaultChild string, kids []*domain.Domain) (d *domain.Domain, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("umbrella %q: %v", tag, r)
 		}
 	}()
-	return bear.NewUmbrellaDomain(tag, indexTitle, defaultChild, kids), nil
+	return domain.NewUmbrellaDomain(tag, indexTitle, defaultChild, kids), nil
 }

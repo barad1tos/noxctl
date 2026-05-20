@@ -18,7 +18,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // Options is the input bundle for Run.
@@ -48,7 +48,7 @@ type Options struct {
 // classify content structure as catalog structure. Operators who
 // want hub-routed pick it themselves after running import.
 func Run(ctx context.Context, opts Options) error {
-	notes, err := bear.ListNotesForTag(ctx, opts.Tag)
+	notes, err := domain.ListNotesForTag(ctx, opts.Tag)
 	if err != nil {
 		return fmt.Errorf("import: list notes for tag %q: %w", opts.Tag, err)
 	}
@@ -63,10 +63,10 @@ func Run(ctx context.Context, opts Options) error {
 // the orchestrator's render path to external tests under
 // tests/bear/cli/importcmd/ without requiring a live bearcli round
 // trip (project rule forbids in-package tests). Production callers
-// reach the same logic through Run, which calls bear.ListNotesFor
+// reach the same logic through Run, which calls domain.ListNotesFor
 // Tag for real and then routes the result through the identical
 // infer + emit pair.
-func EmitWithNotesForTest(w io.Writer, tag string, notes []bear.Note) {
+func EmitWithNotesForTest(w io.Writer, tag string, notes []domain.Note) {
 	emit(w, tag, len(notes), infer(tag, notes))
 }
 
@@ -81,7 +81,7 @@ type suggestion struct {
 
 // infer picks a blueprint based on observable structure across the
 // note set.
-func infer(tag string, notes []bear.Note) suggestion {
+func infer(tag string, notes []domain.Note) suggestion {
 	if len(notes) == 0 {
 		return suggestion{
 			blueprint: "flat-list",
@@ -109,7 +109,7 @@ func infer(tag string, notes []bear.Note) suggestion {
 // when the answer is yes. Empty input or any note that misses the
 // prefix returns `_, false` — the caller falls back to the next
 // heuristic.
-func commonSubTagBuckets(tag string, notes []bear.Note) ([]string, bool) {
+func commonSubTagBuckets(tag string, notes []domain.Note) ([]string, bool) {
 	if len(notes) == 0 {
 		return nil, false
 	}

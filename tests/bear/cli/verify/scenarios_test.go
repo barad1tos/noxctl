@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/cli/verify"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // TestRun_DefaultLogPath_UsesHomeBaseline — when `--log-path` is empty,
@@ -43,7 +43,7 @@ func TestRun_DefaultLogPath_UsesHomeBaseline(t *testing.T) {
 // FAIL). Covers checkPlanParity's res.Interrupted branch.
 func TestRun_CtxCanceledMidPlan_PlanParitySurfacesInterrupted(t *testing.T) {
 	cfg := writeMinimalCatalog(t)
-	ctx, cancel := context.WithCancel(bear.ContextWithBackend(t.Context(), benignBearcliBackend{}))
+	ctx, cancel := context.WithCancel(domain.ContextWithBackend(t.Context(), benignBearcliBackend{}))
 	cancel() // pre-cancel; engine.Plan sees Done immediately.
 
 	var stdout, stderr strings.Builder

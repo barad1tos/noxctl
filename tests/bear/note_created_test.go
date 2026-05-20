@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 func TestNoteCreatedJSONUnmarshal(t *testing.T) {
 	raw := `{"id":"X","title":"Y","content":"Z","created":"2026-05-07T15:06:38Z"}`
-	var note bear.Note
+	var note domain.Note
 	if err := json.Unmarshal([]byte(raw), &note); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestNoteCreatedJSONUnmarshal(t *testing.T) {
 
 func TestNoteCreatedZeroOnMissing(t *testing.T) {
 	raw := `{"id":"X","title":"Y","content":"Z"}`
-	var note bear.Note
+	var note domain.Note
 	if err := json.Unmarshal([]byte(raw), &note); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}

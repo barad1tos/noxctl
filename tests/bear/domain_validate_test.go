@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // TestDomainValidate_UmbrellaRequiresDefaultChild covers spec component
@@ -13,46 +13,46 @@ import (
 // children. Without this rule, umbrella masters fall back to hardcoded
 // children[0] — fragile across registration-order refactors.
 func TestDomainValidate_UmbrellaRequiresDefaultChild(t *testing.T) {
-	leafA := &bear.Domain{
+	leafA := &domain.Domain{
 		Tag:          "library/poetry",
 		CanonicalTag: "#library/poetry",
 		IndexTitle:   "✱ Поезія",
-		ParseMeta:    bear.DefaultParseMetaCanonical,
-		RenderMaster: bear.DefaultRenderMasterFlat,
+		ParseMeta:    domain.DefaultParseMetaCanonical,
+		RenderMaster: domain.DefaultRenderMasterFlat,
 	}
-	leafB := &bear.Domain{
+	leafB := &domain.Domain{
 		Tag:          "library/lyrics",
 		CanonicalTag: "#library/lyrics",
 		IndexTitle:   "✱ Lyrics",
-		ParseMeta:    bear.DefaultParseMetaCanonical,
-		RenderMaster: bear.DefaultRenderMasterFlat,
+		ParseMeta:    domain.DefaultParseMetaCanonical,
+		RenderMaster: domain.DefaultRenderMasterFlat,
 	}
 
 	cases := []struct {
 		name         string
 		defaultChild string
-		children     []*bear.Domain
+		children     []*domain.Domain
 		isUmbrella   bool
 		wantErr      string // substring; "" = expect no error
 	}{
 		{
 			name:         "umbrella with empty DefaultChild rejected",
 			defaultChild: "",
-			children:     []*bear.Domain{leafA, leafB},
+			children:     []*domain.Domain{leafA, leafB},
 			isUmbrella:   true,
 			wantErr:      "DefaultChild is required",
 		},
 		{
 			name:         "umbrella with unknown DefaultChild rejected",
 			defaultChild: "library/nonsense",
-			children:     []*bear.Domain{leafA, leafB},
+			children:     []*domain.Domain{leafA, leafB},
 			isUmbrella:   true,
 			wantErr:      "library/nonsense",
 		},
 		{
 			name:         "umbrella with valid DefaultChild accepted",
 			defaultChild: "library/poetry",
-			children:     []*bear.Domain{leafA, leafB},
+			children:     []*domain.Domain{leafA, leafB},
 			isUmbrella:   true,
 			wantErr:      "",
 		},
@@ -75,18 +75,18 @@ func TestDomainValidate_UmbrellaRequiresDefaultChild(t *testing.T) {
 // buildValidateCase assembles the Domain under test, either via the
 // umbrella factory (which surfaces factory errors through Validate) or
 // as a standalone leaf literal carrying an arbitrary DefaultChild.
-func buildValidateCase(t *testing.T, isUmbrella bool, defaultChild string, children []*bear.Domain) *bear.Domain {
+func buildValidateCase(t *testing.T, isUmbrella bool, defaultChild string, children []*domain.Domain) *domain.Domain {
 	t.Helper()
 	if isUmbrella {
-		return bear.NewUmbrellaDomainForTest(t, "library", "✱ Library", defaultChild, children)
+		return domain.NewUmbrellaDomainForTest(t, "library", "✱ Library", defaultChild, children)
 	}
-	return &bear.Domain{
+	return &domain.Domain{
 		Tag:          "library/poetry-leaf",
 		CanonicalTag: "#library/poetry-leaf",
 		IndexTitle:   "✱ Poetry Leaf",
 		DefaultChild: defaultChild,
-		ParseMeta:    bear.DefaultParseMetaCanonical,
-		RenderMaster: bear.DefaultRenderMasterFlat,
+		ParseMeta:    domain.DefaultParseMetaCanonical,
+		RenderMaster: domain.DefaultRenderMasterFlat,
 	}
 }
 
@@ -111,17 +111,17 @@ func assertValidateError(t *testing.T, err error, wantErr string) {
 // itself enforces this via the error-returning newUmbrellaDomainStrict
 // path (NewUmbrellaDomainForTest surfaces it as Validate error).
 func TestNewUmbrellaDomain_RejectsNestedUmbrella(t *testing.T) {
-	innerUmbrella := &bear.Domain{
+	innerUmbrella := &domain.Domain{
 		Tag:             "library/sub-umbrella",
 		CanonicalTag:    "#library/sub-umbrella",
 		IndexTitle:      "✱ Sub",
 		SkipAtomicsPass: true,
 		DefaultChild:    "library/poetry",
-		ParseMeta:       bear.DefaultParseMetaCanonical,
-		RenderMaster:    bear.DefaultRenderMasterFlat,
+		ParseMeta:       domain.DefaultParseMetaCanonical,
+		RenderMaster:    domain.DefaultRenderMasterFlat,
 	}
-	d := bear.NewUmbrellaDomainForTest(t, "library", "✱ Library", "library/sub-umbrella",
-		[]*bear.Domain{innerUmbrella})
+	d := domain.NewUmbrellaDomainForTest(t, "library", "✱ Library", "library/sub-umbrella",
+		[]*domain.Domain{innerUmbrella})
 
 	err := d.Validate()
 	if err == nil || !strings.Contains(err.Error(), "nested umbrella") {

@@ -230,7 +230,7 @@ func TestPlanContextCancelledMarksInterrupted(t *testing.T) {
 	}
 	// Zero-domain + canceled ctx: loop never executes; Interrupted stays false.
 	// The cancellation gate fires only when there ARE domains to walk; the
-	// integration-time Test 6 from the plan requires real *bear.Domain values
+	// integration-time Test 6 from the plan requires real *domain.Domain values
 	// (out of scope for this read-only test seam — covered by smoke).
 	if len(res.Errors) != 0 {
 		t.Errorf("Errors = %v, want empty (cancellation is not an error)", res.Errors)

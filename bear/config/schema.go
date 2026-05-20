@@ -1,5 +1,5 @@
 // Package config decodes noxctl.toml into typed Catalog/Stanza
-// structs and dispatches each stanza into a *bear.Domain via the
+// structs and dispatches each stanza into a *domain.Domain via the
 // closed 6-blueprint catalog.
 //
 // Architectural constraints:

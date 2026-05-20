@@ -10,7 +10,7 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
@@ -21,7 +21,7 @@ import (
 // which targeted the now-deleted bear/new_note.go.
 func TestNewNoteURLFile_NoCyrillicLiterals(t *testing.T) {
 	repoRoot := findRepoRootFromTest(t)
-	for _, rel := range []string{"bear/xcallback.go", "bear/h1stamp.go"} {
+	for _, rel := range []string{"bear/domain/xcallback.go", "bear/domain/h1stamp.go"} {
 		path := filepath.Join(repoRoot, rel)
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
@@ -68,10 +68,10 @@ func hasCyrillicRun(s string) bool {
 // is empty, the effective accessor returns DefaultQuickPlaceholderH1;
 // when set, it returns the override verbatim.
 func TestEffectiveQuickPlaceholderH1_FallsBackToDefault(t *testing.T) {
-	d := &bear.Domain{Tag: "x", CanonicalTag: "#x", IndexTitle: "X"}
-	if got := d.EffectiveQuickPlaceholderH1ForTest(); got != bear.DefaultQuickPlaceholderH1 {
+	d := &domain.Domain{Tag: "x", CanonicalTag: "#x", IndexTitle: "X"}
+	if got := d.EffectiveQuickPlaceholderH1ForTest(); got != domain.DefaultQuickPlaceholderH1 {
 		t.Errorf("empty field should yield default %q; got %q",
-			bear.DefaultQuickPlaceholderH1, got)
+			domain.DefaultQuickPlaceholderH1, got)
 	}
 	d.QuickPlaceholderH1 = "Custom"
 	if got := d.EffectiveQuickPlaceholderH1ForTest(); got != "Custom" {
@@ -82,9 +82,9 @@ func TestEffectiveQuickPlaceholderH1_FallsBackToDefault(t *testing.T) {
 // TestDefaultQuickPlaceholderH1_Value locks the canonical placeholder
 // string used across all domains.
 func TestDefaultQuickPlaceholderH1_Value(t *testing.T) {
-	if bear.DefaultQuickPlaceholderH1 != "Quicknote" {
+	if domain.DefaultQuickPlaceholderH1 != "Quicknote" {
 		t.Errorf("DefaultQuickPlaceholderH1 = %q, want %q",
-			bear.DefaultQuickPlaceholderH1, "Quicknote")
+			domain.DefaultQuickPlaceholderH1, "Quicknote")
 	}
 }
 
@@ -96,7 +96,7 @@ func TestDefaultQuickPlaceholderH1_Value(t *testing.T) {
 // domain. No title= query param (Bear derives title from the embedded
 // H1 marker).
 func TestNewNoteURL_BootstrapEmission_ContainsExpectedShape(t *testing.T) {
-	emitted := bear.NewNoteURLFromDomain(testutil.Domain(t, "quicknote/daily")).Emit()
+	emitted := domain.NewNoteURLFromDomain(testutil.Domain(t, "quicknote/daily")).Emit()
 	for _, marker := range []string{
 		"text=",
 		"edit=yes",

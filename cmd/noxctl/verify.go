@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/cli/verify"
 	"github.com/barad1tos/noxctl/bear/config"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 )
 
@@ -121,7 +121,7 @@ func buildVerifyApplyTemplate() (engine.ApplyOpts, error) {
 			config.FormatLoadError(loadErr, cfgPath))
 	}
 	_, pinTarget := pinPaths()
-	pins, _ := bear.LoadPinRegistry(pinTarget)
+	pins, _ := domain.LoadPinRegistry(pinTarget)
 	return engine.ApplyOpts{
 		Pins:            pins,
 		StatePath:       "./.noxctl/state.json",

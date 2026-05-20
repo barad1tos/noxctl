@@ -36,7 +36,7 @@ func TestState_LoadMissingReturnsFreshV1(t *testing.T) {
 }
 
 // TestState_RoundTrip seeds a State, persists via Save (which routes
-// through bear.AtomicWriteJSON), then re-reads via Load and asserts
+// through domain.AtomicWriteJSON), then re-reads via Load and asserts
 // every primitive field round-trips inside a 1-second tolerance for
 // the LastApply timestamp.
 func TestState_RoundTrip(t *testing.T) {

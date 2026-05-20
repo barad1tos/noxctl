@@ -3,7 +3,7 @@ package engine
 import (
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // ApplyResult is the return payload from Apply. Counts per pre-pass +
@@ -20,7 +20,7 @@ type ApplyResult struct {
 	// Bench mode reads this to emit per-cycle throughput
 	// numbers; production daemon path leaves WithMetrics false so the
 	// snapshot is a zero-cost no-op.
-	Metrics bear.BearcliMetrics
+	Metrics domain.BearcliMetrics
 }
 
 // PrePassCounts captures per-pre-pass outcomes. OK = atoms processed

@@ -91,7 +91,7 @@ func TestCobraSmoke(t *testing.T) {
 		{"plan-help-output", []string{"plan", "--help"}, "--output", true},
 		{"plan-help-tag-arg", []string{"plan", "--help"}, "[tag]", true},
 		// audit + lint are the operator-facing wrappers around
-		// bear.AuditDomains / bear.LintApplyDomains. Smoke their --help
+		// domain.AuditDomains / domain.LintApplyDomains. Smoke their --help
 		// so the flag surface stays visible to future refactors.
 		{"audit-help-readonly", []string{"audit", "--help"}, "read-only", true},
 		{"lint-help-apply", []string{"lint", "--help"}, "--apply", true},

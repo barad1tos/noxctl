@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // TestCheckCtx_NotCanceled_ReturnsNil — live ctx must propagate as nil
 // so the head-of-loop check is a no-op on the happy path.
 func TestCheckCtx_NotCanceled_ReturnsNil(t *testing.T) {
-	if err := bear.CheckCtx(context.Background()); err != nil {
+	if err := domain.CheckCtx(context.Background()); err != nil {
 		t.Errorf("expected nil for live ctx, got %v", err)
 	}
 }
@@ -23,7 +23,7 @@ func TestCheckCtx_NotCanceled_ReturnsNil(t *testing.T) {
 func TestCheckCtx_PreCanceled_ReturnsCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := bear.CheckCtx(ctx)
+	err := domain.CheckCtx(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
@@ -36,7 +36,7 @@ func TestCheckCtx_DeadlineExceeded_ReturnsDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
 	defer cancel()
 	time.Sleep(5 * time.Millisecond) // ensure deadline passes
-	err := bear.CheckCtx(ctx)
+	err := domain.CheckCtx(ctx)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("expected context.DeadlineExceeded, got %v", err)
 	}

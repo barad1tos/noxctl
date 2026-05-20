@@ -1,6 +1,6 @@
 // Package engine_test — domain-bootstrap fast-pass tests.
 //
-// Validates `bear.ApplyDomainBootstrap` — the new 4th fast-pass that
+// Validates `domain.ApplyDomainBootstrap` — the new 4th fast-pass that
 // canonicalizes any note whose tags match a managed leaf domain. Covers
 // all five real factory shapes (`HubRouted`, `GroupedVerticalFlat`,
 // `FlatList`, etc.), the umbrella-redirect path via `ResolveURLDomain`,
@@ -25,7 +25,7 @@ import (
 	"testing"
 	"testing/synctest"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
@@ -66,8 +66,8 @@ func lastOverwriteBody(t *testing.T, fake *fakeAutoTagBackend) string {
 func TestApplyDomainBootstrap_LeafDomain_HubRouted(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domains := []*bear.Domain{testutil.Domain(t, "library/lyrics")}
-		domainsByTag := bear.DomainsByTag(domains)
+		domains := []*domain.Domain{testutil.Domain(t, "library/lyrics")}
+		domainsByTag := domain.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
 			"id":      "lyr-1",
@@ -76,9 +76,9 @@ func TestApplyDomainBootstrap_LeafDomain_HubRouted(t *testing.T) {
 			"content": "user-typed preamble line\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := bear.ContextWithBackend(context.Background(), fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -105,8 +105,8 @@ func TestApplyDomainBootstrap_LeafDomain_HubRouted(t *testing.T) {
 func TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domains := []*bear.Domain{testutil.Domain(t, "library/aphorisms")}
-		domainsByTag := bear.DomainsByTag(domains)
+		domains := []*domain.Domain{testutil.Domain(t, "library/aphorisms")}
+		domainsByTag := domain.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
 			"id":      "aph-1",
@@ -115,9 +115,9 @@ func TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat(t *testing.T) {
 			"content": "War is peace.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := bear.ContextWithBackend(context.Background(), fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -142,8 +142,8 @@ func TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat(t *testing.T) {
 func TestApplyDomainBootstrap_LeafDomain_FlatList(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domains := []*bear.Domain{testutil.Domain(t, "llm/characters")}
-		domainsByTag := bear.DomainsByTag(domains)
+		domains := []*domain.Domain{testutil.Domain(t, "llm/characters")}
+		domainsByTag := domain.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
 			"id":      "chr-1",
@@ -152,9 +152,9 @@ func TestApplyDomainBootstrap_LeafDomain_FlatList(t *testing.T) {
 			"content": "Wise grey wanderer.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := bear.ContextWithBackend(context.Background(), fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -176,16 +176,16 @@ func TestApplyDomainBootstrap_LeafDomain_FlatList(t *testing.T) {
 func TestApplyDomainBootstrap_UmbrellaRedirect(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		umbrella := bear.NewUmbrellaDomain(
+		umbrella := domain.NewUmbrellaDomain(
 			"llm",
 			"✱ LLM",
 			"llm/agents",
-			[]*bear.Domain{testutil.Domain(t, "llm/agents"), testutil.Domain(t, "llm/characters")},
+			[]*domain.Domain{testutil.Domain(t, "llm/agents"), testutil.Domain(t, "llm/characters")},
 		)
 		// Index BOTH umbrella and leaf so matchOwningDomain can resolve
 		// `#llm` (umbrella-only-tag branch) → ResolveURLDomain → leaf.
-		domains := []*bear.Domain{testutil.Domain(t, "llm/agents"), testutil.Domain(t, "llm/characters"), umbrella}
-		domainsByTag := bear.DomainsByTag(domains)
+		domains := []*domain.Domain{testutil.Domain(t, "llm/agents"), testutil.Domain(t, "llm/characters"), umbrella}
+		domainsByTag := domain.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
 			"id":      "llm-bare-1",
@@ -194,9 +194,9 @@ func TestApplyDomainBootstrap_UmbrellaRedirect(t *testing.T) {
 			"content": "Routes prompts between providers.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := bear.ContextWithBackend(context.Background(), fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -219,9 +219,9 @@ func TestApplyDomainBootstrap_MultipleLeafsMostSpecific(t *testing.T) {
 		resetPoolForApply(t)
 		// Construct a synthetic `claude` leaf alongside `llm/agents` to
 		// exercise the multi-leaf-with-different-lengths code path.
-		claude := bear.NewFlatListDomain("claude", "✱ Claude")
-		domains := []*bear.Domain{claude, testutil.Domain(t, "llm/agents")}
-		domainsByTag := bear.DomainsByTag(domains)
+		claude := domain.NewFlatListDomain("claude", "✱ Claude")
+		domains := []*domain.Domain{claude, testutil.Domain(t, "llm/agents")}
+		domainsByTag := domain.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
 			"id":      "agent-1",
@@ -230,9 +230,9 @@ func TestApplyDomainBootstrap_MultipleLeafsMostSpecific(t *testing.T) {
 			"content": "PR review specialist.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := bear.ContextWithBackend(context.Background(), fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -260,10 +260,10 @@ func TestApplyDomainBootstrap_MultipleLeafsTieSkip(t *testing.T) {
 		resetPoolForApply(t)
 		// Two synthetic equal-length leaves; intentionally same length so
 		// `mostSpecificOrSkip` triggers the tied branch.
-		leafA := bear.NewFlatListDomain("foo/alpha", "✱ Alpha")
-		leafB := bear.NewFlatListDomain("foo/bravo", "✱ Bravo")
-		domains := []*bear.Domain{leafA, leafB}
-		domainsByTag := bear.DomainsByTag(domains)
+		leafA := domain.NewFlatListDomain("foo/alpha", "✱ Alpha")
+		leafB := domain.NewFlatListDomain("foo/bravo", "✱ Bravo")
+		domains := []*domain.Domain{leafA, leafB}
+		domainsByTag := domain.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
 			"id":      "tie-1",
@@ -272,9 +272,9 @@ func TestApplyDomainBootstrap_MultipleLeafsTieSkip(t *testing.T) {
 			"content": "Two equal leaves claim me.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := bear.ContextWithBackend(context.Background(), fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -294,8 +294,8 @@ func TestApplyDomainBootstrap_MultipleLeafsTieSkip(t *testing.T) {
 func TestApplyDomainBootstrap_AlreadyCanonicalNoOp(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domains := []*bear.Domain{testutil.Domain(t, "llm/characters")}
-		domainsByTag := bear.DomainsByTag(domains)
+		domains := []*domain.Domain{testutil.Domain(t, "llm/characters")}
+		domainsByTag := domain.DomainsByTag(domains)
 
 		// Pre-render the canonical body via the SAME function the pass uses,
 		// so equalIgnoringNewNoteLinkStrict returns true on the input.
@@ -308,9 +308,9 @@ func TestApplyDomainBootstrap_AlreadyCanonicalNoOp(t *testing.T) {
 			"content": canonical,
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := bear.ContextWithBackend(context.Background(), fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -335,9 +335,9 @@ func TestApplyDomainBootstrap_AlreadyCanonicalNoOp(t *testing.T) {
 func TestApplyDomainBootstrap_StructuralNoteSkip(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		bear.ResetBootstrapLoopForTest()
-		domains := []*bear.Domain{testutil.Domain(t, "llm/characters")}
-		domainsByTag := bear.DomainsByTag(domains)
+		domain.ResetBootstrapLoopForTest()
+		domains := []*domain.Domain{testutil.Domain(t, "llm/characters")}
+		domainsByTag := domain.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
 			"id":      "umbrella-master-1",
@@ -346,9 +346,9 @@ func TestApplyDomainBootstrap_StructuralNoteSkip(t *testing.T) {
 			"content": "# ✱ LLM\n\n## Розділи (4)\n- [[✱ LLM Агенти]] (10)\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := bear.ContextWithBackend(context.Background(), fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -372,9 +372,9 @@ func TestApplyDomainBootstrap_StructuralNoteSkip(t *testing.T) {
 func TestApplyDomainBootstrap_SubTagBucketNoOp(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		bear.ResetBootstrapLoopForTest()
-		domains := []*bear.Domain{testutil.Domain(t, "health")}
-		domainsByTag := bear.DomainsByTag(domains)
+		domain.ResetBootstrapLoopForTest()
+		domains := []*domain.Domain{testutil.Domain(t, "health")}
+		domainsByTag := domain.DomainsByTag(domains)
 
 		// Sub-tag bucket form — `#health/інше | …`, the actual shape
 		// produced by per-domain regen for grouped-vertical leaves.
@@ -391,9 +391,9 @@ func TestApplyDomainBootstrap_SubTagBucketNoOp(t *testing.T) {
 			"content": subTagged,
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := bear.ContextWithBackend(context.Background(), fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -424,8 +424,8 @@ func TestApplyDomainBootstrap_SubTagBucketNoOp(t *testing.T) {
 func TestApplyDomainBootstrap_AlreadyBucketedNoOp(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domains := []*bear.Domain{testutil.Domain(t, "library/lyrics")}
-		domainsByTag := bear.DomainsByTag(domains)
+		domains := []*domain.Domain{testutil.Domain(t, "library/lyrics")}
+		domainsByTag := domain.DomainsByTag(domains)
 
 		// Hand-crafted body that simulates per-domain regen output: real
 		// bucket `[[Дайте-танк]]` (atomic-canonical form), NOT
@@ -442,9 +442,9 @@ func TestApplyDomainBootstrap_AlreadyBucketedNoOp(t *testing.T) {
 			"content": bucketed,
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := bear.ContextWithBackend(context.Background(), fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -463,8 +463,8 @@ func TestApplyDomainBootstrap_AlreadyBucketedNoOp(t *testing.T) {
 func TestApplyDomainBootstrap_NoManagedTagSkip(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domains := []*bear.Domain{testutil.Domain(t, "llm/characters")}
-		domainsByTag := bear.DomainsByTag(domains)
+		domains := []*domain.Domain{testutil.Domain(t, "llm/characters")}
+		domainsByTag := domain.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
 			"id":      "stray-1",
@@ -473,9 +473,9 @@ func TestApplyDomainBootstrap_NoManagedTagSkip(t *testing.T) {
 			"content": "Not our note.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := bear.ContextWithBackend(context.Background(), fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -506,14 +506,14 @@ func TestApplyDomainBootstrap_DefensiveUmbrellaGuard(t *testing.T) {
 		// Bare umbrella — no DefaultChild leaf wired. ResolveURLDomain
 		// returns self when defaultChildDomain == nil (see
 		// bear/methods.go for the post-PR-H3 location).
-		bareUmbrella := &bear.Domain{
+		bareUmbrella := &domain.Domain{
 			Tag:             "phantom",
 			CanonicalTag:    "#phantom",
 			IndexTitle:      "✱ Phantom",
 			UnknownBucket:   "Other",
 			SkipAtomicsPass: true,
 		}
-		domainsByTag := map[string]*bear.Domain{
+		domainsByTag := map[string]*domain.Domain{
 			"phantom": bareUmbrella,
 		}
 
@@ -524,9 +524,9 @@ func TestApplyDomainBootstrap_DefensiveUmbrellaGuard(t *testing.T) {
 			"content": "umbrella tag only — must trigger guard.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := bear.ContextWithBackend(context.Background(), fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -549,9 +549,9 @@ func TestApplyDomainBootstrap_DefensiveUmbrellaGuard(t *testing.T) {
 func TestApplyDomainBootstrap_LoopGuard_SkipsAfterCap(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		bear.ResetBootstrapLoopForTest()
-		domains := []*bear.Domain{testutil.Domain(t, "llm/characters")}
-		domainsByTag := bear.DomainsByTag(domains)
+		domain.ResetBootstrapLoopForTest()
+		domains := []*domain.Domain{testutil.Domain(t, "llm/characters")}
+		domainsByTag := domain.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
 			"id":      "loop-cap-1",
@@ -560,7 +560,7 @@ func TestApplyDomainBootstrap_LoopGuard_SkipsAfterCap(t *testing.T) {
 			"content": "Wise grey wanderer.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := bear.ContextWithBackend(context.Background(), fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
 
 		const cap = 5
 		driveBootstrapNTimes(t, ctx, domainsByTag, cap, 1)
@@ -577,12 +577,12 @@ func TestApplyDomainBootstrap_LoopGuard_SkipsAfterCap(t *testing.T) {
 func driveBootstrapNTimes(
 	t *testing.T,
 	ctx context.Context,
-	domainsByTag map[string]*bear.Domain,
+	domainsByTag map[string]*domain.Domain,
 	n, wantPerCall int,
 ) {
 	t.Helper()
 	for i := 1; i <= n; i++ {
-		got, err := bear.ApplyDomainBootstrap(ctx, domainsByTag)
+		got, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("call %d: ApplyDomainBootstrap: %v", i, err)
 		}
@@ -605,14 +605,14 @@ func assertOverwriteCount(t *testing.T, fake *fakeAutoTagBackend, want int, labe
 // TestApplyDomainBootstrap_SourceRegexUmbrellaGuard is a source-regex
 // regression lock asserting the defensive
 // `if d.SkipAtomicsPass` branch literal stays present in
-// bear/bootstrap.go AND that the word "umbrella" appears within 5
+// bear/domain/bootstrap.go AND that the word "umbrella" appears within 5
 // lines of it (the comment that explains why the branch exists).
 // Future refactors that delete the guard as "unreachable dead code"
 // will trip this test instead of silently restoring the bug class.
 func TestApplyDomainBootstrap_SourceRegexUmbrellaGuard(t *testing.T) {
-	source, err := os.ReadFile("../../../bear/bootstrap.go")
+	source, err := os.ReadFile("../../../bear/domain/bootstrap.go")
 	if err != nil {
-		t.Fatalf("read bear/bootstrap.go: %v", err)
+		t.Fatalf("read bear/domain/bootstrap.go: %v", err)
 	}
 	lines := strings.Split(string(source), "\n")
 	guardRE := regexp.MustCompile(`if\s+d\.SkipAtomicsPass`)
@@ -625,7 +625,7 @@ func TestApplyDomainBootstrap_SourceRegexUmbrellaGuard(t *testing.T) {
 		}
 	}
 	if len(guardLines) == 0 {
-		t.Fatalf("defensive `if d.SkipAtomicsPass` guard missing from bear/bootstrap.go — defensive-guard regression lock failed")
+		t.Fatalf("defensive `if d.SkipAtomicsPass` guard missing from bear/domain/bootstrap.go — defensive-guard regression lock failed")
 	}
 	for _, gl := range guardLines {
 		// Scan ±5 lines for the word "umbrella" — the comment that

@@ -1,5 +1,5 @@
 // Package overwriteoutcome captures the three counter-relevant exit
-// paths of bear.overwriteWithRetry and exposes a pure Record routine
+// paths of domain.overwriteWithRetry and exposes a pure Record routine
 // for incrementing hash-conflict / retry-succeeded / retry-failed
 // metrics counters.
 //
@@ -31,9 +31,9 @@ const (
 // to outcome. Counters are passed as pointers so this routine has no
 // global state and stays trivially testable from an external package.
 //
-// Wired from bear.overwriteWithRetry's three counter-increment branches.
+// Wired from domain.overwriteWithRetry's three counter-increment branches.
 // The audit reporter reads the resulting metrics
-// via bear.BearcliMetricsSnapshot.
+// via domain.BearcliMetricsSnapshot.
 func Record(outcome Outcome, hashConflicts, retriesOK, retriesFail *atomic.Int64) {
 	switch outcome {
 	case NoConflict:

@@ -26,7 +26,7 @@
 // Auto-tag fast-pass: a THIRD trigger source alongside FSEvent +
 // mtime-poll. [Daemon.Run] runs an optional fast-pass loop that ticks
 // every `AutoTagPollInterval` (default 2s) and invokes ONLY
-// bear.ApplyForeignTagEscape + bear.ApplyDailyDefaultTag — NOT the
+// domain.ApplyForeignTagEscape + domain.ApplyDailyDefaultTag — NOT the
 // full per-domain regen cycle. The goal: click-then-type quicknotes
 // get `#quicknote/daily` stamped within <= 5s p95 instead of the
 // empirically-measured 13-15s the FSEvent-then-Bear-flush path
@@ -124,7 +124,7 @@ type DaemonOpts struct {
 	StatFn func(path string) (os.FileInfo, error)
 
 	// AutoTagPollInterval is the period between fast-pass ticks that run
-	// ONLY bear.ApplyForeignTagEscape + bear.ApplyDailyDefaultTag —
+	// ONLY domain.ApplyForeignTagEscape + domain.ApplyDailyDefaultTag —
 	// independent of the full per-domain regen cycle. When > 0,
 	// Daemon.Run creates a second time.Ticker driving a 7th select
 	// case. When 0, the fast-pass is disabled (nil-channel idiom,
@@ -137,10 +137,10 @@ type DaemonOpts struct {
 	// get a disabled fast-pass on the zero value.
 	//
 	// Test seam: the fast-pass tick body calls
-	// bear.ApplyForeignTagEscape + bear.ApplyDailyDefaultTag, which both
-	// route through bear.runBearcli + BackendFromContext(ctx). DaemonOpts
+	// domain.ApplyForeignTagEscape + domain.ApplyDailyDefaultTag, which both
+	// route through domain.runBearcli + BackendFromContext(ctx). DaemonOpts
 	// gains NO parallel field for fake injection — tests stamp the seam
-	// on ctx via bear.ContextWithBackend.
+	// on ctx via domain.ContextWithBackend.
 	AutoTagPollInterval time.Duration
 }
 

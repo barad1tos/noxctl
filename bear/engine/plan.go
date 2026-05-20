@@ -18,7 +18,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // PlanOpts bundles inputs to engine.Plan. Mirrors ApplyOpts shape but
@@ -28,7 +28,7 @@ type PlanOpts struct {
 	// Domains is the closed-catalog set of domains to evaluate.
 	// Iteration order is preserved into PlanResult.Domains; RenderText
 	// applies its own alphabetical sort on top.
-	Domains []*bear.Domain
+	Domains []*domain.Domain
 
 	// StatePath is optional and READ-ONLY. Wired for header lines like
 	// "applied_config_hash=…"; never dereferenced.
@@ -83,7 +83,7 @@ func planSinglePath(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
 	// invalid config) and on interrupt (don't add bearcli round-trip on
 	// top of a canceled ctx).
 	if !result.Interrupted && len(opts.Domains) > 0 {
-		if scan, scanErr := bear.ScanUntracked(ctx, opts.Domains); scanErr != nil {
+		if scan, scanErr := domain.ScanUntracked(ctx, opts.Domains); scanErr != nil {
 			result.Errors = append(result.Errors, PlanError{Tag: "", Msg: scanErr.Error()})
 		} else {
 			result.Untracked = translateUntracked(scan)
@@ -94,7 +94,7 @@ func planSinglePath(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
 	return result, nil
 }
 
-// translateUntracked converts bear.UntrackedReport (residue scanner's
+// translateUntracked converts domain.UntrackedReport (residue scanner's
 // output type, declared in bear/untracked.go) into the engine-side
 // UntrackedReport (declared in bear/engine/plan_result.go). Boundary
 // translation pattern — same shape as cmd/noxctl/preflight.go's
@@ -104,7 +104,7 @@ func planSinglePath(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
 // residue + plan_result agree on tag/note_count/tag_families/
 // total_notes). The translation exists to avoid an import cycle
 // (bear/engine imports bear; bear cannot import bear/engine).
-func translateUntracked(b bear.UntrackedReport) UntrackedReport {
+func translateUntracked(b domain.UntrackedReport) UntrackedReport {
 	fams := make([]UntrackedFamily, len(b.TagFamilies))
 	for i, f := range b.TagFamilies {
 		fams[i] = UntrackedFamily{Tag: f.Tag, NoteCount: f.NoteCount}
@@ -120,8 +120,8 @@ func translateUntracked(b bear.UntrackedReport) UntrackedReport {
 // drift. Build-failure is non-fatal: log to stderr and fall back to
 // plain wikilinks (matches the apply-side log-and-continue pattern at
 // `bear/engine/apply.go`).
-func seedDuplicateRegistry(ctx context.Context, domains []*bear.Domain, stderr io.Writer) {
-	registry, err := bear.BuildDuplicateRegistry(ctx, domains)
+func seedDuplicateRegistry(ctx context.Context, domains []*domain.Domain, stderr io.Writer) {
+	registry, err := domain.BuildDuplicateRegistry(ctx, domains)
 	if err != nil {
 		// Defense in depth: planSinglePath already defaults nil
 		// stderr to os.Stderr, but callers landing here through
@@ -141,8 +141,8 @@ func seedDuplicateRegistry(ctx context.Context, domains []*bear.Domain, stderr i
 
 // computeDomainDelta returns one domain's plan entry by reading
 // current Bear state (FetchMasterContent) and rendering desired state
-// via bear.SnapshotDomainRenderInputs + d.RenderMaster, comparing via
-// bear.EqualIgnoringNewNoteLinkStrict (master flavor — URL-shape drift
+// via domain.SnapshotDomainRenderInputs + d.RenderMaster, comparing via
+// domain.EqualIgnoringNewNoteLinkStrict (master flavor — URL-shape drift
 // surfaces as a real diff). Mirrors bear/upserts.go::upsertMasterIndex
 // with overwriteWithRetry calls replaced by Diff{} appends.
 //
@@ -151,15 +151,15 @@ func seedDuplicateRegistry(ctx context.Context, domains []*bear.Domain, stderr i
 // (parseHubBulletIdentifiers) currently unexported. The master-level
 // diff is the user-visible signal we design around; per-hub fidelity
 // is a documented gap.
-func computeDomainDelta(ctx context.Context, d *bear.Domain, verbose bool) (DomainPlan, error) {
+func computeDomainDelta(ctx context.Context, d *domain.Domain, verbose bool) (DomainPlan, error) {
 	dp := DomainPlan{Tag: d.Tag, Status: StatusClean, Changes: make([]Diff, 0)}
 
-	inputs, err := bear.SnapshotDomainRenderInputs(ctx, d)
+	inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
 	if err != nil {
 		return dp, fmt.Errorf("computeDomainDelta(%s) inputs: %w", d.Tag, err)
 	}
 	desiredAuto := d.RenderMaster(d, inputs.Groups)
-	currentMaster, err := bear.FetchMasterContent(ctx, d)
+	currentMaster, err := domain.FetchMasterContent(ctx, d)
 	if err != nil {
 		return dp, fmt.Errorf("computeDomainDelta(%s) master read: %w", d.Tag, err)
 	}
@@ -169,13 +169,13 @@ func computeDomainDelta(ctx context.Context, d *bear.Domain, verbose bool) (Doma
 	// are URL-free before the strict comparator's URL count check —
 	// otherwise every domain surfaces as false drift (1 vs 0 URLs in
 	// the header).
-	desiredAuto = bear.StripNewNoteURLsFromBody(desiredAuto)
+	desiredAuto = domain.StripNewNoteURLsFromBody(desiredAuto)
 	// Preserve the curator zone (below `## ✱ Куратор`) before
 	// comparing. `upsertMasterIndex` in `bear/upserts.go` composes
 	// the final write as `desiredAuto + "\n" + manual`; plan MUST mirror
 	// that or every master with a curator zone surfaces as false
 	// drift here.
-	_, manual := bear.SplitMarker(currentMaster)
+	_, manual := domain.SplitMarker(currentMaster)
 	desiredMaster := desiredAuto
 	if manual != "" {
 		desiredMaster = desiredAuto + "\n" + manual
@@ -189,7 +189,7 @@ func computeDomainDelta(ctx context.Context, d *bear.Domain, verbose bool) (Doma
 			Summary: fmt.Sprintf("master ✱ %s will be created", d.IndexTitle),
 		})
 		dp.Status = StatusDrift
-	case !bear.EqualIgnoringNewNoteLinkStrict(desiredMaster, currentMaster):
+	case !domain.EqualIgnoringNewNoteLinkStrict(desiredMaster, currentMaster):
 		diff := Diff{
 			Kind:    DiffReplace,
 			Target:  "master",

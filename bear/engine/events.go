@@ -11,7 +11,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 func (d *Daemon) handleEvent(event fsnotify.Event, quietTimer, maxTimer *time.Timer, burstActive *bool) {
@@ -86,7 +86,7 @@ type autoTagPass struct {
 // outcome; log-and-continue. Mirrors apply.go::runPrePass.
 //
 // Bearcli semaphore: all pre-pass calls route through
-// bear.runBearcli → SetBearcliConcurrency pool. No bypass.
+// domain.runBearcli → SetBearcliConcurrency pool. No bypass.
 func (d *Daemon) handleAutoTagTick(ctx context.Context) {
 	d.regenMu.Lock()
 	if d.regenInProgress {
@@ -108,7 +108,7 @@ func (d *Daemon) handleAutoTagTick(ctx context.Context) {
 	// canonical-bootstrap wiring: build the tag→*Domain lookup
 	// once per tick so both pre-pass paths can write destination-canonical
 	// form in a single bearcli call.
-	domainsByTag := bear.DomainsByTag(d.opts.Domains)
+	domainsByTag := domain.DomainsByTag(d.opts.Domains)
 	dailyDomain := domainsByTag[d.opts.DailyDefaultTag]
 	// dailyTagOn folds the catalog gate: an operator who omitted
 	// `[meta].daily_default_tag` gets a silently disabled fast-pass
@@ -129,13 +129,13 @@ func (d *Daemon) handleAutoTagTick(ctx context.Context) {
 	}
 	passes := []autoTagPass{
 		mkPass("foreign-tag escape", feats.ForeignTagEscape,
-			func(c context.Context) (int, error) { return bear.ApplyForeignTagEscape(c, domainsByTag) }),
+			func(c context.Context) (int, error) { return domain.ApplyForeignTagEscape(c, domainsByTag) }),
 		mkPass("daily-default", dailyTagOn,
-			func(c context.Context) (int, error) { return bear.ApplyDailyDefaultTag(c, dailyDomain) }),
+			func(c context.Context) (int, error) { return domain.ApplyDailyDefaultTag(c, dailyDomain) }),
 		mkPass("domain-bootstrap", feats.DomainBootstrap,
-			func(c context.Context) (int, error) { return bear.ApplyDomainBootstrap(c, domainsByTag) }),
+			func(c context.Context) (int, error) { return domain.ApplyDomainBootstrap(c, domainsByTag) }),
 		mkPass("placeholder-refresh", feats.AutoTagDefault,
-			func(c context.Context) (int, error) { return bear.ApplyPlaceholderRefresh(c, domainsByTag) }),
+			func(c context.Context) (int, error) { return domain.ApplyPlaceholderRefresh(c, domainsByTag) }),
 	}
 	wrote := 0
 	for _, p := range passes {

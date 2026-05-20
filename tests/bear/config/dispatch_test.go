@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/config"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // sliceStrPtr keeps test fixture construction concise — pointer-typed
@@ -17,7 +17,7 @@ func sliceStrPtr(in ...string) *[]string { return new(append([]string(nil), in..
 // noResolver returns a resolveChildren that never gets called. Use it
 // for non-umbrella stanzas where the dispatcher must not invoke the
 // resolver.
-func noResolver() func([]string) ([]*bear.Domain, error) {
+func noResolver() func([]string) ([]*domain.Domain, error) {
 	return nil
 }
 
@@ -34,7 +34,7 @@ func TestDispatchMapSize(t *testing.T) {
 // for that blueprint (only umbrella populates resolver).
 type dispatchCase struct {
 	stanza   config.Stanza
-	resolver func([]string) ([]*bear.Domain, error)
+	resolver func([]string) ([]*domain.Domain, error)
 }
 
 // validDispatchCases produces one minimal-but-valid case per
@@ -42,7 +42,7 @@ type dispatchCase struct {
 // the test body small and dodges the dupl flag that would otherwise
 // fire on the per-blueprint struct literals.
 func validDispatchCases() map[string]dispatchCase {
-	libraryPoetry := &bear.Domain{
+	libraryPoetry := &domain.Domain{
 		Tag: "library/poetry", CanonicalTag: "#library/poetry",
 		IndexTitle: "✱ Поезія",
 	}
@@ -73,15 +73,15 @@ func validDispatchCases() map[string]dispatchCase {
 				Children:     sliceStrPtr("library/poetry"),
 				DefaultChild: new("library/poetry"),
 			},
-			resolver: func(_ []string) ([]*bear.Domain, error) {
-				return []*bear.Domain{libraryPoetry}, nil
+			resolver: func(_ []string) ([]*domain.Domain, error) {
+				return []*domain.Domain{libraryPoetry}, nil
 			},
 		},
 	}
 }
 
 // TestDispatchEveryBlueprintBuilds: every blueprint string maps to a
-// builder that produces a *bear.Domain whose primitive fields agree
+// builder that produces a *domain.Domain whose primitive fields agree
 // with the input stanza.
 func TestDispatchEveryBlueprintBuilds(t *testing.T) {
 	for blueprint, tc := range validDispatchCases() {
@@ -94,7 +94,7 @@ func TestDispatchEveryBlueprintBuilds(t *testing.T) {
 // assertDispatchBuildsCleanly is the shared per-blueprint assertion.
 // Helper extraction collapses the test's cognitive complexity below
 // the project's gocognit ≤15 budget.
-func assertDispatchBuildsCleanly(t *testing.T, stanza config.Stanza, resolver func([]string) ([]*bear.Domain, error)) {
+func assertDispatchBuildsCleanly(t *testing.T, stanza config.Stanza, resolver func([]string) ([]*domain.Domain, error)) {
 	t.Helper()
 	d, err := config.Dispatch(stanza, resolver)
 	if err != nil {
@@ -163,9 +163,9 @@ func TestDispatchBlueprintFieldMismatch(t *testing.T) {
 
 // TestDispatchUmbrellaResolvesChildren: umbrella delegates child
 // resolution to the loader-supplied callback; resolved Domains must
-// pass through to bear.NewUmbrellaDomain.
+// pass through to domain.NewUmbrellaDomain.
 func TestDispatchUmbrellaResolvesChildren(t *testing.T) {
-	child := &bear.Domain{
+	child := &domain.Domain{
 		Tag: "library/poetry", CanonicalTag: "#library/poetry",
 		IndexTitle: "✱ Поезія",
 	}
@@ -175,12 +175,12 @@ func TestDispatchUmbrellaResolvesChildren(t *testing.T) {
 		DefaultChild: new("library/poetry"),
 	}
 	called := false
-	resolver := func(tags []string) ([]*bear.Domain, error) {
+	resolver := func(tags []string) ([]*domain.Domain, error) {
 		called = true
 		if len(tags) != 1 || tags[0] != "library/poetry" {
 			t.Errorf("resolver called with %v, want [library/poetry]", tags)
 		}
-		return []*bear.Domain{child}, nil
+		return []*domain.Domain{child}, nil
 	}
 	d, err := config.Dispatch(stanza, resolver)
 	if err != nil {

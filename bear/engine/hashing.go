@@ -14,7 +14,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/state"
 )
 
@@ -27,7 +27,7 @@ func applyFinalize(ctx context.Context, opts ApplyOpts, st *state.State, result 
 			log.Printf("apply: final state.Save (interrupted) failed: %v", saveErr)
 		}
 		if opts.WithMetrics {
-			result.Metrics = bear.BearcliMetricsSnapshot()
+			result.Metrics = domain.BearcliMetricsSnapshot()
 		}
 		return result, nil
 	}
@@ -38,7 +38,7 @@ func applyFinalize(ctx context.Context, opts ApplyOpts, st *state.State, result 
 		return result, fmt.Errorf("engine.Apply state.Save(complete): %w", err)
 	}
 	if opts.WithMetrics {
-		result.Metrics = bear.BearcliMetricsSnapshot()
+		result.Metrics = domain.BearcliMetricsSnapshot()
 	}
 	return result, nil
 }
@@ -47,18 +47,18 @@ func applyFinalize(ctx context.Context, opts ApplyOpts, st *state.State, result 
 // for one domain and returns sha256(strip(master) || NUL ||
 // sorted-by-title strip(hubs[i])). Returns "" on read failure
 // (logged but non-fatal — caller preserves prior hash).
-func computeDomainHash(ctx context.Context, domain *bear.Domain) string {
-	master, hubs, err := snapshotDomainContent(ctx, domain)
+func computeDomainHash(ctx context.Context, d *domain.Domain) string {
+	master, hubs, err := snapshotDomainContent(ctx, d)
 	if err != nil {
-		log.Printf("apply: snapshot(%s) failed: %v (hash unchanged)", domain.Tag, err)
+		log.Printf("apply: snapshot(%s) failed: %v (hash unchanged)", d.Tag, err)
 		return ""
 	}
 	return ComputeContentHash(master, hubs)
 }
 
 // snapshotDomainContent fetches the post-RunRegen master + hub bytes
-// for one domain via the exported bear.FetchMasterContent /
-// bear.FetchHubContents wrappers (which in turn call the bearcli
+// for one domain via the exported domain.FetchMasterContent /
+// domain.FetchHubContents wrappers (which in turn call the bearcli
 // boundary inside package bear). Stripped of the [Нова нотатка]
 // new-note link drift before return — caller can hash directly.
 //
@@ -68,15 +68,15 @@ func computeDomainHash(ctx context.Context, domain *bear.Domain) string {
 // with "".
 func snapshotDomainContent(
 	ctx context.Context,
-	domain *bear.Domain,
+	d *domain.Domain,
 ) (master string, hubs map[string]string, err error) {
-	master, mErr := bear.FetchMasterContent(ctx, domain)
+	master, mErr := domain.FetchMasterContent(ctx, d)
 	if mErr != nil {
-		return "", nil, fmt.Errorf("snapshotDomainContent(%s) master: %w", domain.Tag, mErr)
+		return "", nil, fmt.Errorf("snapshotDomainContent(%s) master: %w", d.Tag, mErr)
 	}
-	hubs, hErr := bear.FetchHubContents(ctx, domain)
+	hubs, hErr := domain.FetchHubContents(ctx, d)
 	if hErr != nil {
-		return "", nil, fmt.Errorf("snapshotDomainContent(%s) hubs: %w", domain.Tag, hErr)
+		return "", nil, fmt.Errorf("snapshotDomainContent(%s) hubs: %w", d.Tag, hErr)
 	}
 	return master, hubs, nil
 }

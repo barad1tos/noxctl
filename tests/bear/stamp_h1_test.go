@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // TestStampDatetimeH1_RecognitionTable covers every row of the H1
@@ -15,7 +15,7 @@ import (
 // is deterministic.
 func TestStampDatetimeH1_RecognitionTable(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 13, 15, 25, 0, 0, time.Local)
-	bear.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
+	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
 	const stamp = "# 13 May 2026 at 15:25"
 
@@ -68,7 +68,7 @@ func TestStampDatetimeH1_RecognitionTable(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			out := bear.StampDatetimeH1(c.body)
+			out := domain.StampDatetimeH1(c.body)
 			firstLine := ""
 			for line := range strings.SplitSeq(out, "\n") {
 				if strings.TrimSpace(line) == "" {

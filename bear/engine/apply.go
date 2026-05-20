@@ -16,7 +16,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/state"
 )
 
@@ -24,13 +24,13 @@ import (
 // no defaults; caller supplies every field per "Accept interfaces,
 // return structs".
 type ApplyOpts struct {
-	Domains   []*bear.Domain    // REQUIRED — engine iterates and calls RunRegen
-	Pins      *bear.PinRegistry // REQUIRED — may be empty registry; nil-safe per bear/pins.go
-	StatePath string            // REQUIRED — "./.noxctl/state.json"
-	LockPath  string            // REQUIRED — "./.noxctl/.lock" (used by )
-	Features  Features          // REQUIRED — flat pre-pass toggles
-	NoWait    bool              // optional; --no-wait fail-fast on lock contention
-	Stderr    io.Writer         // optional; default os.Stderr — used by lock-acquire wait advisory
+	Domains   []*domain.Domain    // REQUIRED — engine iterates and calls RunRegen
+	Pins      *domain.PinRegistry // REQUIRED — may be empty registry; nil-safe per bear/pins.go
+	StatePath string              // REQUIRED — "./.noxctl/state.json"
+	LockPath  string              // REQUIRED — "./.noxctl/.lock" (used by )
+	Features  Features            // REQUIRED — flat pre-pass toggles
+	NoWait    bool                // optional; --no-wait fail-fast on lock contention
+	Stderr    io.Writer           // optional; default os.Stderr — used by lock-acquire wait advisory
 	// AuditEnabled, when true, runs the AuditDomains pre-pass. Mirrors
 	// the legacy daemon's REGEN_AUDIT != "off" gate. Default false.
 	AuditEnabled bool
@@ -46,10 +46,10 @@ type ApplyOpts struct {
 	// BearcliConcurrency is the operator-tuned cap for concurrent bearcli
 	// subprocesses. Zero or negative => engine default
 	// DefaultBearcliConcurrency. When > 0, Apply calls
-	// bear.SetBearcliConcurrency(n) once at entry before any pre-pass
+	// domain.SetBearcliConcurrency(n) once at entry before any pre-pass
 	// fires. The sync.Once gate inside SetBearcliConcurrency means
 	// subsequent calls are silent no-ops; bench mode uses
-	// bear.ResetBearcliPoolForTest to re-arm between sweep cycles.
+	// domain.ResetBearcliPoolForTest to re-arm between sweep cycles.
 	BearcliConcurrency int
 
 	// WithMetrics, when true, copies the bearcli pool snapshot into
@@ -76,11 +76,11 @@ type ApplyOpts struct {
 	// disables time-promotion entirely. Each rule names a source tag,
 	// a target tag, and the calendar boundary that triggers the move.
 	// Wired from [[promotion]] blocks in the TOML catalog.
-	PromotionRules []bear.PromotionRule
+	PromotionRules []domain.PromotionRule
 }
 
 // DefaultBearcliConcurrency is the ship-default capacity for
-// `bear.SetBearcliConcurrency` across every entry point — apply,
+// `domain.SetBearcliConcurrency` across every entry point — apply,
 // daemon, plan. Exported so the read-only `noxctl plan` path can
 // install the same ceiling without redeclaring the constant
 // (Sourcery PR-5: silently drifting defaults are a maintenance
@@ -120,7 +120,7 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	if opts.BearcliConcurrency <= 0 {
 		opts.BearcliConcurrency = DefaultBearcliConcurrency
 	}
-	bear.SetBearcliConcurrency(opts.BearcliConcurrency)
+	domain.SetBearcliConcurrency(opts.BearcliConcurrency)
 
 	// Step 0: acquire flock + write apply-pending sentinel. Gated on
 	// !opts.SkipFlock so engine.Daemon.cycleOnce can call engine.Apply

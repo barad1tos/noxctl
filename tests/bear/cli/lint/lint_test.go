@@ -22,11 +22,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear"
 	"github.com/barad1tos/noxctl/bear/cli/lint"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
-// fakeBearcli records every bear.runBearcli call routed through the
+// fakeBearcli records every domain.runBearcli call routed through the
 // BearcliBackend seam. Returns canned JSON for "list" and a stub
 // {"ok":true} for "overwrite". Mirrors the shape used by tests/bear/
 // engine/* so the fixture story stays consistent across packages.
@@ -47,7 +47,7 @@ func newFakeBearcli(payload []byte) *fakeBearcli {
 	return &fakeBearcli{listPayload: payload}
 }
 
-// Run satisfies bear.BearcliBackend.
+// Run satisfies domain.BearcliBackend.
 func (f *fakeBearcli) Run(_ context.Context, args []string, stdin string) ([]byte, error) {
 	f.count.Add(1)
 	kind := "other"
@@ -107,26 +107,26 @@ func brokenH1ListPayload(t *testing.T, tag string) []byte {
 // exercises the lint pass. Real catalogs ship richer wiring; this
 // fixture keeps the test surface narrow to the lint heuristics
 // themselves.
-func flatListDomainForTest() *bear.Domain {
-	return bear.NewFlatListDomain("test/notes", "✱ Notes")
+func flatListDomainForTest() *domain.Domain {
+	return domain.NewFlatListDomain("test/notes", "✱ Notes")
 }
 
 // armBearcliPool resets the bearcli subprocess semaphore to a small
 // fixed capacity so the lint sweep's bearcli calls actually execute.
 // Production wires this via engine.Apply; tests must do it explicitly
-// before any code path that ends up calling bear.runBearcli.
+// before any code path that ends up calling domain.runBearcli.
 //
 // Cleanup resets capacity to 1, NOT the production daemon default
 // (8). bearcliSema is a process-global semaphore, so any subsequent
 // test in this go test binary inherits whatever the previous test
 // left behind. Tests that need a real capacity must call
-// bear.ResetBearcliPoolForTest themselves; cleanup-to-1 is the safe
+// domain.ResetBearcliPoolForTest themselves; cleanup-to-1 is the safe
 // minimum that surfaces a missing arm as a deterministic block
 // rather than spurious concurrency surprises.
 func armBearcliPool(t *testing.T) {
 	t.Helper()
-	bear.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { bear.ResetBearcliPoolForTest(1) })
+	domain.ResetBearcliPoolForTest(4)
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
 }
 
 // TestRun_AuditMode_PrintsFindingsNoWrites is the canonical audit
@@ -136,10 +136,10 @@ func armBearcliPool(t *testing.T) {
 func TestRun_AuditMode_PrintsFindingsNoWrites(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(brokenH1ListPayload(t, "test/notes"))
-	ctx := bear.ContextWithBackend(t.Context(), fake)
+	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
-	lint.Run(ctx, &buf, []*bear.Domain{flatListDomainForTest()}, false)
+	lint.Run(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
 
 	out := buf.String()
 	if !strings.Contains(out, "[test/notes]") {
@@ -161,10 +161,10 @@ func TestRun_AuditMode_PrintsFindingsNoWrites(t *testing.T) {
 func TestRun_ApplyMode_InvokesAutoFix(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(brokenH1ListPayload(t, "test/notes"))
-	ctx := bear.ContextWithBackend(t.Context(), fake)
+	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
-	lint.Run(ctx, &buf, []*bear.Domain{flatListDomainForTest()}, true)
+	lint.Run(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
 
 	// Apply path may or may not write (depends on whether the broken
 	// title is auto-fixable per AutoFixAtom). What we DO assert: the
@@ -190,11 +190,11 @@ func TestRun_ApplyMode_InvokesAutoFix(t *testing.T) {
 func TestRun_CanceledContext_Aborts(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(brokenH1ListPayload(t, "test/notes"))
-	ctx, cancel := context.WithCancel(bear.ContextWithBackend(t.Context(), fake))
+	ctx, cancel := context.WithCancel(domain.ContextWithBackend(t.Context(), fake))
 	cancel() // canceled before Run even starts
 
 	var buf bytes.Buffer
-	lint.Run(ctx, &buf, []*bear.Domain{flatListDomainForTest()}, false)
+	lint.Run(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
 
 	// Honoring cancellation means the listNotes path saw ctx.Err
 	// and skipped the bearcli round-trip. Without this assertion the
@@ -212,7 +212,7 @@ func TestRun_CanceledContext_Aborts(t *testing.T) {
 // grep for a count regardless of catalog size.
 func TestRun_EmptyDomains_RendersEmptyTally(t *testing.T) {
 	fake := newFakeBearcli([]byte(`[]`))
-	ctx := bear.ContextWithBackend(t.Context(), fake)
+	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	lint.Run(ctx, &buf, nil, false)

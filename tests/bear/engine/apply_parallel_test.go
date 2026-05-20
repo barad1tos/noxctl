@@ -8,10 +8,10 @@
 // Production code uses errgroup.WithContext-based applyPerDomain over
 // a per-umbrella dependency graph. These
 // tests drive the real orchestrator with a fake BearcliBackend injected
-// via bear.ContextWithBackend, recording per-call timestamps inside a
+// via domain.ContextWithBackend, recording per-call timestamps inside a
 // testing/synctest bubble for deterministic ordering. The bearcli pool
 // is the back-pressure target; tests reset it to a known
-// capacity via bear.ResetBearcliPoolForTest before each Apply.
+// capacity via domain.ResetBearcliPoolForTest before each Apply.
 package engine_test
 
 import (
@@ -23,12 +23,12 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/state"
 )
 
-// fakeBackend is a deterministic bear.BearcliBackend used by parallel
+// fakeBackend is a deterministic domain.BearcliBackend used by parallel
 // orchestrator tests. Every Run call:
 //
 // 1. increments inflight (and updates peak); a snapshot is exposed via
@@ -62,7 +62,7 @@ func newFakeBackend(sleep time.Duration) *fakeBackend {
 	return &fakeBackend{perCallSleep: sleep}
 }
 
-// Run satisfies bear.BearcliBackend. Records inflight/peak/timestamps,
+// Run satisfies domain.BearcliBackend. Records inflight/peak/timestamps,
 // sleeps perCallSleep, and returns a per-kind JSON payload.
 func (f *fakeBackend) Run(ctx context.Context, args []string, _ string) ([]byte, error) {
 	now := f.inflight.Add(1)
@@ -169,20 +169,20 @@ func fakePayload(kind string) []byte {
 	}
 }
 
-// stubDomain builds a minimal *bear.Domain that satisfies Validate and
+// stubDomain builds a minimal *domain.Domain that satisfies Validate and
 // drives RunRegen straight through the empty-notes happy path. The
 // ParseMeta and RenderMaster callbacks return zero values — never
 // called because list returns [] under the fake backend.
-func stubDomain(tag, indexTitle, parentMaster string) *bear.Domain {
-	return &bear.Domain{
+func stubDomain(tag, indexTitle, parentMaster string) *domain.Domain {
+	return &domain.Domain{
 		Tag:          tag,
 		CanonicalTag: "#" + tag,
 		IndexTitle:   indexTitle,
 		ParentMaster: parentMaster,
-		ParseMeta: func(_ *bear.Domain, _ string) bear.AtomicMeta {
-			return bear.AtomicMeta{}
+		ParseMeta: func(_ *domain.Domain, _ string) domain.AtomicMeta {
+			return domain.AtomicMeta{}
 		},
-		RenderMaster: func(_ *bear.Domain, _ map[string][]bear.Note) string {
+		RenderMaster: func(_ *domain.Domain, _ map[string][]domain.Note) string {
 			return ""
 		},
 	}
@@ -190,7 +190,7 @@ func stubDomain(tag, indexTitle, parentMaster string) *bear.Domain {
 
 // umbrellaStub builds a stub umbrella (SkipAtomicsPass=true) that
 // satisfies Validate by setting DefaultChild to one of its leaves' tags.
-func umbrellaStub(tag, indexTitle, defaultChild string) *bear.Domain {
+func umbrellaStub(tag, indexTitle, defaultChild string) *domain.Domain {
 	d := stubDomain(tag, indexTitle, "")
 	d.SkipAtomicsPass = true
 	d.DefaultChild = defaultChild
@@ -208,14 +208,14 @@ const poolCapacityForParallelTests = 8
 // default the rest of the test corpus assumes).
 func resetPoolForApply(t *testing.T) {
 	t.Helper()
-	bear.ResetBearcliPoolForTest(poolCapacityForParallelTests)
-	t.Cleanup(func() { bear.ResetBearcliPoolForTest(1) })
+	domain.ResetBearcliPoolForTest(poolCapacityForParallelTests)
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
 }
 
 // applyOptsFor builds an ApplyOpts that disables every pre-pass (so
 // the tests observe only applyPerDomain) and points state/lock paths
 // at the per-test temp dir.
-func applyOptsFor(t *testing.T, domains []*bear.Domain) engine.ApplyOpts {
+func applyOptsFor(t *testing.T, domains []*domain.Domain) engine.ApplyOpts {
 	t.Helper()
 	dir := t.TempDir()
 	return engine.ApplyOpts{
@@ -242,14 +242,14 @@ func TestApplyParallel_SiblingsConcurrent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeBackend(50 * time.Millisecond)
-		ctx := bear.ContextWithBackend(t.Context(), fake)
+		ctx := domain.ContextWithBackend(t.Context(), fake)
 
 		umbrella := umbrellaStub("library", "✱ Бібліотека", "library/a")
 		leafA := stubDomain("library/a", "[Бібліотека · A]", umbrella.IndexTitle)
 		leafB := stubDomain("library/b", "[Бібліотека · B]", umbrella.IndexTitle)
 		leafC := stubDomain("library/c", "[Бібліотека · C]", umbrella.IndexTitle)
 
-		opts := applyOptsFor(t, []*bear.Domain{leafA, leafB, leafC, umbrella})
+		opts := applyOptsFor(t, []*domain.Domain{leafA, leafB, leafC, umbrella})
 		opts.SkipFlock = true // synctest bubble + flock would block on real syscalls
 
 		result, err := engine.Apply(ctx, opts)
@@ -262,7 +262,7 @@ func TestApplyParallel_SiblingsConcurrent(t *testing.T) {
 		if peak := fake.PeakInflight(); peak < 3 {
 			t.Errorf("siblings did not run concurrently: peak inflight = %d, want >= 3", peak)
 		}
-		for _, leaf := range []*bear.Domain{leafA, leafB, leafC} {
+		for _, leaf := range []*domain.Domain{leafA, leafB, leafC} {
 			if _, ok := result.Domains[leaf.Tag]; !ok {
 				t.Errorf("leaf %q missing from result.Domains", leaf.Tag)
 			}
@@ -282,13 +282,13 @@ func TestApplyParallel_UmbrellaWaitsOnFamily(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeBackend(20 * time.Millisecond)
-		ctx := bear.ContextWithBackend(t.Context(), fake)
+		ctx := domain.ContextWithBackend(t.Context(), fake)
 
 		umbrella := umbrellaStub("it", "✱ IT", "it/leaf1")
 		leaf1 := stubDomain("it/leaf1", "[IT · Leaf 1]", umbrella.IndexTitle)
 		leaf2 := stubDomain("it/leaf2", "[IT · Leaf 2]", umbrella.IndexTitle)
 
-		opts := applyOptsFor(t, []*bear.Domain{leaf1, leaf2, umbrella})
+		opts := applyOptsFor(t, []*domain.Domain{leaf1, leaf2, umbrella})
 		opts.SkipFlock = true
 
 		if _, err := engine.Apply(ctx, opts); err != nil {
@@ -300,7 +300,7 @@ func TestApplyParallel_UmbrellaWaitsOnFamily(t *testing.T) {
 			t.Fatalf("umbrella %q produced no bearcli calls", umbrella.Tag)
 		}
 		umbFirst := umbCalls[0].End
-		for _, leaf := range []*bear.Domain{leaf1, leaf2} {
+		for _, leaf := range []*domain.Domain{leaf1, leaf2} {
 			calls := fake.CallsByTag(leaf.Tag)
 			if len(calls) == 0 {
 				t.Fatalf("leaf %q produced no bearcli calls", leaf.Tag)
@@ -323,7 +323,7 @@ func TestApplyParallel_FamiliesConcurrent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeBackend(20 * time.Millisecond)
-		ctx := bear.ContextWithBackend(t.Context(), fake)
+		ctx := domain.ContextWithBackend(t.Context(), fake)
 
 		umbA := umbrellaStub("library", "✱ Бібліотека", "library/a1")
 		leafA1 := stubDomain("library/a1", "[Бібліотека · A1]", umbA.IndexTitle)
@@ -333,7 +333,7 @@ func TestApplyParallel_FamiliesConcurrent(t *testing.T) {
 		leafB1 := stubDomain("llm/b1", "[LLM · B1]", umbB.IndexTitle)
 		leafB2 := stubDomain("llm/b2", "[LLM · B2]", umbB.IndexTitle)
 
-		opts := applyOptsFor(t, []*bear.Domain{leafA1, leafA2, leafB1, leafB2, umbA, umbB})
+		opts := applyOptsFor(t, []*domain.Domain{leafA1, leafA2, leafB1, leafB2, umbA, umbB})
 		opts.SkipFlock = true
 
 		start := time.Now()
@@ -366,7 +366,7 @@ func TestApplyParallel_FamiliesConcurrent(t *testing.T) {
 // the leaf-tag slice the assertions check after Apply returns. Extracted
 // from TestApply_StateSave_Concurrent so the test body stays under the
 // gocognit budget — the fixture's branching is now isolated here.
-func buildStateSaveFixture() (umbrella *bear.Domain, domains []*bear.Domain, leafTags []string) {
+func buildStateSaveFixture() (umbrella *domain.Domain, domains []*domain.Domain, leafTags []string) {
 	umbrella = umbrellaStub("library", "✱ Бібліотека", "library/leaf0")
 	for i := range 8 {
 		tag := "library/leaf" + string(rune('0'+i))
@@ -400,7 +400,7 @@ func TestApply_StateSave_Concurrent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeBackend(5 * time.Millisecond)
-		ctx := bear.ContextWithBackend(t.Context(), fake)
+		ctx := domain.ContextWithBackend(t.Context(), fake)
 
 		umbrella, domains, leafTags := buildStateSaveFixture()
 
@@ -441,13 +441,13 @@ func TestApplyParallel_Idempotent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeBackend(5 * time.Millisecond)
-		ctx := bear.ContextWithBackend(t.Context(), fake)
+		ctx := domain.ContextWithBackend(t.Context(), fake)
 
 		umbrella := umbrellaStub("llm", "✱ LLM", "llm/a")
 		leafA := stubDomain("llm/a", "[LLM · A]", umbrella.IndexTitle)
 		leafB := stubDomain("llm/b", "[LLM · B]", umbrella.IndexTitle)
 
-		domains := []*bear.Domain{leafA, leafB, umbrella}
+		domains := []*domain.Domain{leafA, leafB, umbrella}
 		opts := applyOptsFor(t, domains)
 		opts.SkipFlock = true
 

@@ -3,12 +3,12 @@
 //
 // snapshot_test.go locks down the snapshot facade contract:
 //
-//  1. bear.SnapshotDomainRenderInputs returns (DomainRenderInputs{Groups:
+//  1. domain.SnapshotDomainRenderInputs returns (DomainRenderInputs{Groups:
 //     non-nil empty map}, nil) for a Domain whose tag matches zero notes
 //     in the live Bear corpus. Empty-but-non-nil is the contract the
 //     engine.Plan core and the residue scanner both depend on — they
 //     range over .Groups without nil-checks.
-//  2. bear.LintUntracked exposes the wire value "untracked" — the
+//  2. domain.LintUntracked exposes the wire value "untracked" — the
 //     constant the residue emitter and the diff renderer both serialize
 //     against.
 //
@@ -28,7 +28,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // bearcliPath mirrors the hardcoded binary location used by
@@ -62,7 +62,7 @@ func TestSnapshotDomainRenderInputs(t *testing.T) {
 
 	// Deliberately-unused synthetic tag — no human would create
 	// `noxctl/snapshot-empty-fixture-do-not-use` in their vault.
-	d := &bear.Domain{
+	d := &domain.Domain{
 		Tag:          "noxctl/snapshot-empty-fixture-do-not-use",
 		CanonicalTag: "#noxctl/snapshot-empty-fixture-do-not-use",
 		IndexTitle:   "✱ Snapshot Fixture (test-only)",
@@ -73,7 +73,7 @@ func TestSnapshotDomainRenderInputs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	snap, err := bear.SnapshotDomainRenderInputs(ctx, d)
+	snap, err := domain.SnapshotDomainRenderInputs(ctx, d)
 	if err != nil {
 		t.Fatalf("SnapshotDomainRenderInputs returned error for empty-tag domain: %v", err)
 	}
@@ -94,15 +94,15 @@ func TestSnapshotDomainRenderInputs(t *testing.T) {
 // stability for every downstream consumer.
 func TestSnapshotDomainRenderInputs_LintUntrackedConstant(t *testing.T) {
 	const want = "untracked"
-	if got := string(bear.LintUntracked); got != want {
-		t.Fatalf("string(bear.LintUntracked) = %q, want %q (wire format locked by Plans 03-03/04)", got, want)
+	if got := string(domain.LintUntracked); got != want {
+		t.Fatalf("string(domain.LintUntracked) = %q, want %q (wire format locked by Plans 03-03/04)", got, want)
 	}
 }
 
 // keysOf returns the bucket-name keys of g sorted-alphabetically. Used
 // only by failure messages so the operator sees a stable error string
 // instead of a random-order map iteration.
-func keysOf(g map[string][]bear.Note) []string {
+func keysOf(g map[string][]domain.Note) []string {
 	out := make([]string, 0, len(g))
 	for k := range g {
 		out = append(out, k)
