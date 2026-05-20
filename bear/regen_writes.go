@@ -2,8 +2,8 @@ package bear
 
 // Per-domain regen sub-steps: hub upserts, master upserts, and the
 // atomics pass that walks every atom and rewrites its canonical
-// line. Split from core.go so the I/O-heavy mutation paths sit
-// next to each other and away from pure parsing/grouping helpers.
+// line. Concentrates the I/O-heavy mutation paths so they sit next
+// to each other and away from pure parsing/grouping helpers.
 
 import (
 	"context"

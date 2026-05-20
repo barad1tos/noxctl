@@ -1,10 +1,10 @@
 package bear
 
-// Core grouping pipeline — atomic-to-bucket classification plus the
-// master/hub override mechanics that let curator edits in the master
-// drive per-atom re-bucketing on the next regen cycle. Split from
-// core.go so the grouping logic stays separate from listing I/O and
-// atomic-body parsing.
+// Atomic-to-bucket classification plus the master/hub override
+// mechanics that let curator edits in the master drive per-atom
+// re-bucketing on the next regen cycle. Kept separate from listing
+// I/O and atomic-body parsing so the routing decisions live in one
+// file the daemon orchestrator can reason about end-to-end.
 
 import "strings"
 

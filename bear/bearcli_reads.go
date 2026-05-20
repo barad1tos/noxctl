@@ -1,10 +1,9 @@
 package bear
 
-// Core listing primitives — bearcli read paths the regen pipeline
-// uses to enumerate notes per domain, find a note by title, and look
-// up the hub / master index IDs. Plus the bear-package shim for
-// bearcli.OverwriteWithRetry. Split from core.go to keep the I/O
-// boundary visible at file scope.
+// bearcli read primitives the regen pipeline uses to enumerate notes
+// per domain, find a note by title, and look up the hub / master
+// index IDs. Plus the bear-package shim for bearcli.OverwriteWithRetry
+// kept here so the I/O boundary stays visible at file scope.
 
 import (
 	"context"

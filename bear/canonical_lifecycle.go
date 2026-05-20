@@ -3,9 +3,9 @@ package bear
 // Atomic-body parsing + canonical rendering — the round-trip between
 // raw note bodies and the structured AtomicParts representation,
 // plus the bearcli overwrite path that stamps fresh canonical lines
-// on atoms. Split from core.go because parseAtomicContent /
-// renderAtomicCanonical / upsertAtomicBacklink form a tight cluster
-// with their own helpers (atomicParseState, isEmptyH1).
+// on atoms. parseAtomicContent / renderAtomicCanonical /
+// upsertAtomicBacklink form a tight cluster with their own helpers
+// (atomicParseState, isEmptyH1).
 
 import (
 	"context"
