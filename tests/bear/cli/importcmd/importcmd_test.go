@@ -5,9 +5,9 @@
 // each input shape.
 //
 // The heuristic itself lives in the unexported `infer` function;
-// each test reaches it through the exported `RunWithNotes` test
-// seam in importcmd_export_test.go (kept out of the production tree
-// per the project's no-in-package-tests rule).
+// tests reach it through `importcmd.EmitWithNotesForTest`, a thin
+// production-package seam that runs the same emit pass over a
+// caller-supplied note set (no bearcli round trip required).
 package importcmd_test
 
 import (

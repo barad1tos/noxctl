@@ -84,6 +84,20 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	trashed, stripped, failed := apply(ctx, d, masters, atomics, opts.Stderr)
+	// When apply bails early on ctx cancellation the per-class
+	// counters under-report — the summary must say so explicitly,
+	// otherwise an operator who just pressed Ctrl-C sees
+	// "trashed 5 master/hub notes" and reads it as completion. The
+	// per-class totals are the denominators so the operator can
+	// reason about how much of the sweep actually ran.
+	canceled := ctx.Err() != nil
+	if canceled {
+		_, _ = fmt.Fprintf(opts.Stdout,
+			"\ndestroy %s: CANCELED mid-sweep — trashed %d/%d master/hub, "+
+				"stripped %d atomic canonical lines, %d failures.\n",
+			opts.Tag, trashed, len(masters), stripped, failed)
+		return fmt.Errorf("destroy %s: canceled: %w", opts.Tag, ctx.Err())
+	}
 	_, _ = fmt.Fprintf(opts.Stdout,
 		"\ndestroy %s: trashed %d master/hub notes, stripped %d atomic canonical lines, %d failures.\n",
 		opts.Tag, trashed, stripped, failed)

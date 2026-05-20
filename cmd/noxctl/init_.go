@@ -15,11 +15,11 @@ import (
 // field; the operator edits it and runs `noxctl validate` to confirm
 // the schema before `noxctl apply`.
 //
-// Non-interactive on purpose. CLAUDE.md commits the project to a
-// single non-stdlib runtime dependency; an interactive wizard would
-// pull in a TUI ecosystem (huh + bubbletea + lipgloss + transitive
-// deps) for a one-shot bootstrap step. The template+edit flow is
-// simpler, deterministic, and works in CI / scripts.
+// Non-interactive on purpose. The project commits to a single
+// non-stdlib runtime dependency; an interactive wizard would pull
+// in a TUI ecosystem (huh + bubbletea + lipgloss + transitive deps)
+// for a one-shot bootstrap step. The template+edit flow is simpler,
+// deterministic, and works in CI / scripts.
 var initSubCmd = &cobra.Command{
 	Use:   "init [path]",
 	Short: "Write a starter noxctl.toml template to disk",
