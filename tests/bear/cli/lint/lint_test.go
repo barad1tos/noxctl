@@ -22,7 +22,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear/cli/lint"
+	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/render"
 )
@@ -140,7 +140,7 @@ func TestRun_AuditMode_PrintsFindingsNoWrites(t *testing.T) {
 	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
-	lint.Run(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
+	cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
 
 	out := buf.String()
 	if !strings.Contains(out, "[test/notes]") {
@@ -165,7 +165,7 @@ func TestRun_ApplyMode_InvokesAutoFix(t *testing.T) {
 	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
-	lint.Run(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+	cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
 
 	// Apply path may or may not write (depends on whether the broken
 	// title is auto-fixable per AutoFixAtom). What we DO assert: the
@@ -195,7 +195,7 @@ func TestRun_CanceledContext_Aborts(t *testing.T) {
 	cancel() // canceled before Run even starts
 
 	var buf bytes.Buffer
-	lint.Run(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
+	cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
 
 	// Honoring cancellation means the listNotes path saw ctx.Err
 	// and skipped the bearcli round-trip. Without this assertion the
@@ -216,7 +216,7 @@ func TestRun_EmptyDomains_RendersEmptyTally(t *testing.T) {
 	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
-	lint.Run(ctx, &buf, nil, false)
+	cli.RunLint(ctx, &buf, nil, false)
 
 	if !strings.Contains(buf.String(), "0 findings across 0 domains") {
 		t.Errorf("empty-domain tally missing; got %q", buf.String())

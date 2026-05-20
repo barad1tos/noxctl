@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear/cli/destroy"
+	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -25,7 +25,7 @@ func TestStripCanonical_RemovesTagLines(t *testing.T) {
 		"The body line one.\n" +
 		"Body line two.\n"
 
-	got, changed := destroy.StripCanonical(body, "#library/poetry")
+	got, changed := cli.StripCanonical(body, "#library/poetry")
 	if !changed {
 		t.Fatal("expected changed=true when canonical line is present")
 	}
@@ -44,7 +44,7 @@ func TestStripCanonical_RemovesTagLines(t *testing.T) {
 // double-passes an already-stripped note.
 func TestStripCanonical_NoChange(t *testing.T) {
 	body := "# Title\n#some/other/tag\nbody.\n"
-	got, changed := destroy.StripCanonical(body, "#library/poetry")
+	got, changed := cli.StripCanonical(body, "#library/poetry")
 	if changed {
 		t.Error("expected changed=false when canonical tag is absent")
 	}
@@ -59,7 +59,7 @@ func TestStripCanonical_NoChange(t *testing.T) {
 // what keeps `#library` from eating unrelated sibling tags.
 func TestStripCanonical_PrefixGuard(t *testing.T) {
 	body := "# Title\n#libraryother | [[Other]]\n#library-prose\nbody.\n"
-	got, changed := destroy.StripCanonical(body, "#library")
+	got, changed := cli.StripCanonical(body, "#library")
 	if changed {
 		t.Errorf("prefix-collision: #library matched #libraryother / #library-prose\nresult:\n%s", got)
 	}
@@ -87,8 +87,8 @@ func TestPromptConfirm(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			err := destroy.PromptConfirmForTest(&out, strings.NewReader(tc.stdin), tc.tag)
-			gotAbort := errors.Is(err, destroy.ErrAborted)
+			err := cli.PromptConfirmForTest(&out, strings.NewReader(tc.stdin), tc.tag)
+			gotAbort := errors.Is(err, cli.ErrAborted)
 			if gotAbort != tc.wantAbort {
 				t.Errorf("abort=%v err=%v want abort=%v", gotAbort, err, tc.wantAbort)
 			}
@@ -112,7 +112,7 @@ func TestRenderPreview_TruncatesAtomicsAboveFive(t *testing.T) {
 		}
 	}
 	var buf bytes.Buffer
-	destroy.RenderPreviewForTest(&buf, "library/test", nil, atomics)
+	cli.RenderPreviewForTest(&buf, "library/test", nil, atomics)
 	out := buf.String()
 	// First five names appear in full.
 	for i := range 5 {
@@ -143,7 +143,7 @@ func TestRenderPreview_NoTruncationAtFiveOrFewer(t *testing.T) {
 		{ID: "5", Title: "E"},
 	}
 	var buf bytes.Buffer
-	destroy.RenderPreviewForTest(&buf, "library/test", nil, atomics)
+	cli.RenderPreviewForTest(&buf, "library/test", nil, atomics)
 	if strings.Contains(buf.String(), "more.") {
 		t.Errorf("5 atomics should not trigger overflow line; got:\n%s", buf.String())
 	}
@@ -169,7 +169,7 @@ func TestStripCanonical_AcceptedShapes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {
-			got, changed := destroy.StripCanonical(tc.body, "#library/poetry")
+			got, changed := cli.StripCanonical(tc.body, "#library/poetry")
 			if !changed {
 				t.Fatalf("%s: expected changed=true", tc.label)
 			}

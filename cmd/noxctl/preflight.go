@@ -11,7 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/barad1tos/noxctl/bear/cli/lint"
+	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
@@ -75,7 +75,7 @@ func runLintSweep(cmd *cobra.Command, apply bool) error {
 		return loadErr
 	}
 	return runWithSignalContext(cmd, func(ctx context.Context) error {
-		lint.Run(ctx, os.Stdout, domains, apply)
+		cli.RunLint(ctx, os.Stdout, domains, apply)
 		return nil
 	})
 }

@@ -1,12 +1,9 @@
-// Package destroy implements the `noxctl destroy <tag>` subcommand
+package cli
+
+// destroy.go implements the `noxctl destroy <tag>` subcommand
 // body. cmd/noxctl/destroy.go reduces to cobra wiring + flag
-// parsing; this package owns the catalog lookup, the preview render,
+// parsing; this file owns the catalog lookup, the preview render,
 // the type-to-confirm gate, and the bearcli mutation calls.
-//
-// Layering: this is a CLI helper, so it imports bear/ but never
-// bear/config/. cmd/noxctl is the only place that owns the catalog →
-// domain translation.
-package destroy
 
 import (
 	"bufio"
@@ -30,9 +27,9 @@ var ErrAborted = errors.New("destroy: aborted by operator")
 // exit code 1 with a helpful "did you mean ..." style message.
 var ErrTagNotManaged = errors.New("destroy: tag not managed by this catalog")
 
-// Options bundles every input Run needs. Plain struct, no methods,
+// DestroyOptions bundles every input Run needs. Plain struct, no methods,
 // caller fills every field per "Accept interfaces, return structs".
-type Options struct {
+type DestroyOptions struct {
 	Domains     []*domain.Domain // REQUIRED — loaded catalog
 	Tag         string           // REQUIRED — target tag, e.g. "library/poetry"
 	AutoApprove bool             // --auto-approve skips the type-to-confirm prompt
@@ -41,7 +38,7 @@ type Options struct {
 	Stdin       io.Reader        // type-to-confirm reads from here (typically os.Stdin)
 }
 
-// Run is the destroy orchestrator. Walks every note carrying the
+// RunDestroy is the destroy orchestrator. Walks every note carrying the
 // target tag, classifies each as master/hub (skipNote == true) or
 // atom (skipNote == false), prints a preview, prompts for
 // type-to-confirm unless AutoApprove, then trashes master+hub notes
@@ -52,7 +49,7 @@ type Options struct {
 // authored stays in Bear. Master + hub notes are auto-generated and
 // get a soft-delete (bearcli trash); they can be restored from Bear's
 // trash if the operator changes their mind.
-func Run(ctx context.Context, opts Options) error {
+func RunDestroy(ctx context.Context, opts DestroyOptions) error {
 	d := findDomain(opts.Domains, opts.Tag)
 	if d == nil {
 		return fmt.Errorf("%w: %q", ErrTagNotManaged, opts.Tag)

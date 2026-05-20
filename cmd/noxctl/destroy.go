@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/barad1tos/noxctl/bear/cli/destroy"
+	"github.com/barad1tos/noxctl/bear/cli"
 )
 
 // destroyAutoApprove is the --auto-approve flag binding. When true,
@@ -63,7 +63,7 @@ non-interactive (CI / script) runs.`,
 }
 
 // runDestroy is the destroy RunE. Loads the catalog, hands the
-// orchestration off to bear/cli/destroy.Run, and maps the typed
+// orchestration off to bear/cli/cli.RunDestroy, and maps the typed
 // sentinels back to readable stderr lines before propagating.
 func runDestroy(cmd *cobra.Command, args []string) error {
 	domains, loadErr := domainsWithPreflight()
@@ -71,7 +71,7 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 		return loadErr
 	}
 	return runWithSignalContext(cmd, func(ctx context.Context) error {
-		err := destroy.Run(ctx, destroy.Options{
+		err := cli.RunDestroy(ctx, cli.DestroyOptions{
 			Domains:     domains,
 			Tag:         args[0],
 			AutoApprove: destroyAutoApprove,
@@ -79,7 +79,7 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 			Stderr:      os.Stderr,
 			Stdin:       os.Stdin,
 		})
-		if errors.Is(err, destroy.ErrAborted) {
+		if errors.Is(err, cli.ErrAborted) {
 			_, _ = fmt.Fprintln(os.Stderr, "noxctl destroy: aborted")
 			// Silence Cobra's redundant `Error: ...` line for the
 			// abort path only — every other error path still prints
@@ -88,7 +88,7 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 			cmd.SilenceErrors = true
 			return errDestroyAborted
 		}
-		// destroy.Run wraps ctx.Err() (context.Canceled) when apply
+		// cli.RunDestroy wraps ctx.Err() (context.Canceled) when apply
 		// bails mid-sweep on SIGINT. Translate to the shared
 		// errInterrupted sentinel so main.go maps to POSIX exit 130
 		// (same as apply); without this, canceled destroy exits 1

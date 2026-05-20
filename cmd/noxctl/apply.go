@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/barad1tos/noxctl/bear/cli/recap"
+	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
@@ -105,7 +105,7 @@ func runApply(cmd *cobra.Command, _ []string) error {
 
 	result, runErr := engine.Apply(ctx, opts)
 	if result != nil {
-		recap.Render(os.Stdout, result, quiet)
+		cli.RenderRecap(os.Stdout, result, quiet)
 	}
 	if runErr != nil {
 		return runErr
