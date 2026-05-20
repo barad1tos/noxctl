@@ -14,18 +14,18 @@
 #   scripts/ship-gate.sh --strict         # fail on untracked tag-families
 #
 # Honours these env vars:
-#   NOXCTL_CONFIG  — catalog path (default examples/roman.toml)
+#   NOXCTL_CONFIG  — catalog path (default examples/personal.toml)
 #   SHIP_GATE_HERMETIC_ONLY  — set to skip Tier 2 (used by CI)
 
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-# `examples/roman.toml` is the in-repo reference catalog (Roman's
+# `examples/personal.toml` is the in-repo reference catalog (Roman's
 # vault config baked into the repo for codegen round-trip testing).
 # Future operators / forks should override via `NOXCTL_CONFIG=<path>`
 # to point at their own catalog file before running this gate.
-CONFIG="${NOXCTL_CONFIG:-examples/roman.toml}"
+CONFIG="${NOXCTL_CONFIG:-examples/personal.toml}"
 # Per-invocation step log — `mktemp` keeps concurrent ship-gate runs
 # (different repos, parallel scripts) from clobbering each other.
 # Cleaned on EXIT; survives only when a step failed and tail-ed.

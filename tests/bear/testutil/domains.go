@@ -2,7 +2,7 @@
 // test fixtures. Tests in this repo MUST NOT import the
 // library/llm/it/personal/quicknote constructor packages directly —
 // resolve fixtures through Domain/Domains/LoadDomains here instead.
-// examples/roman.toml is the canonical catalog the production daemon
+// examples/personal.toml is the canonical catalog the production daemon
 // also loads.
 //
 // All helpers acceptb testing.TB and fail the test on any lookup miss,
@@ -23,7 +23,7 @@ import (
 	"github.com/barad1tos/noxctl/bear/config"
 )
 
-// catalogPathOnce resolves examples/roman.toml absolutely. The
+// catalogPathOnce resolves examples/personal.toml absolutely. The
 // resolution is anchored to this file's location via runtime.Caller
 // so tests run from any working directory.
 var catalogPathOnce = sync.OnceValue(func() string {
@@ -36,10 +36,10 @@ var catalogPathOnce = sync.OnceValue(func() string {
 		panic("testutil: runtime.Caller(0) returned !ok")
 	}
 	// here = .../tests/bear/testutil/domains.go ; repo root is up 3.
-	return filepath.Join(filepath.Dir(here), "..", "..", "..", "examples", "roman.toml")
+	return filepath.Join(filepath.Dir(here), "..", "..", "..", "examples", "personal.toml")
 })
 
-// catalogOnce parses examples/roman.toml exactly once per process.
+// catalogOnce parses examples/personal.toml exactly once per process.
 // Subsequent accessor calls reuse the cached slice — no repeated TOML
 // I/O, every accessor for a given tag returns the same *bear.Domain
 // pointer.
@@ -48,7 +48,7 @@ var catalogOnce = sync.OnceValues(func() ([]*bear.Domain, error) {
 	return domains, err
 })
 
-// CatalogPath returns the absolute path to examples/roman.toml,
+// CatalogPath returns the absolute path to examples/personal.toml,
 // resolved from this file's location via runtime.Caller. Useful for
 // tests that pass the path to a production loader (e.g. config.Load)
 // rather than reusing the cached domain slice.
@@ -57,7 +57,7 @@ func CatalogPath(tb testing.TB) string {
 	return catalogPathOnce()
 }
 
-// LoadDomains returns the parsed domain slice from examples/roman.toml.
+// LoadDomains returns the parsed domain slice from examples/personal.toml.
 // Fails the test on parse error. Reuses the cached parse via
 // sync.OnceValues.
 func LoadDomains(tb testing.TB) []*bear.Domain {

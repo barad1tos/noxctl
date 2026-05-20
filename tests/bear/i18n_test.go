@@ -121,7 +121,7 @@ func TestI18nCatalogComplete(t *testing.T) {
 
 	// After the atomic catalog migration the hardcoded domain packages
 	// (library/llm/it/personal/quicknote) are gone — every domain now
-	// lives in examples/roman.toml. The remaining Go-source `bear.T(...)`
+	// lives in examples/personal.toml. The remaining Go-source `bear.T(...)`
 	// call sites are inside bear/ (core + custom renderers).
 	roots := []string{"bear"}
 	keys := collectTKeys(t, repoRoot, roots)
