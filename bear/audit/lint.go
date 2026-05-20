@@ -1,4 +1,4 @@
-package domain
+package audit
 
 // Lint pass — types + sort utility.
 //

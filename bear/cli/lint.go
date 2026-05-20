@@ -11,13 +11,14 @@ import (
 	"context"
 	"io"
 
+	"github.com/barad1tos/noxctl/bear/audit"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // RunLint performs the lint sweep. When apply is false (audit mode or
-// `lint` without --apply), it runs domain.AuditDomains read-only and
+// `lint` without --apply), it runs audit.AuditDomains read-only and
 // prints the grouped report to stdout. When apply is true, it runs
-// domain.LintApplyDomains which rewrites Fixable rows through bearcli.
+// audit.LintApplyDomains which rewrites Fixable rows through bearcli.
 //
 // ctx cancellation aborts the sweep at the next bearcli call. Both
 // AuditDomains and LintApplyDomains are log-and-continue on per-atom
@@ -28,9 +29,9 @@ import (
 // production wires os.Stdout in the CLI shim.
 func RunLint(ctx context.Context, stdout io.Writer, domains []*domain.Domain, apply bool) {
 	if apply {
-		domain.LintApplyDomains(ctx, domains)
+		audit.LintApplyDomains(ctx, domains)
 		return
 	}
-	findings := domain.AuditDomains(ctx, domains)
-	domain.PrintFindings(stdout, findings, len(domains))
+	findings := audit.AuditDomains(ctx, domains)
+	audit.PrintFindings(stdout, findings, len(domains))
 }

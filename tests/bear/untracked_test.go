@@ -1,4 +1,4 @@
-// Package bear_test residue tests — exercises domain.AggregateUntrackedFromJSON
+// Package bear_test residue tests — exercises audit.AggregateUntrackedFromJSON
 // (the exported test-seam over aggregateUntracked), driving the pure
 // aggregation logic with realistic bearcli-shaped JSON fixtures so the
 // tests run without bearcli installed.
@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/audit"
 )
 
 // noteFixture mirrors the bearcli `list --fields id,title,tags` JSON
@@ -65,7 +65,7 @@ func twoFamilyFixture() []noteFixture {
 // each at its most-specific form, with the per-tag count equal to the
 // number of fixture notes carrying that tag.
 func TestScanUntrackedEmptyDomainsLeavesEverythingUntracked(t *testing.T) {
-	report, err := domain.AggregateUntrackedFromJSON(
+	report, err := audit.AggregateUntrackedFromJSON(
 		mustMarshalNotes(t, twoFamilyFixture()), managedSet(),
 	)
 	if err != nil {
@@ -97,7 +97,7 @@ func TestScanUntrackedEmptyDomainsLeavesEverythingUntracked(t *testing.T) {
 // JSON marshaling must not emit "null" so downstream tooling can
 // rely on the array shape.
 func TestScanUntrackedAllManagedReturnsEmpty(t *testing.T) {
-	report, err := domain.AggregateUntrackedFromJSON(
+	report, err := audit.AggregateUntrackedFromJSON(
 		mustMarshalNotes(t, twoFamilyFixture()), managedSet("library", "claude"),
 	)
 	if err != nil {
@@ -134,7 +134,7 @@ func TestScanUntrackedMixedTagsCountsBothScopes(t *testing.T) {
 			"library/poetry", "claude/sessions", "dev/notes",
 		}},
 	}
-	report, err := domain.AggregateUntrackedFromJSON(mustMarshalNotes(t, notes), managedSet("library"))
+	report, err := audit.AggregateUntrackedFromJSON(mustMarshalNotes(t, notes), managedSet("library"))
 	if err != nil {
 		t.Fatalf("AggregateUntrackedFromJSON: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestScanUntrackedSortStability(t *testing.T) {
 			Tags:  []string{tag},
 		})
 	}
-	report, err := domain.AggregateUntrackedFromJSON(mustMarshalNotes(t, notes), managedSet())
+	report, err := audit.AggregateUntrackedFromJSON(mustMarshalNotes(t, notes), managedSet())
 	if err != nil {
 		t.Fatalf("AggregateUntrackedFromJSON: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestScanUntrackedSpecificTagPathRecording(t *testing.T) {
 	notes := []noteFixture{
 		{ID: "1", Title: "n1", Tags: []string{"claude/sessions/2026-05-10"}},
 	}
-	report, err := domain.AggregateUntrackedFromJSON(mustMarshalNotes(t, notes), managedSet())
+	report, err := audit.AggregateUntrackedFromJSON(mustMarshalNotes(t, notes), managedSet())
 	if err != nil {
 		t.Fatalf("AggregateUntrackedFromJSON: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestScanUntrackedSpecificTagPathRecording(t *testing.T) {
 
 // tagsOf is a debug helper for failure messages — pulls just the tag
 // names so test output stays readable on a 60-family report.
-func tagsOf(families []domain.UntrackedFamily) []string {
+func tagsOf(families []audit.UntrackedFamily) []string {
 	out := make([]string, 0, len(families))
 	for _, fam := range families {
 		out = append(out, fam.Tag)

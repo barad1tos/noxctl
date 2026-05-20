@@ -18,6 +18,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/barad1tos/noxctl/bear/audit"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -83,7 +84,7 @@ func planSinglePath(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
 	// invalid config) and on interrupt (don't add bearcli round-trip on
 	// top of a canceled ctx).
 	if !result.Interrupted && len(opts.Domains) > 0 {
-		if scan, scanErr := domain.ScanUntracked(ctx, opts.Domains); scanErr != nil {
+		if scan, scanErr := audit.ScanUntracked(ctx, opts.Domains); scanErr != nil {
 			result.Errors = append(result.Errors, PlanError{Tag: "", Msg: scanErr.Error()})
 		} else {
 			result.Untracked = translateUntracked(scan)
@@ -94,7 +95,7 @@ func planSinglePath(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
 	return result, nil
 }
 
-// translateUntracked converts domain.UntrackedReport (residue scanner's
+// translateUntracked converts audit.UntrackedReport (residue scanner's
 // output type, declared in bear/untracked.go) into the engine-side
 // UntrackedReport (declared in bear/engine/plan_result.go). Boundary
 // translation pattern — same shape as cmd/noxctl/preflight.go's
@@ -104,7 +105,7 @@ func planSinglePath(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
 // residue + plan_result agree on tag/note_count/tag_families/
 // total_notes). The translation exists to avoid an import cycle
 // (bear/engine imports bear; bear cannot import bear/engine).
-func translateUntracked(b domain.UntrackedReport) UntrackedReport {
+func translateUntracked(b audit.UntrackedReport) UntrackedReport {
 	fams := make([]UntrackedFamily, len(b.TagFamilies))
 	for i, f := range b.TagFamilies {
 		fams[i] = UntrackedFamily{Tag: f.Tag, NoteCount: f.NoteCount}

@@ -107,14 +107,14 @@ func collectDuplicates(titleToIDSet map[string]map[string]struct{}) map[string][
 	return dup
 }
 
-// titleNeedsURLForm reports whether a title contains characters that break
+// TitleNeedsURLForm reports whether a title contains characters that break
 // `[[Title]]` wikilink parsing in Bear. The pipe `|` is the alias separator
 // (`[[target|alias]]` resolves target="target"), so `[[Foo | Bar]]` would
 // mis-resolve to a non-existent note "Foo". `]` and `[` close/open wikilink
 // targets prematurely. Switching to a bear://x-callback URL preserves the
 // link to the actual note at the cost of losing Bear's Linked-Notes
 // backlink visibility — same trade-off as duplicate-title disambiguation.
-func titleNeedsURLForm(title string) bool {
+func TitleNeedsURLForm(title string) bool {
 	return strings.ContainsAny(title, "|][")
 }
 
@@ -139,7 +139,7 @@ func AtomicWikilink(d *Domain, note Note) string {
 		// untitled state.
 		return fmt.Sprintf("[%s](bear://x-callback-url/open-note?id=%s)", T("atom.untitled-label"), note.ID)
 	}
-	if titleNeedsURLForm(note.Title) || (d != nil && d.Duplicates.IsDuplicate(note.Title)) {
+	if TitleNeedsURLForm(note.Title) || (d != nil && d.Duplicates.IsDuplicate(note.Title)) {
 		return fmt.Sprintf("[%s](bear://x-callback-url/open-note?id=%s)", escapeMarkdownLabel(note.Title), note.ID)
 	}
 	return "[[" + note.Title + "]]"

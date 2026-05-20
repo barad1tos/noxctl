@@ -1,24 +1,23 @@
-// Package domain residue scanner — corpus-level walk that surfaces tags
-// outside the closed catalog of TOML-managed domains. Used by the
-// plan engine (bear/engine/plan.go via wiring) to populate
-// the `⚠ Untracked` section of plan output.
+package audit
+
+// untracked.go is a corpus-level scanner — walks the corpus and
+// surfaces tags outside the closed catalog of TOML-managed domains.
+// Used by the plan engine (bear/engine/plan.go via wiring) to
+// populate the `⚠ Untracked` section of plan output.
 //
-// Lives in a NEW peer file (NOT bear/lint.go) because lint.go is at
-// its gocognit/dupl ceiling; this scanner has a different shape
-// (corpus-level aggregate, not per-atom) and would tip lint.go's
-// complexity budget.
-//
-// The bearcli list call replicates bear/foreigntag.go:103-115 — same
-// field set, same response shape — but the two are NOT shared at
-// runtime: foreign-tag is an apply pre-pass; plan does NOT run
+// The bearcli list call replicates bear/fastpass/foreigntag.go —
+// same field set, same response shape — but the two are NOT shared
+// at runtime: foreign-tag is an apply pre-pass; plan does NOT run
 // pre-passes; runtime overlap is impossible.
-package domain
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
+
+	"github.com/barad1tos/noxctl/bear/bearcli"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // UntrackedFamily is one tag-family entry in the residue report.
@@ -58,17 +57,21 @@ type UntrackedReport struct {
 //
 // Read-only: never writes to bearcli; never mutates any input. The
 // scan is info-only and never contributes to the plan exit-code.
-func ScanUntracked(ctx context.Context, domains []*Domain) (UntrackedReport, error) {
+func ScanUntracked(ctx context.Context, domains []*domain.Domain) (UntrackedReport, error) {
 	managed := managedRoots(domains)
 
-	out, err := runBearcli(ctx,
-		[]string{"list", "--location", "notes", flagFormat, formatJSON, flagFields, "id,title,tags"},
+	out, err := bearcli.Run(ctx,
+		[]string{
+			"list", "--location", "notes",
+			bearcli.FlagFormat, bearcli.FormatJSON,
+			bearcli.FlagFields, "id,title,tags",
+		},
 		"")
 	if err != nil {
 		return emptyUntrackedReport(), fmt.Errorf("ScanUntracked list: %w", err)
 	}
 
-	var notes []AutoTagNote
+	var notes []domain.AutoTagNote
 	if err = json.Unmarshal(out, &notes); err != nil {
 		return emptyUntrackedReport(), fmt.Errorf("ScanUntracked parse: %w", err)
 	}
@@ -86,7 +89,7 @@ func ScanUntracked(ctx context.Context, domains []*Domain) (UntrackedReport, err
 // the same JSON-stable empty report on parse error that ScanUntracked
 // uses on bearcli error.
 func AggregateUntrackedFromJSON(jsonBytes []byte, managed map[string]struct{}) (UntrackedReport, error) {
-	var notes []AutoTagNote
+	var notes []domain.AutoTagNote
 	if err := json.Unmarshal(jsonBytes, &notes); err != nil {
 		return emptyUntrackedReport(), fmt.Errorf("AggregateUntrackedFromJSON parse: %w", err)
 	}
@@ -96,19 +99,19 @@ func AggregateUntrackedFromJSON(jsonBytes []byte, managed map[string]struct{}) (
 // managedRoots collects the unique top-level tag segments the supplied
 // domains cover. Nil-tagged or zero-value domains are skipped silently
 // (defensive against partially-constructed catalogs).
-func managedRoots(domains []*Domain) map[string]struct{} {
+func managedRoots(domains []*domain.Domain) map[string]struct{} {
 	roots := make(map[string]struct{}, len(domains))
 	for _, d := range domains {
 		if d == nil || d.Tag == "" {
 			continue
 		}
-		roots[TopLevelSegment(d.Tag)] = struct{}{}
+		roots[domain.TopLevelSegment(d.Tag)] = struct{}{}
 	}
 	return roots
 }
 
 // aggregateUntracked is the pure logic core of ScanUntracked, factored
-// out so AggregateUntrackedFromJSON can drive it from tests without
+// out so domain.AggregateUntrackedFromJSON can drive it from tests without
 // hitting bearcli. Counts each tag at its most-specific form, then
 // sorts the resulting families alphabetically — never depend on Go
 // map iteration order downstream.
@@ -116,14 +119,14 @@ func managedRoots(domains []*Domain) map[string]struct{} {
 // Splits ScanUntracked at the I/O boundary: ScanUntracked owns
 // bearcli, aggregateUntracked owns the data transformation. Both
 // hold under gocognit ≤ 15 individually.
-func aggregateUntracked(notes []AutoTagNote, managed map[string]struct{}) UntrackedReport {
+func aggregateUntracked(notes []domain.AutoTagNote, managed map[string]struct{}) UntrackedReport {
 	perFamily := make(map[string]int)
 	for _, n := range notes {
 		for _, tag := range n.Tags {
 			if tag == "" {
 				continue
 			}
-			if _, ok := managed[TopLevelSegment(tag)]; ok {
+			if _, ok := managed[domain.TopLevelSegment(tag)]; ok {
 				continue
 			}
 			perFamily[tag]++

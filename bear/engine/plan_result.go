@@ -65,7 +65,7 @@ type UntrackedFamily struct {
 
 // UntrackedReport is the residue section of plan output. The result
 // always carries a zero-value report (TagFamilies as an initialized
-// empty slice, TotalNotes=0) when domain.ScanUntracked finds nothing.
+// empty slice, TotalNotes=0) when audit.ScanUntracked finds nothing.
 type UntrackedReport struct {
 	TagFamilies []UntrackedFamily `json:"tag_families"` // make(..., 0) — never null
 	TotalNotes  int               `json:"total_notes"`

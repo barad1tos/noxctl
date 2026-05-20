@@ -9,6 +9,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/barad1tos/noxctl/bear/audit"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/fastpass"
 )
@@ -23,8 +24,8 @@ type prePassSpec struct {
 
 func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 	if opts.AuditEnabled {
-		findings := domain.AuditDomains(ctx, opts.Domains)
-		domain.LogAuditFindings(findings, log.Printf)
+		findings := audit.AuditDomains(ctx, opts.Domains)
+		audit.LogAuditFindings(findings, log.Printf)
 	}
 	// canonical-bootstrap wiring: build the tag→*Domain lookup
 	// once so both fast-pass paths can write destination-canonical form

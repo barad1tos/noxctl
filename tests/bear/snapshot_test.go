@@ -8,7 +8,7 @@
 //     in the live Bear corpus. Empty-but-non-nil is the contract the
 //     engine.Plan core and the residue scanner both depend on — they
 //     range over .Groups without nil-checks.
-//  2. domain.LintUntracked exposes the wire value "untracked" — the
+//  2. audit.LintUntracked exposes the wire value "untracked" — the
 //     constant the residue emitter and the diff renderer both serialize
 //     against.
 //
@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/barad1tos/noxctl/bear/audit"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -94,8 +95,8 @@ func TestSnapshotDomainRenderInputs(t *testing.T) {
 // stability for every downstream consumer.
 func TestSnapshotDomainRenderInputs_LintUntrackedConstant(t *testing.T) {
 	const want = "untracked"
-	if got := string(domain.LintUntracked); got != want {
-		t.Fatalf("string(domain.LintUntracked) = %q, want %q (wire format locked by Plans 03-03/04)", got, want)
+	if got := string(audit.LintUntracked); got != want {
+		t.Fatalf("string(audit.LintUntracked) = %q, want %q (wire format locked by Plans 03-03/04)", got, want)
 	}
 }
 

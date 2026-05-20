@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/audit"
 )
 
 // TestPrintFindings_GroupedShape locks the exact human-readable
@@ -22,26 +22,26 @@ import (
 // + `<category>:` per category, four-space indent + `<title> — <detail>`
 // per finding, optional `(fixable)` suffix, blank line + tally.
 func TestPrintFindings_GroupedShape(t *testing.T) {
-	findings := []domain.Finding{
+	findings := []audit.Finding{
 		{
 			DomainTag: "library/poetry", NoteID: "x1", Title: "Бридке каченя",
-			Category: domain.LintBrokenH1, Detail: "title starts with `|`", Fixable: true,
+			Category: audit.LintBrokenH1, Detail: "title starts with `|`", Fixable: true,
 		},
 		{
 			DomainTag: "library/poetry", NoteID: "x2", Title: "Шекспір",
-			Category: domain.LintBrokenH1, Detail: "title starts with `*`", Fixable: true,
+			Category: audit.LintBrokenH1, Detail: "title starts with `*`", Fixable: true,
 		},
 		{
 			DomainTag: "library/poetry", NoteID: "x3", Title: "Скитальці",
-			Category: domain.LintUnsafeTitle, Detail: "contains `]`", Fixable: false,
+			Category: audit.LintUnsafeTitle, Detail: "contains `]`", Fixable: false,
 		},
 		{
 			DomainTag: "llm/agents", NoteID: "x4", Title: "Helper",
-			Category: domain.LintMalformedCanonical, Detail: "no recognized bucket", Fixable: true,
+			Category: audit.LintMalformedCanonical, Detail: "no recognized bucket", Fixable: true,
 		},
 	}
 	var buf bytes.Buffer
-	domain.PrintFindings(&buf, findings, 2)
+	audit.PrintFindings(&buf, findings, 2)
 	got := buf.String()
 
 	wants := []string{
@@ -68,7 +68,7 @@ func TestPrintFindings_GroupedShape(t *testing.T) {
 // regardless of whether anything fired.
 func TestPrintFindings_EmptyTally(t *testing.T) {
 	var buf bytes.Buffer
-	domain.PrintFindings(&buf, nil, 5)
+	audit.PrintFindings(&buf, nil, 5)
 	got := buf.String()
 	if !strings.Contains(got, "0 findings across 5 domains") {
 		t.Errorf("empty-findings tally missing; got %q", got)
@@ -81,12 +81,12 @@ func TestPrintFindings_EmptyTally(t *testing.T) {
 // it on a non-fixable finding misleads the operator into a no-op
 // apply run.
 func TestPrintFindings_FixableSuffix(t *testing.T) {
-	findings := []domain.Finding{
-		{DomainTag: "d", Title: "fix-me", Category: domain.LintBrokenH1, Detail: "x", Fixable: true},
-		{DomainTag: "d", Title: "review-me", Category: domain.LintBrokenH1, Detail: "y", Fixable: false},
+	findings := []audit.Finding{
+		{DomainTag: "d", Title: "fix-me", Category: audit.LintBrokenH1, Detail: "x", Fixable: true},
+		{DomainTag: "d", Title: "review-me", Category: audit.LintBrokenH1, Detail: "y", Fixable: false},
 	}
 	var buf bytes.Buffer
-	domain.PrintFindings(&buf, findings, 1)
+	audit.PrintFindings(&buf, findings, 1)
 	got := buf.String()
 	if !strings.Contains(got, "fix-me — x  (fixable)") {
 		t.Errorf("fixable row missing suffix; got %q", got)

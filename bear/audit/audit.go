@@ -1,24 +1,32 @@
-package domain
+// Package audit owns the lint + scan pipeline — per-atom Finding
+// detection (LintAtom in lints.go), corpus-wide orchestrators
+// (AuditDomains, LintApplyDomains in audit.go), and the untracked-
+// tag corpus scanner (ScanUntracked in untracked.go). engine.Plan
+// + cli/lint use this surface to drive `noxctl audit` and `noxctl
+// lint --apply`.
+package audit
 
-// Lint audit orchestrator: walks every domain, runs the per-atom lint
-// pass via lints.go, and reports / auto-fixes the findings. Split
-// from lint.go to keep CLI-facing orchestration separate from the
-// per-atom detection logic.
+// audit.go is the orchestrator entry: walks every domain, runs the
+// per-atom lint pass via lints.go, and reports / auto-fixes the
+// findings.
 
 import (
 	"context"
 	"fmt"
 	"io"
 	"log"
+
+	"github.com/barad1tos/noxctl/bear/bearcli"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // LintAndAuditDomain runs the lint pass for one domain. Streams findings
 // through the supplied channel — caller closes it after every domain has
 // reported. listNotes is expensive (one bearcli round-trip), so the caller
 // owns the listing and just hands the slice in.
-func LintAndAuditDomain(d *Domain, notes []Note, sink func(Finding)) {
+func LintAndAuditDomain(d *domain.Domain, notes []domain.Note, sink func(Finding)) {
 	for _, note := range notes {
-		for _, finding := range d.LintAtom(note) {
+		for _, finding := range LintAtom(d, note) {
 			sink(finding)
 		}
 	}
@@ -33,16 +41,16 @@ func LintAndAuditDomain(d *Domain, notes []Note, sink func(Finding)) {
 // drifts. The render-layer regen pass will rebuild canonicals on the next
 // `--once` so AutoFixAtom only needs to leave the atom in a state where
 // ParseMeta succeeds.
-func AutoFixDomain(ctx context.Context, d *Domain, notes []Note) (fixed, failed int) {
+func AutoFixDomain(ctx context.Context, d *domain.Domain, notes []domain.Note) (fixed, failed int) {
 	for _, note := range notes {
-		if d.skipNote(note) {
+		if domain.IsAuxNote(d, note) {
 			continue
 		}
-		newContent, changed := d.AutoFixAtom(note.Content)
+		newContent, changed := AutoFixAtom(d, note.Content)
 		if !changed {
 			continue
 		}
-		if err := overwriteWithRetry(ctx, note.ID, newContent); err != nil {
+		if err := bearcli.OverwriteWithRetry(ctx, note.ID, newContent); err != nil {
 			d.Logf("lint fix %q failed: %v", note.Title, err)
 			failed++
 			continue
@@ -65,13 +73,15 @@ func AutoFixDomain(ctx context.Context, d *Domain, notes []Note) (fixed, failed 
 // of racing the bearcli pool semaphore. Without the explicit guard the
 // per-domain listNotes call would still acquire the pool slot on the
 // ~50% of select-races where the slot wins over ctx.Done().
-func AuditDomains(ctx context.Context, domains []*Domain) []Finding {
+//
+//nolint:revive // public API; rename is breaking change for callers
+func AuditDomains(ctx context.Context, domains []*domain.Domain) []Finding {
 	var findings []Finding
 	for _, d := range domains {
-		if err := CheckCtx(ctx); err != nil {
+		if err := domain.CheckCtx(ctx); err != nil {
 			return findings
 		}
-		notes, err := d.listNotes(ctx)
+		notes, err := bearcli.ListNotesForTag(ctx, d.Tag)
 		if err != nil {
 			log.Printf("audit: %s: list failed: %v", d.Tag, err)
 			continue
@@ -145,12 +155,12 @@ func LogAuditFindings(findings []Finding, logf func(format string, args ...any))
 // guard at the top of each iteration short-circuits before any bearcli
 // I/O, so a canceled sweep stops deterministically instead of racing the
 // pool semaphore for one more list+overwrite round.
-func LintApplyDomains(ctx context.Context, domains []*Domain) {
+func LintApplyDomains(ctx context.Context, domains []*domain.Domain) {
 	for _, d := range domains {
-		if err := CheckCtx(ctx); err != nil {
+		if err := domain.CheckCtx(ctx); err != nil {
 			return
 		}
-		notes, err := d.listNotes(ctx)
+		notes, err := bearcli.ListNotesForTag(ctx, d.Tag)
 		if err != nil {
 			log.Printf("lint --apply: %s: list failed: %v", d.Tag, err)
 			continue
