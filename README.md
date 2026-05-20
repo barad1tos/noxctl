@@ -1,10 +1,19 @@
 # noxctl
 
+[![Install](https://img.shields.io/badge/install-go%20install-2E86AB?style=for-the-badge&logo=go&logoColor=white)](#quick-start)
+[![Status](https://img.shields.io/badge/status-pre--1.0-FFAD66?style=for-the-badge)](#status--scope)
+
+[![CI](https://github.com/barad1tos/noxctl/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/barad1tos/noxctl/actions/workflows/build.yml)
+[![CodeQL](https://github.com/barad1tos/noxctl/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/barad1tos/noxctl/actions/workflows/codeql.yml)
+[![Coverage](https://codecov.io/gh/barad1tos/noxctl/graph/badge.svg)](https://codecov.io/gh/barad1tos/noxctl)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/barad1tos/noxctl)](go.mod)
+[![License](https://img.shields.io/github/license/barad1tos/noxctl)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS-blue)](#status--scope)
+[![Go Reference](https://pkg.go.dev/badge/github.com/barad1tos/noxctl.svg)](https://pkg.go.dev/github.com/barad1tos/noxctl)
+
 Declarative macOS CLI for Bear notes structure management — *Terraform for Bear notes*. Describe your Bear-vault layout (tags, hubs, masters, buckets) in a TOML file and `noxctl` keeps the vault matching that description idempotently.
 
 Brownfield — descended from a personal FSEvents-driven daemon (`regen-watchd`) that managed a 28-domain Bear corpus. The closed catalog of six rendering blueprints (`flat-list`, `flat-table`, `grouped-vertical`, `hub-routed`, `hub-routed-with-subtag`, `umbrella`) covers every shape that production used.
-
-> Status: pre-1.0. The acceptance test is byte-equivalent vault output against the existing daemon for the maintainer's 28-domain corpus.
 
 ## Quick start
 
@@ -33,6 +42,7 @@ Optional: run `noxctl daemon --config ~/.config/noxctl/noxctl.toml` to keep the 
 
 - **Platform:** macOS only. Bear is macOS-only; the watcher uses FSEvents via `fsnotify`'s Darwin backend; the CLI bridge is `bearcli` at `/Applications/Bear.app/Contents/MacOS/bearcli`.
 - **Runtime:** Go ≥ 1.26. The only non-stdlib runtime dependency is `github.com/fsnotify/fsnotify`. Adding a runtime dep is deliberate and requires justification.
+- **Acceptance test:** byte-equivalent vault output against the legacy daemon for the maintainer's 28-domain corpus.
 - **License:** MIT.
 
 ## Subcommands
