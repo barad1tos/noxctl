@@ -67,7 +67,7 @@ func buildPlaceholderIndex(domainsByTag map[string]*Domain) map[string][]*Domain
 		if d == nil {
 			continue
 		}
-		key := d.effectiveQuickPlaceholderH1()
+		key := d.EffectiveQuickPlaceholderH1()
 		out[key] = append(out[key], d)
 	}
 	return out
@@ -93,7 +93,7 @@ func refreshOnePlaceholder(
 	if d == nil {
 		return false
 	}
-	newContent, didRefresh := refreshPlaceholderH1(note.Content, d.effectiveQuickPlaceholderH1(), stamp)
+	newContent, didRefresh := refreshPlaceholderH1(note.Content, d.EffectiveQuickPlaceholderH1(), stamp)
 	if !didRefresh {
 		return false
 	}

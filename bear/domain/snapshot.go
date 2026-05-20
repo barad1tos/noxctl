@@ -13,7 +13,7 @@ import (
 // exist yet (engine.Apply caller treats this as "skip the hash
 // update for this domain", preserving last-known-good).
 func FetchMasterContent(ctx context.Context, d *Domain) (string, error) {
-	idxID, err := d.findIndexID(ctx)
+	idxID, err := d.FindIndexID(ctx)
 	if err != nil {
 		return "", fmt.Errorf("FetchMasterContent(%s) findIndex: %w", d.Tag, err)
 	}

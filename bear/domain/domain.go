@@ -192,7 +192,7 @@ type Domain struct {
 	// it for a fresh timestamp.
 	//
 	// Empty string falls back to DefaultQuickPlaceholderH1 via
-	// effectiveQuickPlaceholderH1 — every domain still emits the
+	// EffectiveQuickPlaceholderH1 — every domain still emits the
 	// bootstrap URL form; the override only customizes the visible
 	// placeholder text.
 	QuickPlaceholderH1 string

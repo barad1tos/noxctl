@@ -71,7 +71,7 @@ func (d *Domain) upsertHub(ctx context.Context, bucket string, notes []Note) (st
 // human-readable summary; an err signals the caller to aggregate failures.
 func (d *Domain) upsertMasterIndex(ctx context.Context, groups map[string][]Note) (string, error) {
 	newAuto := d.RenderMaster(d, groups)
-	idxID, err := d.findIndexID(ctx)
+	idxID, err := d.FindIndexID(ctx)
 	if err != nil {
 		return "", fmt.Errorf("upsertMasterIndex(%s): %w", d.IndexTitle, err)
 	}

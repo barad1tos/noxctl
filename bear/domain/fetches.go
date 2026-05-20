@@ -65,7 +65,12 @@ func (d *Domain) findHubID(ctx context.Context, title string) (string, error) {
 	return d.findNoteByTitle(ctx, title)
 }
 
-func (d *Domain) findIndexID(ctx context.Context) (string, error) {
+// FindIndexID returns the bearcli note ID of this domain's master
+// (index) note via title-based lookup. Returns an empty string +
+// nil error when no matching note exists yet. Used by fast-pass
+// code (e.g. cross-domain moves) that needs the master ID to
+// generate inter-note links.
+func (d *Domain) FindIndexID(ctx context.Context) (string, error) {
 	return d.findNoteByTitle(ctx, d.IndexTitle)
 }
 
