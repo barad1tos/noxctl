@@ -605,14 +605,14 @@ func assertOverwriteCount(t *testing.T, fake *fakeAutoTagBackend, want int, labe
 // TestApplyDomainBootstrap_SourceRegexUmbrellaGuard is a source-regex
 // regression lock asserting the defensive
 // `if d.SkipAtomicsPass` branch literal stays present in
-// bear/autotag.go AND that the word "umbrella" appears within 5
+// bear/bootstrap.go AND that the word "umbrella" appears within 5
 // lines of it (the comment that explains why the branch exists).
 // Future refactors that delete the guard as "unreachable dead code"
 // will trip this test instead of silently restoring the bug class.
 func TestApplyDomainBootstrap_SourceRegexUmbrellaGuard(t *testing.T) {
-	source, err := os.ReadFile("../../../bear/autotag.go")
+	source, err := os.ReadFile("../../../bear/bootstrap.go")
 	if err != nil {
-		t.Fatalf("read bear/autotag.go: %v", err)
+		t.Fatalf("read bear/bootstrap.go: %v", err)
 	}
 	lines := strings.Split(string(source), "\n")
 	guardRE := regexp.MustCompile(`if\s+d\.SkipAtomicsPass`)
@@ -625,7 +625,7 @@ func TestApplyDomainBootstrap_SourceRegexUmbrellaGuard(t *testing.T) {
 		}
 	}
 	if len(guardLines) == 0 {
-		t.Fatalf("defensive `if d.SkipAtomicsPass` guard missing from bear/autotag.go — defensive-guard regression lock failed")
+		t.Fatalf("defensive `if d.SkipAtomicsPass` guard missing from bear/bootstrap.go — defensive-guard regression lock failed")
 	}
 	for _, gl := range guardLines {
 		// Scan ±5 lines for the word "umbrella" — the comment that
