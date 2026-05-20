@@ -1,9 +1,11 @@
-package domain
+package render
 
 import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // DefaultParseMetaCanonical extracts (Bucket, Section) from a canonical-shape
@@ -20,21 +22,21 @@ import (
 // where the canonical header backlinks at the MASTER (aphorisms-style — the
 // "category-as-bucket" pattern) need their own ParseMeta because they require
 // target == IndexTitle rather than rejecting it.
-func DefaultParseMetaCanonical(d *Domain, body string) AtomicMeta {
-	for line := range strings.SplitSeq(HeaderZone(body), "\n") {
+func DefaultParseMetaCanonical(d *domain.Domain, body string) domain.AtomicMeta {
+	for line := range strings.SplitSeq(domain.HeaderZone(body), "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "#") || !strings.Contains(line, "[[") {
 			continue
 		}
-		parts := DropTrailingNewNoteURLSegment(strings.Split(line, " | "))
+		parts := domain.DropTrailingNewNoteURLSegment(strings.Split(line, " | "))
 		if len(parts) < 2 {
 			continue
 		}
-		target := ExtractWikilinkTarget(parts[1])
+		target := domain.ExtractWikilinkTarget(parts[1])
 		if target == "" || target == d.IndexTitle {
 			continue
 		}
-		var meta AtomicMeta
+		var meta domain.AtomicMeta
 		if _, isOwnAlias := d.OwnAliases[target]; isOwnAlias {
 			meta.Bucket = d.OwnGroup
 		} else {
@@ -45,7 +47,7 @@ func DefaultParseMetaCanonical(d *Domain, body string) AtomicMeta {
 		}
 		return meta
 	}
-	return AtomicMeta{}
+	return domain.AtomicMeta{}
 }
 
 // DefaultRenderHub3Tier produces a per-bucket Hub note's auto-zone for any
@@ -65,25 +67,28 @@ func DefaultParseMetaCanonical(d *Domain, body string) AtomicMeta {
 //	- [[item]]
 //	#### <nested> (K)
 //	- [[item]]
-func DefaultRenderHub3Tier(d *Domain, name string, notes []Note, existingOrder map[string][]string) string {
-	sorted := make([]Note, len(notes))
+func DefaultRenderHub3Tier(
+	d *domain.Domain, name string, notes []domain.Note,
+	existingOrder map[string][]string,
+) string {
+	sorted := make([]domain.Note, len(notes))
 	copy(sorted, notes)
-	sort.Sort(ByTitle(sorted))
+	sort.Sort(domain.ByTitle(sorted))
 
 	bySection := d.GroupNotesBySection(sorted)
 	if existingOrder != nil {
-		ApplyOrder(bySection, existingOrder)
+		domain.ApplyOrder(bySection, existingOrder)
 	}
-	topKeys, topGroups := NestSections(bySection)
+	topKeys, topGroups := domain.NestSections(bySection)
 
 	var body strings.Builder
 	_, _ = fmt.Fprintf(&body, "# %s\n", name)
 	_, _ = fmt.Fprintf(&body, "%s | [[%s]]%s\n---\n",
-		d.CanonicalTag, d.IndexTitle, NewNoteURLFromDomain(d).Emit())
+		d.CanonicalTag, d.IndexTitle, domain.NewNoteURLFromDomain(d).Emit())
 	_, _ = fmt.Fprintf(&body, "## %s (%d)\n", d.HubH2Prefix, len(sorted))
-	RenderNoteList(&body, d, bySection[""])
+	domain.RenderNoteList(&body, d, bySection[""])
 	for _, top := range topKeys {
-		RenderSectionGroup(&body, d, top, topGroups[top])
+		domain.RenderSectionGroup(&body, d, top, topGroups[top])
 	}
 	body.WriteString("\n")
 	return body.String()
@@ -104,7 +109,7 @@ func DefaultRenderHub3Tier(d *Domain, name string, notes []Note, existingOrder m
 //	- [[Bucket]] (K)
 //
 // ...
-func DefaultRenderMaster3Tier(d *Domain, groups map[string][]Note) string {
+func DefaultRenderMaster3Tier(d *domain.Domain, groups map[string][]domain.Note) string {
 	return RenderVerticalSections(d, defaultMaster3TierSections(d, groups))
 }
 
@@ -112,12 +117,12 @@ func DefaultRenderMaster3Tier(d *Domain, groups map[string][]Note) string {
 // style masters: an optional "Власні" section for the OwnGroup bucket,
 // then "Автори (M)" listing the remaining buckets alphabetically with
 // per-author counts in the bullet text.
-func defaultMaster3TierSections(d *Domain, groups map[string][]Note) []Section {
+func defaultMaster3TierSections(d *domain.Domain, groups map[string][]domain.Note) []Section {
 	var sections []Section
 	if d.OwnGroup != "" {
 		if own, hasOwn := groups[d.OwnGroup]; hasOwn {
 			sections = append(sections, Section{
-				Header:  T("master.section.own-curated"),
+				Header:  domain.T("master.section.own-curated"),
 				Bullets: []string{fmt.Sprintf("[[%s]] (%d)", d.OwnGroup, len(own))},
 			})
 		}
@@ -137,7 +142,7 @@ func defaultMaster3TierSections(d *Domain, groups map[string][]Note) []Section {
 		bullets[index] = fmt.Sprintf("[[%s]] (%d)", author, len(groups[author]))
 	}
 	sections = append(sections, Section{
-		Header:  fmt.Sprintf("%s (%d)", T("master.section.authors"), total),
+		Header:  fmt.Sprintf("%s (%d)", domain.T("master.section.authors"), total),
 		Bullets: bullets,
 	})
 	return sections
@@ -156,15 +161,15 @@ func defaultMaster3TierSections(d *Domain, groups map[string][]Note) []Section {
 //	- [[B]]
 //
 // ...
-func DefaultRenderMasterFlat(d *Domain, groups map[string][]Note) string {
-	var all []Note
+func DefaultRenderMasterFlat(d *domain.Domain, groups map[string][]domain.Note) string {
+	var all []domain.Note
 	for _, items := range groups {
 		all = append(all, items...)
 	}
-	sort.Sort(ByTitle(all))
+	sort.Sort(domain.ByTitle(all))
 	bullets := make([]string, len(all))
 	for index, note := range all {
-		bullets[index] = AtomicWikilink(d, note)
+		bullets[index] = domain.AtomicWikilink(d, note)
 	}
 	return RenderVerticalSections(d, []Section{{Bullets: bullets}})
 }
@@ -179,17 +184,17 @@ func DefaultRenderMasterFlat(d *Domain, groups map[string][]Note) string {
 // it/technologies). Differs from DefaultParseMetaCanonical, which expects
 // target == bucket name (Tier-2 hub backlink) and treats the 3rd segment
 // as a section path inside that hub.
-func ParseMetaFlatTable(d *Domain, body string) AtomicMeta {
-	for line := range strings.SplitSeq(HeaderZone(body), "\n") {
+func ParseMetaFlatTable(d *domain.Domain, body string) domain.AtomicMeta {
+	for line := range strings.SplitSeq(domain.HeaderZone(body), "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "#") || !strings.Contains(line, "[[") {
 			continue
 		}
-		parts := DropTrailingNewNoteURLSegment(strings.Split(line, " | "))
+		parts := domain.DropTrailingNewNoteURLSegment(strings.Split(line, " | "))
 		if len(parts) < 3 {
 			continue
 		}
-		target := ExtractWikilinkTarget(parts[1])
+		target := domain.ExtractWikilinkTarget(parts[1])
 		if target != d.IndexTitle {
 			continue
 		}
@@ -197,9 +202,9 @@ func ParseMetaFlatTable(d *Domain, body string) AtomicMeta {
 		if bucket == "" {
 			continue
 		}
-		return AtomicMeta{Bucket: bucket}
+		return domain.AtomicMeta{Bucket: bucket}
 	}
-	return AtomicMeta{}
+	return domain.AtomicMeta{}
 }
 
 // WriteMasterHeader emits the standard master-note header into the supplied
@@ -211,8 +216,8 @@ func ParseMetaFlatTable(d *Domain, body string) AtomicMeta {
 //	# <IndexTitle>
 //	#<tag>
 //	---
-func WriteMasterHeader(b *strings.Builder, d *Domain) {
-	link := NewNoteURLFromDomain(d).Emit()
+func WriteMasterHeader(b *strings.Builder, d *domain.Domain) {
+	link := domain.NewNoteURLFromDomain(d).Emit()
 	if d.ParentMaster != "" {
 		_, _ = fmt.Fprintf(b, "# %s\n%s | [[%s]]%s\n---\n",
 			d.IndexTitle, d.CanonicalTag, d.ParentMaster, link)
@@ -221,45 +226,45 @@ func WriteMasterHeader(b *strings.Builder, d *Domain) {
 	_, _ = fmt.Fprintf(b, "# %s\n%s%s\n---\n", d.IndexTitle, d.CanonicalTag, link)
 }
 
-// SortTitles sorts the supplied slice in place using CompareTitles —
+// SortTitles sorts the supplied slice in place using domain.CompareTitles —
 // Latin → Ukrainian → Russian-only → other, lowercase tie-break. The
-// idiom `sort.Slice(s, func(i,j int) bool { return CompareTitles(s[i], s[j]) < 0 })`
+// idiom `sort.Slice(s, func(i,j int) bool { return domain.CompareTitles(s[i], s[j]) < 0 })`
 // recurs in every renderer; centralizing it keeps duplicate-block lints
 // quiet without inventing a custom sort.Interface per call site.
 func SortTitles(items []string) {
 	sort.Slice(items, func(i, j int) bool {
-		return CompareTitles(items[i], items[j]) < 0
+		return domain.CompareTitles(items[i], items[j]) < 0
 	})
 }
 
-// MasterBacklink is a Domain.BacklinkFor implementation that points every
+// MasterBacklink is a domain.Domain.BacklinkFor implementation that points every
 // atomic at the master `[[<IndexTitle>]]`, regardless of bucket. Use for
 // flat-table domains (aphorisms, prose, llm/characters, llm/rules,
 // llm/tips) where atomics have no per-bucket Tier-2 hub to backlink at.
 //
 // Round-trip stability: DefaultParseMetaCanonical drops lines whose target
 // equals IndexTitle, so the bucket empties and falls back to
-// Domain.UnknownBucket — predictable across regen cycles.
-func MasterBacklink(d *Domain, _ string) string {
+// domain.Domain.UnknownBucket — predictable across regen cycles.
+func MasterBacklink(d *domain.Domain, _ string) string {
 	return "[[" + d.IndexTitle + "]]"
 }
 
-// BucketAsSection is a Domain.SectionFor implementation that writes the
+// BucketAsSection is a domain.Domain.SectionFor implementation that writes the
 // bucket name back into the canonical header's third pipe-segment. Pairs
 // with custom ParseMeta callbacks that read bucket from segment 3 (e.g.
 // aphorisms, prose) — bucket==section by construction, so the canonical
 // form round-trips without daemon-induced drift.
-func BucketAsSection(_ *Domain, bucket string, _ AtomicParts) string {
+func BucketAsSection(_ *domain.Domain, bucket string, _ domain.AtomicParts) string {
 	return bucket
 }
 
 // OrderFlatColumns returns the column sequence for a flat-table master:
 // the supplied `fixedOrder` first (always rendered, even when empty so
 // the user sees the slot), then any bucket present in `groups` that
-// isn't in fixedOrder, alphabetised via CompareTitles. Used by every
+// isn't in fixedOrder, alphabetised via domain.CompareTitles. Used by every
 // flat-table renderer that wants a deterministic priority layout with
 // a graceful overflow column for new buckets.
-func OrderFlatColumns(groups map[string][]Note, fixedOrder []string) []string {
+func OrderFlatColumns(groups map[string][]domain.Note, fixedOrder []string) []string {
 	fixed := make(map[string]struct{}, len(fixedOrder))
 	for _, bucket := range fixedOrder {
 		fixed[bucket] = struct{}{}

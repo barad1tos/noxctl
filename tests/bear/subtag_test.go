@@ -5,11 +5,12 @@ import (
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/render"
 )
 
 func TestHubTitleSubTag(t *testing.T) {
 	d := &domain.Domain{Tag: "claude"}
-	if got := domain.HubTitleSubTag(d, "sessions"); got != "claude · sessions" {
+	if got := render.HubTitleSubTag(d, "sessions"); got != "claude · sessions" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -24,7 +25,7 @@ func TestBucketFromHubTitleSubTag(t *testing.T) {
 		"claudex · weird":   "", // wrong prefix
 	}
 	for input, want := range cases {
-		if got := domain.BucketFromHubTitleSubTag(d, input); got != want {
+		if got := render.BucketFromHubTitleSubTag(d, input); got != want {
 			t.Errorf("%q: got %q, want %q", input, got, want)
 		}
 	}
@@ -32,20 +33,20 @@ func TestBucketFromHubTitleSubTag(t *testing.T) {
 
 func TestIsHubNoteSubTag(t *testing.T) {
 	d := &domain.Domain{Tag: "claude"}
-	if !domain.IsHubNoteSubTag(d, domain.Note{Title: "claude · sessions"}) {
+	if !render.IsHubNoteSubTag(d, domain.Note{Title: "claude · sessions"}) {
 		t.Error("hub-shaped title should match")
 	}
-	if domain.IsHubNoteSubTag(d, domain.Note{Title: "Some atom"}) {
+	if render.IsHubNoteSubTag(d, domain.Note{Title: "Some atom"}) {
 		t.Error("non-hub title should not match")
 	}
-	if domain.IsHubNoteSubTag(d, domain.Note{Title: "✱ Claude"}) {
+	if render.IsHubNoteSubTag(d, domain.Note{Title: "✱ Claude"}) {
 		t.Error("master title should not match as hub")
 	}
 }
 
 func TestHubBacklinkSubTagShape(t *testing.T) {
 	d := &domain.Domain{Tag: "claude"}
-	got := domain.HubBacklinkSubTag(d, "sessions")
+	got := render.HubBacklinkSubTag(d, "sessions")
 	if got != "[[claude · sessions]]" {
 		t.Errorf("got %q", got)
 	}
@@ -54,14 +55,14 @@ func TestHubBacklinkSubTagShape(t *testing.T) {
 func TestRenderHubFlatSubTag(t *testing.T) {
 	d := &domain.Domain{
 		Tag: "claude", CanonicalTag: "#claude", IndexTitle: "✱ Claude",
-		HubTitleFor:     domain.HubTitleSubTag,
-		CanonicalTagFor: domain.SubTagCanonical,
+		HubTitleFor:     render.HubTitleSubTag,
+		CanonicalTagFor: render.SubTagCanonical,
 	}
 	notes := []domain.Note{
 		{ID: "1", Title: "Beta"},
 		{ID: "2", Title: "Alpha"},
 	}
-	out := domain.RenderHubFlatSubTag(d, "sessions", notes, nil)
+	out := render.RenderHubFlatSubTag(d, "sessions", notes, nil)
 	// Bootstrap URL form — outer URL starts with `?text=` (encoded body).
 	// The inner URL's `tags=claude` lives doubly-encoded inside text= as
 	// `tags%3Dclaude`.
@@ -80,14 +81,14 @@ func TestRenderHubFlatSubTag(t *testing.T) {
 func TestRenderMasterHubList(t *testing.T) {
 	d := &domain.Domain{
 		Tag: "claude", CanonicalTag: "#claude", IndexTitle: "✱ Claude",
-		HubTitleFor: domain.HubTitleSubTag,
+		HubTitleFor: render.HubTitleSubTag,
 	}
 	groups := map[string][]domain.Note{
 		"sessions": {{Title: "a"}, {Title: "b"}},
 		"memory":   {{Title: "c"}},
 		"empty":    {}, // should not render
 	}
-	out := domain.RenderMasterHubList(d, groups, []string{"sessions", "memory", "empty"})
+	out := render.RenderMasterHubList(d, groups, []string{"sessions", "memory", "empty"})
 	if !strings.HasPrefix(out, "# ✱ Claude\n#claude | [Нова нотатка](") {
 		t.Errorf("missing master header, got prefix: %q", out[:min(80, len(out))])
 	}
@@ -117,7 +118,7 @@ func TestRenderMasterHubList(t *testing.T) {
 }
 
 func TestNewHubRoutedSubTagDomainWiresCallbacks(t *testing.T) {
-	d := domain.NewHubRoutedSubTagDomain("claude", "✱ Claude", "інше", []string{"sessions"})
+	d := render.NewHubRoutedSubTagDomain("claude", "✱ Claude", "інше", []string{"sessions"})
 	if d.IsHubNote == nil || d.HubTitleFor == nil || d.BucketFromHubTitle == nil {
 		t.Error("expected all sub-tag callbacks wired")
 	}

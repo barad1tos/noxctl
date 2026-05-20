@@ -26,6 +26,7 @@ import (
 	"testing/synctest"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/render"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
@@ -176,7 +177,7 @@ func TestApplyDomainBootstrap_LeafDomain_FlatList(t *testing.T) {
 func TestApplyDomainBootstrap_UmbrellaRedirect(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		umbrella := domain.NewUmbrellaDomain(
+		umbrella := render.NewUmbrellaDomain(
 			"llm",
 			"✱ LLM",
 			"llm/agents",
@@ -219,7 +220,7 @@ func TestApplyDomainBootstrap_MultipleLeafsMostSpecific(t *testing.T) {
 		resetPoolForApply(t)
 		// Construct a synthetic `claude` leaf alongside `llm/agents` to
 		// exercise the multi-leaf-with-different-lengths code path.
-		claude := domain.NewFlatListDomain("claude", "✱ Claude")
+		claude := render.NewFlatListDomain("claude", "✱ Claude")
 		domains := []*domain.Domain{claude, testutil.Domain(t, "llm/agents")}
 		domainsByTag := domain.DomainsByTag(domains)
 
@@ -260,8 +261,8 @@ func TestApplyDomainBootstrap_MultipleLeafsTieSkip(t *testing.T) {
 		resetPoolForApply(t)
 		// Two synthetic equal-length leaves; intentionally same length so
 		// `mostSpecificOrSkip` triggers the tied branch.
-		leafA := domain.NewFlatListDomain("foo/alpha", "✱ Alpha")
-		leafB := domain.NewFlatListDomain("foo/bravo", "✱ Bravo")
+		leafA := render.NewFlatListDomain("foo/alpha", "✱ Alpha")
+		leafB := render.NewFlatListDomain("foo/bravo", "✱ Bravo")
 		domains := []*domain.Domain{leafA, leafB}
 		domainsByTag := domain.DomainsByTag(domains)
 

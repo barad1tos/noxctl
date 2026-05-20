@@ -1,6 +1,10 @@
-package domain
+package render
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/barad1tos/noxctl/bear/domain"
+)
 
 // SectionedMasterRenderer returns a RenderMaster callback that emits
 // the domain's master as a vertical stack of named sections defined
@@ -17,8 +21,8 @@ import "fmt"
 // Bullet format: `[[<bucket>]] (<count>)` — count is the number of
 // notes in that Tier-2 hub. Order inside each section is
 // alphabetical via SortTitles.
-func SectionedMasterRenderer() func(*Domain, map[string][]Note) string {
-	return func(d *Domain, groups map[string][]Note) string {
+func SectionedMasterRenderer() func(*domain.Domain, map[string][]domain.Note) string {
+	return func(d *domain.Domain, groups map[string][]domain.Note) string {
 		return RenderVerticalSections(d, BuildMasterSections(d, groups))
 	}
 }
@@ -27,7 +31,7 @@ func SectionedMasterRenderer() func(*Domain, map[string][]Note) string {
 // slices from the domain's MasterSections + the per-bucket note
 // map. Exposed for hermetic testing without driving a full domain
 // render path.
-func BuildMasterSections(d *Domain, groups map[string][]Note) []Section {
+func BuildMasterSections(d *domain.Domain, groups map[string][]domain.Note) []Section {
 	claimed := make(map[string]struct{}, len(groups))
 	sections := make([]Section, 0, len(d.MasterSections))
 	for _, spec := range d.MasterSections {
@@ -62,10 +66,10 @@ func renderSectionBullet(showCounts bool, bucket string, count int) string {
 	return fmt.Sprintf("[[%s]]", bucket)
 }
 
-// sectionHeaderCount maps CountMode to the numeric value placed in
+// sectionHeaderCount maps domain.CountMode to the numeric value placed in
 // the section header's trailing `(N)`.
-func sectionHeaderCount(mode CountMode, noteCount, bucketCount int) int {
-	if mode == CountModeBuckets {
+func sectionHeaderCount(mode domain.CountMode, noteCount, bucketCount int) int {
+	if mode == domain.CountModeBuckets {
 		return bucketCount
 	}
 	return noteCount
@@ -79,7 +83,7 @@ func sectionHeaderCount(mode CountMode, noteCount, bucketCount int) int {
 // The unknownBucket is silently excluded from script-class and
 // catch-all selections — it has no semantic bucket identity. An
 // explicit Buckets entry naming it still claims it.
-func selectBucketsForSection(spec MasterSection, groups map[string][]Note,
+func selectBucketsForSection(spec domain.MasterSection, groups map[string][]domain.Note,
 	claimed map[string]struct{}, unknownBucket string,
 ) []string {
 	switch {
@@ -95,7 +99,7 @@ func selectBucketsForSection(spec MasterSection, groups map[string][]Note,
 // selectByExplicit returns the subset of spec buckets that have at
 // least one note and are not yet claimed. Order from spec is NOT
 // preserved — caller sorts via SortTitles for deterministic output.
-func selectByExplicit(wanted []string, groups map[string][]Note,
+func selectByExplicit(wanted []string, groups map[string][]domain.Note,
 	claimed map[string]struct{},
 ) []string {
 	out := make([]string, 0, len(wanted))
@@ -110,11 +114,11 @@ func selectByExplicit(wanted []string, groups map[string][]Note,
 	return out
 }
 
-// selectByScript filters unclaimed buckets by FirstLetter group:
+// selectByScript filters unclaimed buckets by domain.FirstLetter group:
 // "latin" → group "1", "non-latin" → every other group. Unknown
 // script names produce an empty slice and no error — validate-time
 // guard catches misspellings before this point.
-func selectByScript(class string, groups map[string][]Note,
+func selectByScript(class string, groups map[string][]domain.Note,
 	claimed map[string]struct{}, unknownBucket string,
 ) []string {
 	out := make([]string, 0, len(groups))
@@ -139,7 +143,7 @@ func selectByScript(class string, groups map[string][]Note,
 // selectCatchAll returns every still-unclaimed bucket with at least
 // one note. The unknownBucket is skipped — operators who want it
 // surfaced must add it to an explicit Buckets list.
-func selectCatchAll(groups map[string][]Note, claimed map[string]struct{},
+func selectCatchAll(groups map[string][]domain.Note, claimed map[string]struct{},
 	unknownBucket string,
 ) []string {
 	out := make([]string, 0, len(groups))
@@ -158,15 +162,15 @@ func selectCatchAll(groups map[string][]Note, claimed map[string]struct{},
 	return out
 }
 
-// scriptClassMatches maps the TOML `script` value to a FirstLetter
+// scriptClassMatches maps the TOML `script` value to a domain.FirstLetter
 // group ID and reports whether bucket falls in it.
 //
-// Two-class binary partition: "latin" covers FirstLetter group "1"
+// Two-class binary partition: "latin" covers domain.FirstLetter group "1"
 // (the ASCII alphabet); "non-latin" covers everything else (Cyrillic,
 // Greek, Hebrew, CJK, symbols, digits). Operators who need a finer
 // partition spell it via explicit `buckets = [...]` blocks.
 func scriptClassMatches(class, bucket string) bool {
-	group, _ := FirstLetter(bucket)
+	group, _ := domain.FirstLetter(bucket)
 	switch class {
 	case "latin":
 		return group == "1"

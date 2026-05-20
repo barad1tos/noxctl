@@ -1,8 +1,10 @@
-package domain
+package render
 
 import (
 	"fmt"
 	"sort"
+
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // Grouped-vertical master pattern: one master note per domain, body is a
@@ -12,7 +14,7 @@ import (
 // first token (`#<top>/<bucket>`), so Bear's sidebar still shows the
 // 2-level tag tree.
 //
-// Bidirectional via ParseMasterFlatGrouped: cut a bullet from one `##` section
+// Bidirectional via domain.ParseMasterFlatGrouped: cut a bullet from one `##` section
 // and paste under another, save, and the next regen rewrites the matching
 // atomic's canonical sub-tag to track the new section.
 //
@@ -37,26 +39,28 @@ import (
 //
 //	## rules (7)
 //	- [[atomA]]
-func RenderMasterFlatGrouped(d *Domain, groups map[string][]Note, columns []string) string {
+//
+//nolint:revive // public API; rename is breaking change for callers
+func RenderMasterFlatGrouped(d *domain.Domain, groups map[string][]domain.Note, columns []string) string {
 	return RenderVerticalSections(d, flatGroupedSections(d, groups, columns))
 }
 
 // flatGroupedSections builds the section list for the grouped-vertical
 // master from `groups`. Empty buckets are dropped; non-empty buckets emit
-// `## <bucket> (N)` with atomics sorted via ByTitle. AtomicWikilink picks
+// `## <bucket> (N)` with atomics sorted via domain.ByTitle. domain.AtomicWikilink picks
 // URL form for duplicate titles automatically.
-func flatGroupedSections(d *Domain, groups map[string][]Note, columns []string) []Section {
+func flatGroupedSections(d *domain.Domain, groups map[string][]domain.Note, columns []string) []Section {
 	cols := OrderFlatColumns(groups, columns)
 	sections := make([]Section, 0, len(cols))
 	for _, bucket := range cols {
-		notes := append([]Note(nil), groups[bucket]...)
+		notes := append([]domain.Note(nil), groups[bucket]...)
 		if len(notes) == 0 {
 			continue
 		}
-		sort.Sort(ByTitle(notes))
+		sort.Sort(domain.ByTitle(notes))
 		bullets := make([]string, len(notes))
 		for index, note := range notes {
-			bullets[index] = AtomicWikilink(d, note)
+			bullets[index] = domain.AtomicWikilink(d, note)
 		}
 		sections = append(sections, Section{
 			Header:  fmt.Sprintf("%s (%d)", bucket, len(notes)),
@@ -66,7 +70,7 @@ func flatGroupedSections(d *Domain, groups map[string][]Note, columns []string) 
 	return sections
 }
 
-// NewGroupedVerticalDomain builds a Domain configured for the
+// NewGroupedVerticalDomain builds a domain.Domain configured for the
 // grouped-vertical master pattern with sub-tag preservation. Atomics
 // carry canonical headers of the form `#<tag>/<bucket> | [[<indexTitle>]]`;
 // the master renders one `## <bucket> (N)` section per bucket;
@@ -79,31 +83,31 @@ func flatGroupedSections(d *Domain, groups map[string][]Note, columns []string) 
 // cut/paste like any other entry. `buckets` defines the priority
 // left-to-right column order; new buckets from atomic canonicals
 // append alphabetically after the priority list.
-func NewGroupedVerticalDomain(tag, indexTitle, unknownBucket string, buckets []string) *Domain {
+func NewGroupedVerticalDomain(tag, indexTitle, unknownBucket string, buckets []string) *domain.Domain {
 	columns := append([]string(nil), buckets...)
-	return &Domain{
+	return &domain.Domain{
 		Tag:              tag,
 		CanonicalTag:     "#" + tag,
 		IndexTitle:       indexTitle,
 		UnknownBucket:    unknownBucket,
 		HubH2Prefix:      "",
-		ParseMeta:        ParseMetaFromSubTag,
+		ParseMeta:        domain.ParseMetaFromSubTag,
 		BacklinkFor:      MasterBacklink,
 		SectionFor:       BucketAsSection,
 		RenderHub:        nil,
-		ParseMasterTable: ParseMasterFlatGrouped,
+		ParseMasterTable: domain.ParseMasterFlatGrouped,
 		CanonicalTagFor:  SubTagCanonical,
-		RenderMaster: func(d *Domain, groups map[string][]Note) string {
+		RenderMaster: func(d *domain.Domain, groups map[string][]domain.Note) string {
 			return RenderMasterFlatGrouped(d, groups, columns)
 		},
 	}
 }
 
-// SubTagCanonical is a Domain.CanonicalTagFor implementation that emits
+// SubTagCanonical is a domain.Domain.CanonicalTagFor implementation that emits
 // `#<top>/<bucket>` per atomic. Falls back to d.CanonicalTag when bucket is
 // empty (atomic has no recognizable sub-tag — daemon writes the bare top-level
 // tag and the user picks a bucket later via the master).
-func SubTagCanonical(d *Domain, bucket string) string {
+func SubTagCanonical(d *domain.Domain, bucket string) string {
 	if bucket == "" {
 		return d.CanonicalTag
 	}

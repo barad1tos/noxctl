@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/render"
 )
 
 // TestBearcliFixtures_FreshUntitled drives the fresh-clicked-untitled
@@ -21,7 +22,7 @@ func TestBearcliFixtures_FreshUntitled(t *testing.T) {
 	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
 	note := loadBearcliFixture(t, "fresh_untitled.json")
-	d := domain.NewFlatListDomain("library/quotes", "✱ Quotes")
+	d := render.NewFlatListDomain("library/quotes", "✱ Quotes")
 	d.UnknownBucket = "_unknown"
 
 	out := domain.RenderAtomicCanonicalForTest(t, d, note.Title, "_unknown", note.Content)
@@ -40,7 +41,7 @@ func TestBearcliFixtures_UserAuthoredH1(t *testing.T) {
 	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
 	note := loadBearcliFixture(t, "user_authored_h1.json")
-	d := domain.NewFlatListDomain("library/quotes", "✱ Quotes")
+	d := render.NewFlatListDomain("library/quotes", "✱ Quotes")
 	d.UnknownBucket = "_unknown"
 
 	out := domain.RenderAtomicCanonicalForTest(t, d, note.Title, "_unknown", note.Content)
@@ -57,7 +58,7 @@ func TestBearcliFixtures_UserAuthoredH1(t *testing.T) {
 // preserved between H1 and the canonical tag-line (spec component 5).
 func TestBearcliFixtures_PreambleBody(t *testing.T) {
 	note := loadBearcliFixture(t, "preamble_body.json")
-	d := domain.NewFlatListDomain("library/quotes", "✱ Quotes")
+	d := render.NewFlatListDomain("library/quotes", "✱ Quotes")
 	d.UnknownBucket = "_unknown"
 
 	out := domain.RenderAtomicCanonicalForTest(t, d, note.Title, "_unknown", note.Content)
@@ -82,7 +83,7 @@ func TestBearcliFixtures_PreambleBody(t *testing.T) {
 // the input shape — no auto-recovery happens (spec component 6: dropped).
 func TestBearcliFixtures_LegacyStaleH1(t *testing.T) {
 	note := loadBearcliFixture(t, "legacy_stale_h1.json")
-	d := domain.NewFlatListDomain("library/quotes", "_unknown")
+	d := render.NewFlatListDomain("library/quotes", "_unknown")
 	d.UnknownBucket = "_unknown"
 
 	out := domain.RenderAtomicCanonicalForTest(t, d, note.Title, "_unknown", note.Content)

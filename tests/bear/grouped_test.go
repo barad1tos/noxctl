@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/render"
 )
 
 func TestParseMetaFromSubTag(t *testing.T) {
@@ -74,7 +75,7 @@ func TestRenderMasterFlatGrouped(t *testing.T) {
 		"homework": {{ID: "1", Title: "Verb tenses"}, {ID: "2", Title: "Adjectives"}},
 		"rules":    {{ID: "3", Title: "Articles"}},
 	}
-	out := domain.RenderMasterFlatGrouped(d, groups, []string{"homework", "rules"})
+	out := render.RenderMasterFlatGrouped(d, groups, []string{"homework", "rules"})
 	if !strings.HasPrefix(out, "# ✱ English\n#english | [Нова нотатка](") {
 		t.Errorf("missing master header, got prefix: %q", out[:min(80, len(out))])
 	}
@@ -107,7 +108,7 @@ func TestRenderMasterFlatGrouped(t *testing.T) {
 
 func TestRenderMasterFlatGroupedSkipsEmptyBuckets(t *testing.T) {
 	d := &domain.Domain{Tag: "x", CanonicalTag: "#x", IndexTitle: "✱ X"}
-	out := domain.RenderMasterFlatGrouped(d, map[string][]domain.Note{}, []string{"a", "b"})
+	out := render.RenderMasterFlatGrouped(d, map[string][]domain.Note{}, []string{"a", "b"})
 	if strings.Contains(out, "## a") || strings.Contains(out, "## b") {
 		t.Error("empty groups should produce no `##` sections")
 	}
@@ -151,10 +152,10 @@ func TestParseMasterFlatGroupedIgnoresH3(t *testing.T) {
 
 func TestSubTagCanonical(t *testing.T) {
 	d := &domain.Domain{Tag: "claude", CanonicalTag: "#claude"}
-	if got := domain.SubTagCanonical(d, "sessions"); got != "#claude/sessions" {
+	if got := render.SubTagCanonical(d, "sessions"); got != "#claude/sessions" {
 		t.Errorf("got %q", got)
 	}
-	if got := domain.SubTagCanonical(d, ""); got != "#claude" {
+	if got := render.SubTagCanonical(d, ""); got != "#claude" {
 		t.Errorf("empty bucket should fall back to top-level: got %q", got)
 	}
 }
