@@ -1,10 +1,13 @@
-package domain
+package fastpass
 
 import (
 	"context"
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/barad1tos/noxctl/bear/bearcli"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // PromotionRule binds a source tag to a target tag, gated by a
@@ -125,13 +128,13 @@ var ValidPromotionBoundaries = map[string]struct{}{
 func boundaryStart(boundary string, now time.Time) time.Time {
 	switch boundary {
 	case "", "day":
-		return CalendarStartOfDay(now)
+		return domain.CalendarStartOfDay(now)
 	case "week":
-		return CalendarStartOfWeek(now)
+		return domain.CalendarStartOfWeek(now)
 	case "month":
-		return CalendarStartOfMonth(now)
+		return domain.CalendarStartOfMonth(now)
 	case "year":
-		return CalendarStartOfYear(now)
+		return domain.CalendarStartOfYear(now)
 	}
 	return time.Time{}
 }
@@ -161,7 +164,9 @@ func boundaryStart(boundary string, now time.Time) time.Time {
 //
 // An empty `rules` slice short-circuits — no rules declared in the
 // catalog means time-promotion is disabled.
-func ApplyTimeBasedPromotion(ctx context.Context, domains []*Domain, pins *PinRegistry, rules []PromotionRule) error {
+//
+//nolint:lll
+func ApplyTimeBasedPromotion(ctx context.Context, domains []*domain.Domain, pins *domain.PinRegistry, rules []PromotionRule) error {
 	if len(rules) == 0 {
 		return nil
 	}
@@ -173,14 +178,14 @@ func ApplyTimeBasedPromotion(ctx context.Context, domains []*Domain, pins *PinRe
 	ruleIndex := indexPromotionRules(rules)
 
 	type atomToProcess struct {
-		atom   Note
-		source *Domain
+		atom   domain.Note
+		source *domain.Domain
 	}
 
 	atoms := make([]atomToProcess, 0)
 	seen := make(map[string]struct{})
 	for _, source := range domainByTag {
-		notes, err := source.listNotes(ctx)
+		notes, err := bearcli.ListNotesForTag(ctx, source.Tag)
 		if err != nil {
 			log.Printf("time-promotion: list %s failed: %v", source.Tag, err)
 			continue
@@ -195,7 +200,7 @@ func ApplyTimeBasedPromotion(ctx context.Context, domains []*Domain, pins *PinRe
 	}
 
 	for _, item := range atoms {
-		if err := CheckCtx(ctx); err != nil {
+		if err := domain.CheckCtx(ctx); err != nil {
 			return err
 		}
 		processAtomForPromotion(ctx, item.atom, item.source, domainByTag, pins, now, ruleIndex)
@@ -209,14 +214,14 @@ func ApplyTimeBasedPromotion(ctx context.Context, domains []*Domain, pins *PinRe
 // halt the sweep.
 func processAtomForPromotion(
 	ctx context.Context,
-	atom Note,
-	source *Domain,
-	domainByTag map[string]*Domain,
-	pins *PinRegistry,
+	atom domain.Note,
+	source *domain.Domain,
+	domainByTag map[string]*domain.Domain,
+	pins *domain.PinRegistry,
 	now time.Time,
 	ruleIndex map[string]PromotionRule,
 ) {
-	if source.skipNote(atom) {
+	if domain.IsAuxNote(source, atom) {
 		return
 	}
 	if atom.Created.IsZero() {
@@ -247,13 +252,13 @@ func processAtomForPromotion(
 // purely catalog-driven — operators with an arbitrary ladder shape
 // (e.g. "fleeting/inbox" → "fleeting/week" → …) get the same indexing
 // without code changes.
-func indexPromotionDomains(all []*Domain, rules []PromotionRule) map[string]*Domain {
+func indexPromotionDomains(all []*domain.Domain, rules []PromotionRule) map[string]*domain.Domain {
 	wanted := make(map[string]struct{}, len(rules)*2)
 	for _, r := range rules {
 		wanted[r.From] = struct{}{}
 		wanted[r.To] = struct{}{}
 	}
-	out := make(map[string]*Domain, len(wanted))
+	out := make(map[string]*domain.Domain, len(wanted))
 	for _, d := range all {
 		if d.SkipAtomicsPass {
 			continue
@@ -272,12 +277,12 @@ func indexPromotionDomains(all []*Domain, rules []PromotionRule) map[string]*Dom
 // for the no-op gate. R2 asymmetry preserved: time-promotion is a soft
 // move, so the non-strict predicate is used here (rewriteAtomTag uses
 // the strict variant).
-func promoteAtomToDomain(ctx context.Context, atom Note, source, target *Domain) error {
+func promoteAtomToDomain(ctx context.Context, atom domain.Note, source, target *domain.Domain) error {
 	newContent, rewrote := rewriteCanonicalTag(atom.Content, source.CanonicalTag, target)
-	if !rewrote || equalIgnoringNewNoteLink(newContent, atom.Content) {
+	if !rewrote || domain.EqualIgnoringNewNoteLink(newContent, atom.Content) {
 		return nil
 	}
-	err := overwriteWithRetry(ctx, atom.ID, newContent)
+	err := bearcli.OverwriteWithRetry(ctx, atom.ID, newContent)
 	if err != nil {
 		return fmt.Errorf("time-promotion(%s→%s) %q: %w", source.Tag, target.Tag, atom.Title, err)
 	}

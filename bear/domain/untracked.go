@@ -68,7 +68,7 @@ func ScanUntracked(ctx context.Context, domains []*Domain) (UntrackedReport, err
 		return emptyUntrackedReport(), fmt.Errorf("ScanUntracked list: %w", err)
 	}
 
-	var notes []autoTagNote
+	var notes []AutoTagNote
 	if err = json.Unmarshal(out, &notes); err != nil {
 		return emptyUntrackedReport(), fmt.Errorf("ScanUntracked parse: %w", err)
 	}
@@ -86,7 +86,7 @@ func ScanUntracked(ctx context.Context, domains []*Domain) (UntrackedReport, err
 // the same JSON-stable empty report on parse error that ScanUntracked
 // uses on bearcli error.
 func AggregateUntrackedFromJSON(jsonBytes []byte, managed map[string]struct{}) (UntrackedReport, error) {
-	var notes []autoTagNote
+	var notes []AutoTagNote
 	if err := json.Unmarshal(jsonBytes, &notes); err != nil {
 		return emptyUntrackedReport(), fmt.Errorf("AggregateUntrackedFromJSON parse: %w", err)
 	}
@@ -102,7 +102,7 @@ func managedRoots(domains []*Domain) map[string]struct{} {
 		if d == nil || d.Tag == "" {
 			continue
 		}
-		roots[topLevelSegment(d.Tag)] = struct{}{}
+		roots[TopLevelSegment(d.Tag)] = struct{}{}
 	}
 	return roots
 }
@@ -116,14 +116,14 @@ func managedRoots(domains []*Domain) map[string]struct{} {
 // Splits ScanUntracked at the I/O boundary: ScanUntracked owns
 // bearcli, aggregateUntracked owns the data transformation. Both
 // hold under gocognit ≤ 15 individually.
-func aggregateUntracked(notes []autoTagNote, managed map[string]struct{}) UntrackedReport {
+func aggregateUntracked(notes []AutoTagNote, managed map[string]struct{}) UntrackedReport {
 	perFamily := make(map[string]int)
 	for _, n := range notes {
 		for _, tag := range n.Tags {
 			if tag == "" {
 				continue
 			}
-			if _, ok := managed[topLevelSegment(tag)]; ok {
+			if _, ok := managed[TopLevelSegment(tag)]; ok {
 				continue
 			}
 			perFamily[tag]++

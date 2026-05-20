@@ -12,6 +12,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/fastpass"
 )
 
 func (d *Daemon) handleEvent(event fsnotify.Event, quietTimer, maxTimer *time.Timer, burstActive *bool) {
@@ -129,13 +130,13 @@ func (d *Daemon) handleAutoTagTick(ctx context.Context) {
 	}
 	passes := []autoTagPass{
 		mkPass("foreign-tag escape", feats.ForeignTagEscape,
-			func(c context.Context) (int, error) { return domain.ApplyForeignTagEscape(c, domainsByTag) }),
+			func(c context.Context) (int, error) { return fastpass.ApplyForeignTagEscape(c, domainsByTag) }),
 		mkPass("daily-default", dailyTagOn,
-			func(c context.Context) (int, error) { return domain.ApplyDailyDefaultTag(c, dailyDomain) }),
+			func(c context.Context) (int, error) { return fastpass.ApplyDailyDefaultTag(c, dailyDomain) }),
 		mkPass("domain-bootstrap", feats.DomainBootstrap,
-			func(c context.Context) (int, error) { return domain.ApplyDomainBootstrap(c, domainsByTag) }),
+			func(c context.Context) (int, error) { return fastpass.ApplyDomainBootstrap(c, domainsByTag) }),
 		mkPass("placeholder-refresh", feats.AutoTagDefault,
-			func(c context.Context) (int, error) { return domain.ApplyPlaceholderRefresh(c, domainsByTag) }),
+			func(c context.Context) (int, error) { return fastpass.ApplyPlaceholderRefresh(c, domainsByTag) }),
 	}
 	wrote := 0
 	for _, p := range passes {

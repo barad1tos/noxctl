@@ -1,4 +1,4 @@
-package domain
+package fastpass
 
 import (
 	"context"
@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log"
 	"strings"
+
+	"github.com/barad1tos/noxctl/bear/bearcli"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // HasForeignQuicknoteTag reports whether `tags` represents an atom that
@@ -21,28 +24,13 @@ func HasForeignQuicknoteTag(tags []string) bool {
 	hasQuicknote := false
 	hasForeign := false
 	for _, tag := range tags {
-		if topLevelSegment(tag) == "quicknote" {
+		if domain.TopLevelSegment(tag) == "quicknote" {
 			hasQuicknote = true
 		} else {
 			hasForeign = true
 		}
 	}
 	return hasQuicknote && hasForeign
-}
-
-// topLevelSegment returns the part of `tag` before the first `/`. The
-// leading `#` is stripped defensively because bearcli list returns
-// tags WITH a hash prefix (`"#quicknote/daily"`) — older comments here
-// claimed otherwise; verified via live `bearcli list --tag` +
-// `--location notes` in 2026-05. Without the strip every predicate
-// downstream (HasForeignQuicknoteTag, hasQuicknoteTag, residue
-// managed-roots lookup) was always returning false against real
-// bearcli output, silently neutering the foreign-tag escape pre-pass.
-// Internal callers passing bare `d.Tag` are unaffected — TrimPrefix
-// is a no-op when `#` isn't present.
-func topLevelSegment(tag string) string {
-	head, _, _ := strings.Cut(strings.TrimPrefix(tag, "#"), "/")
-	return head
 }
 
 // SubstituteQuicknoteInBody surgically replaces every `#quicknote/<sub>`
@@ -111,7 +99,7 @@ func FindForeignTagInBody(body string) string {
 		if !strings.HasPrefix(tok, "#") {
 			continue
 		}
-		if topLevelSegment(tok) == "quicknote" {
+		if domain.TopLevelSegment(tok) == "quicknote" {
 			continue
 		}
 		return tok
@@ -126,7 +114,7 @@ func FindForeignTagInBody(body string) string {
 // insert a body line).
 func firstForeignTagFromTags(tags []string) string {
 	for _, tag := range tags {
-		if topLevelSegment(tag) == "quicknote" {
+		if domain.TopLevelSegment(tag) == "quicknote" {
 			continue
 		}
 		if !strings.HasPrefix(tag, "#") {
@@ -162,22 +150,22 @@ func firstForeignTagFromTags(tags []string) string {
 // carries the foreign-tag mix). Callers use this to decide whether the
 // pre-pass produced bearcli writes that need to be self-gated downstream
 // (fast-pass gate fix).
-func ApplyForeignTagEscape(ctx context.Context, domainsByTag map[string]*Domain) (int, error) {
-	out, err := runBearcli(
+func ApplyForeignTagEscape(ctx context.Context, domainsByTag map[string]*domain.Domain) (int, error) {
+	out, err := bearcli.Run(
 		ctx,
-		[]string{"list", "--location", "notes", flagFormat, formatJSON, flagFields, "id,title,tags,content"},
+		[]string{"list", "--location", "notes", bearcli.FlagFormat, bearcli.FormatJSON, bearcli.FlagFields, "id,title,tags,content"}, //nolint:lll
 		"",
 	)
 	if err != nil {
 		return 0, fmt.Errorf("ApplyForeignTagEscape list: %w", err)
 	}
-	var notes []autoTagNote
+	var notes []domain.AutoTagNote
 	if err = json.Unmarshal(out, &notes); err != nil {
 		return 0, fmt.Errorf("ApplyForeignTagEscape parse: %w", err)
 	}
 	escaped := 0
 	for _, note := range notes {
-		if err = CheckCtx(ctx); err != nil {
+		if err = domain.CheckCtx(ctx); err != nil {
 			return escaped, err
 		}
 		if processForeignTagEscape(ctx, note, domainsByTag) {
@@ -193,7 +181,9 @@ func ApplyForeignTagEscape(ctx context.Context, domainsByTag map[string]*Domain)
 // processForeignTagEscape handles one note's substitution. Returns true
 // when the note was actually rewritten. Logs failures with note context
 // so one bad atom doesn't stall the orchestrator loop.
-func processForeignTagEscape(ctx context.Context, note autoTagNote, domainsByTag map[string]*Domain) bool {
+//
+//nolint:lll
+func processForeignTagEscape(ctx context.Context, note domain.AutoTagNote, domainsByTag map[string]*domain.Domain) bool {
 	if !hasQuicknoteTag(note.Tags) || !HasForeignQuicknoteTag(note.Tags) {
 		return false
 	}
@@ -217,7 +207,7 @@ func processForeignTagEscape(ctx context.Context, note autoTagNote, domainsByTag
 			"writing stripped body without canonical bootstrap",
 			note.Title, foreignTag)
 	}
-	if writeErr := overwriteWithRetry(ctx, note.ID, newContent); writeErr != nil {
+	if writeErr := bearcli.OverwriteWithRetry(ctx, note.ID, newContent); writeErr != nil {
 		log.Printf("foreign-tag escape %q failed: %v", note.Title, writeErr)
 		return false
 	}
@@ -232,7 +222,7 @@ func processForeignTagEscape(ctx context.Context, note autoTagNote, domainsByTag
 // quicknote and a foreign tag are present.
 func hasQuicknoteTag(tags []string) bool {
 	for _, tag := range tags {
-		if topLevelSegment(tag) == "quicknote" {
+		if domain.TopLevelSegment(tag) == "quicknote" {
 			return true
 		}
 	}

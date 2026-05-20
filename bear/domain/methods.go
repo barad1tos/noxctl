@@ -16,6 +16,15 @@ import (
 	"github.com/barad1tos/noxctl/bear/bearcli"
 )
 
+// IsFlatList reports whether this domain is the flat-list shape
+// (no Tier-2 hubs, no flat-table master). Cross-domain promotion
+// only handles flat-list ↔ flat-list moves; hub-routed and
+// flat-table domains carry richer bucket semantics that don't
+// translate cleanly to flat-list targets.
+func (d *Domain) IsFlatList() bool {
+	return d.RenderHub == nil && d.ParseMasterTable == nil
+}
+
 // TagSuffix returns the part of d.Tag after the last "/", e.g. "poetry" for
 // "library/poetry". Used to label log lines and pilot env-vars per domain.
 func (d *Domain) TagSuffix() string {

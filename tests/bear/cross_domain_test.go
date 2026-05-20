@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/fastpass"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
@@ -18,7 +18,7 @@ func TestRewriteCanonicalTag_EmitsBootstrapForm(t *testing.T) {
 	target := testutil.Domain(t, "library/poetry")
 	daily := testutil.Domain(t, "quicknote/daily")
 	content := "# X\n" + daily.CanonicalTag + " | [[✱ Daily]]\n---\nbody\n"
-	out, rewrote := domain.RewriteCanonicalTagForTest(content, daily.CanonicalTag, target)
+	out, rewrote := fastpass.RewriteCanonicalTagForTest(content, daily.CanonicalTag, target)
 	if !rewrote {
 		t.Fatal("rewrote=false despite source tag present")
 	}
@@ -37,7 +37,7 @@ func TestRewriteCanonicalTag_ReturnsFalseWhenSourceTagAbsent(t *testing.T) {
 	daily := testutil.Domain(t, "quicknote/daily")
 	poetry := testutil.Domain(t, "library/poetry")
 	content := "# X\nno tag here\nbody\n"
-	out, rewrote := domain.RewriteCanonicalTagForTest(content, daily.CanonicalTag, poetry)
+	out, rewrote := fastpass.RewriteCanonicalTagForTest(content, daily.CanonicalTag, poetry)
 	if rewrote {
 		t.Error("rewrote=true despite no source tag-line in content")
 	}
@@ -52,7 +52,7 @@ func TestRewriteCanonicalTag_ReturnsTrueWhenRewritten(t *testing.T) {
 	daily := testutil.Domain(t, "quicknote/daily")
 	poetry := testutil.Domain(t, "library/poetry")
 	content := "# X\n" + daily.CanonicalTag + " | [[✱ Daily]]\n---\nbody\n"
-	_, rewrote := domain.RewriteCanonicalTagForTest(content, daily.CanonicalTag, poetry)
+	_, rewrote := fastpass.RewriteCanonicalTagForTest(content, daily.CanonicalTag, poetry)
 	if !rewrote {
 		t.Error("rewrote=false despite source tag-line present")
 	}

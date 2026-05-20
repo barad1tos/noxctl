@@ -139,14 +139,14 @@ func autoTagOptsFor(t *testing.T, pollInterval time.Duration, features engine.Fe
 }
 
 // countAutoTagStamps counts "auto-tag:" prefix lines emitted by
-// domain.ApplyDailyDefaultTag (see bear/autotag.go:56). Each occurrence
+// fastpass.ApplyDailyDefaultTag (see bear/autotag.go:56). Each occurrence
 // equals one note stamped with #quicknote/daily.
 func countAutoTagStamps(buf *bytes.Buffer) int {
 	return strings.Count(buf.String(), "auto-tag:")
 }
 
 // countForeignEscapes counts "foreign-tag escape:" prefix lines from
-// domain.ApplyForeignTagEscape (see bear/foreigntag.go). Each = one
+// fastpass.ApplyForeignTagEscape (see bear/foreigntag.go). Each = one
 // foreign-tag escape applied.
 func countForeignEscapes(buf *bytes.Buffer) int {
 	return strings.Count(buf.String(), "foreign-tag escape:")

@@ -1,10 +1,13 @@
-package domain
+package fastpass
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/barad1tos/noxctl/bear/bearcli"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // IsFlatList reports whether the domain renders its master as a single
@@ -22,18 +25,16 @@ import (
 //
 // Hub-routed and flat-table domains carry richer bucket semantics that
 // don't translate cleanly to flat-list targets, so cross-domain moves
-// involving them are deferred to a future iteration. For now: flat-list
-// ↔ flat-list only.
-func (d *Domain) IsFlatList() bool {
-	return d.RenderHub == nil && d.ParseMasterTable == nil
-}
+// involving them are deferred to a future iteration. For now:
+// flat-list ↔ flat-list only — see domain.IsFlatList in
+// bear/domain/methods.go for the predicate.
 
 // flatListMasterClaim records the destination domain for each atomic
 // referenced from any flat-list master's bullet list. Source-domain
 // information is filled in later when the per-atom rewrite decides
 // whether the claim crosses a domain boundary.
 type flatListMasterClaim struct {
-	target *Domain
+	target *domain.Domain
 }
 
 // BuildFlatListMasterClaims scans every flat-list domain's master and
@@ -46,7 +47,7 @@ type flatListMasterClaim struct {
 // in the input slice wins. The collision is rare in practice (it
 // requires the user to leave the same bullet in two different lists)
 // and the user can resolve by removing it from the wrong one.
-func BuildFlatListMasterClaims(ctx context.Context, domains []*Domain) (map[string]flatListMasterClaim, error) {
+func BuildFlatListMasterClaims(ctx context.Context, domains []*domain.Domain) (map[string]flatListMasterClaim, error) {
 	claims := make(map[string]flatListMasterClaim)
 	for _, d := range domains {
 		if !d.IsFlatList() || d.SkipAtomicsPass {
@@ -59,7 +60,7 @@ func BuildFlatListMasterClaims(ctx context.Context, domains []*Domain) (map[stri
 		if content == "" {
 			continue
 		}
-		for _, ident := range parseHubBulletIdentifiers(content) {
+		for _, ident := range domain.ParseHubBulletIdentifiers(content) {
 			claims[ident] = flatListMasterClaim{target: d}
 		}
 	}
@@ -70,7 +71,7 @@ func BuildFlatListMasterClaims(ctx context.Context, domains []*Domain) (map[stri
 // or returns "" when the master doesn't exist yet (fresh domain). Errors
 // from bearcli surface so the caller can decide whether to abort the
 // cycle or fall back to per-domain processing.
-func readDomainMaster(ctx context.Context, d *Domain) (string, error) {
+func readDomainMaster(ctx context.Context, d *domain.Domain) (string, error) {
 	idxID, err := d.FindIndexID(ctx)
 	if err != nil {
 		return "", err
@@ -78,11 +79,11 @@ func readDomainMaster(ctx context.Context, d *Domain) (string, error) {
 	if idxID == "" {
 		return "", nil
 	}
-	out, err := runBearcli(ctx, []string{"cat", idxID, flagFormat, formatJSON}, "")
+	out, err := bearcli.Run(ctx, []string{"cat", idxID, bearcli.FlagFormat, bearcli.FormatJSON}, "")
 	if err != nil {
 		return "", err
 	}
-	var existing Note
+	var existing domain.Note
 	if err = json.Unmarshal(out, &existing); err != nil {
 		return "", fmt.Errorf("parse master %q: %w", d.IndexTitle, err)
 	}
@@ -99,7 +100,7 @@ func readDomainMaster(ctx context.Context, d *Domain) (string, error) {
 // Runs once before the per-domain regen loop in runAllRegens. Failures
 // are non-fatal: the orchestrator logs and continues with per-domain
 // regens.
-func ApplyCrossDomainMoves(ctx context.Context, domains []*Domain, pins *PinRegistry) error {
+func ApplyCrossDomainMoves(ctx context.Context, domains []*domain.Domain, pins *domain.PinRegistry) error {
 	claims, err := BuildFlatListMasterClaims(ctx, domains)
 	if err != nil {
 		return err
@@ -108,7 +109,7 @@ func ApplyCrossDomainMoves(ctx context.Context, domains []*Domain, pins *PinRegi
 		return nil
 	}
 	for _, source := range domains {
-		if err = CheckCtx(ctx); err != nil {
+		if err = domain.CheckCtx(ctx); err != nil {
 			return err
 		}
 		if !source.IsFlatList() || source.SkipAtomicsPass {
@@ -126,19 +127,19 @@ func ApplyCrossDomainMoves(ctx context.Context, domains []*Domain, pins *PinRegi
 // their canonical tag-line.
 func applyCrossDomainMovesFor(
 	ctx context.Context,
-	source *Domain,
+	source *domain.Domain,
 	claims map[string]flatListMasterClaim,
-	pins *PinRegistry,
+	pins *domain.PinRegistry,
 ) error {
-	notes, err := source.listNotes(ctx)
+	notes, err := bearcli.ListNotesForTag(ctx, source.Tag)
 	if err != nil {
 		return fmt.Errorf("ApplyCrossDomainMoves(%s) list: %w", source.Tag, err)
 	}
 	for _, atom := range notes {
-		if err = CheckCtx(ctx); err != nil {
+		if err = domain.CheckCtx(ctx); err != nil {
 			return err
 		}
-		if source.skipNote(atom) {
+		if domain.IsAuxNote(source, atom) {
 			continue
 		}
 		target, ok := lookupClaim(claims, atom)
@@ -154,7 +155,7 @@ func applyCrossDomainMovesFor(
 
 // lookupClaim resolves a claim by note ID first (URL form), then by
 // title. Returns the target domain when claimed.
-func lookupClaim(claims map[string]flatListMasterClaim, atom Note) (*Domain, bool) {
+func lookupClaim(claims map[string]flatListMasterClaim, atom domain.Note) (*domain.Domain, bool) {
 	if claim, ok := claims[atom.ID]; ok {
 		return claim.target, true
 	}
@@ -172,12 +173,14 @@ func lookupClaim(claims map[string]flatListMasterClaim, atom Note) (*Domain, boo
 // source tag-line was found — the bool short-circuits the no-op gate.
 // equalIgnoringNewNoteLinkStrict still runs for the "tag found but URL
 // drift only" case.
-func rewriteAtomTag(ctx context.Context, atom Note, source, target *Domain, pins *PinRegistry) error {
+//
+//nolint:lll
+func rewriteAtomTag(ctx context.Context, atom domain.Note, source, target *domain.Domain, pins *domain.PinRegistry) error {
 	newContent, rewrote := rewriteCanonicalTag(atom.Content, source.CanonicalTag, target)
-	if !rewrote || equalIgnoringNewNoteLinkStrict(newContent, atom.Content) {
+	if !rewrote || domain.EqualIgnoringNewNoteLinkStrict(newContent, atom.Content) {
 		return nil
 	}
-	if err := overwriteWithRetry(ctx, atom.ID, newContent); err != nil {
+	if err := bearcli.OverwriteWithRetry(ctx, atom.ID, newContent); err != nil {
 		return fmt.Errorf("ApplyCrossDomainMoves(%s→%s) %q: %w", source.Tag, target.Tag, atom.Title, err)
 	}
 	pins.RecordPin(atom.ID, target.Tag)
@@ -191,7 +194,7 @@ func rewriteAtomTag(ctx context.Context, atom Note, source, target *Domain, pins
 // (content, false) when no source tag-line was found (no-op gate).
 //
 // The new line carries the bootstrap-form new-note decoration via
-// NewNoteURLFromDomain(target).Emit — same SSOT path every other
+// domain.NewNoteURLFromDomain(target).Emit — same SSOT path every other
 // emit call site uses (Task 3). Without this, every
 // cross-domain move triggered an extra write per tick.
 //
@@ -202,7 +205,7 @@ func rewriteAtomTag(ctx context.Context, atom Note, source, target *Domain, pins
 // New line:
 //
 //	#<target-tag> | [[<target-IndexTitle>]] | [Нова нотатка](bear://...)
-func rewriteCanonicalTag(content, sourceTag string, target *Domain) (string, bool) {
+func rewriteCanonicalTag(content, sourceTag string, target *domain.Domain) (string, bool) {
 	lines := strings.Split(content, "\n")
 	for index, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -210,14 +213,14 @@ func rewriteCanonicalTag(content, sourceTag string, target *Domain) (string, boo
 			continue
 		}
 		lines[index] = fmt.Sprintf("%s | [[%s]]%s",
-			target.CanonicalTag, target.IndexTitle, NewNoteURLFromDomain(target).Emit())
+			target.CanonicalTag, target.IndexTitle, domain.NewNoteURLFromDomain(target).Emit())
 		return strings.Join(lines, "\n"), true
 	}
 	return content, false
 }
 
 // RewriteCanonicalTagForTest exposes rewriteCanonicalTag to tests/bear.
-func RewriteCanonicalTagForTest(content, sourceTag string, target *Domain) (string, bool) {
+func RewriteCanonicalTagForTest(content, sourceTag string, target *domain.Domain) (string, bool) {
 	return rewriteCanonicalTag(content, sourceTag, target)
 }
 

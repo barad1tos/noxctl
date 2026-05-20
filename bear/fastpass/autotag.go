@@ -1,4 +1,4 @@
-// Package domain hosts the fast-pass canonicalization pipeline that the
+// Package fastpass hosts the fast-pass canonicalization pipeline that the
 // daemon's `handleAutoTagTick` (and `engine.applyPrePasses` for
 // `noxctl apply --once`) runs every poll interval, in this fixed order:
 //
@@ -24,13 +24,16 @@
 // Each pass is idempotent and individually feature-gated
 // (`Features.DomainBootstrap` etc.) so operators can disable any single
 // pass without breaking the rest of the chain.
-package domain
+package fastpass
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+
+	"github.com/barad1tos/noxctl/bear/bearcli"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // ApplyDailyDefaultTag scans every note in the `notes` location, finds the
@@ -52,7 +55,7 @@ import (
 // user sees the canonical form within one fast-pass tick (~2s) instead
 // of waiting for the FSEvent-driven cycle to restructure. Body that
 // the user typed before this pass moves below the `---` separator
-// (RenderCanonicalForBootstrap re-classifies preamble as body).
+// (domain.RenderCanonicalForBootstrap re-classifies preamble as body).
 //
 // Failures per note are logged and skipped; the pass continues so one
 // flaky note can't stall the rest of the regen pipeline.
@@ -61,32 +64,32 @@ import (
 // already tagged). Callers use this to decide whether the pre-pass
 // produced bearcli writes that need to be self-gated downstream (Phase
 // 09 fast-pass gate fix).
-func ApplyDailyDefaultTag(ctx context.Context, dailyDomain *Domain) (int, error) {
+func ApplyDailyDefaultTag(ctx context.Context, dailyDomain *domain.Domain) (int, error) {
 	if dailyDomain == nil {
 		return 0, fmt.Errorf("ApplyDailyDefaultTag: dailyDomain is nil")
 	}
-	out, err := runBearcli(
+	out, err := bearcli.Run(
 		ctx,
-		[]string{"list", "--location", "notes", flagFormat, formatJSON, flagFields, fieldsAutoTag},
+		[]string{"list", "--location", "notes", bearcli.FlagFormat, bearcli.FormatJSON, bearcli.FlagFields, bearcli.FieldsAutoTag}, //nolint:lll
 		"",
 	)
 	if err != nil {
 		return 0, fmt.Errorf("ApplyDailyDefaultTag list: %w", err)
 	}
-	var notes []autoTagNote
+	var notes []domain.AutoTagNote
 	if err = json.Unmarshal(out, &notes); err != nil {
 		return 0, fmt.Errorf("ApplyDailyDefaultTag parse: %w", err)
 	}
 	stamped := 0
 	for _, note := range notes {
-		if err = CheckCtx(ctx); err != nil {
+		if err = domain.CheckCtx(ctx); err != nil {
 			return stamped, err
 		}
 		if len(note.Tags) > 0 {
 			continue
 		}
 		newContent := dailyDomain.RenderCanonicalForBootstrap(note.Content)
-		if err = overwriteWithRetry(ctx, note.ID, newContent); err != nil {
+		if err = bearcli.OverwriteWithRetry(ctx, note.ID, newContent); err != nil {
 			log.Printf("auto-tag %q failed: %v", note.Title, err)
 			continue
 		}
@@ -101,10 +104,10 @@ func ApplyDailyDefaultTag(ctx context.Context, dailyDomain *Domain) (int, error)
 
 // ApplyPlaceholderRefresh scans the most recently created notes for
 // ones whose Title equals any opted-in domain's effective placeholder
-// (Domain.QuickPlaceholderH1 override, falling back to
+// (domain.Domain.QuickPlaceholderH1 override, falling back to
 // bear.DefaultQuickPlaceholderH1). For each match whose tags include
 // the source domain's Tag, rewrites the H1 line with a fresh
-// nowForNewNoteLink timestamp. Body below H1 is preserved
+// domain.NowForNewNoteLink timestamp. Body below H1 is preserved
 // byte-for-byte so the user's caret position survives the silent
 // overwrite.
 //
@@ -123,13 +126,6 @@ func ApplyDailyDefaultTag(ctx context.Context, dailyDomain *Domain) (int, error)
 // gone, so the next tick skips the same note.
 //
 // Returns the number of notes actually rewritten.
-
-type autoTagNote struct {
-	ID      string   `json:"id"`
-	Title   string   `json:"title"`
-	Tags    []string `json:"tags"`
-	Content string   `json:"content"`
-}
 
 // refreshPlaceholderH1 rewrites the literal "# <placeholder>\n" H1
 // line at the start of content to "# <stamp>\n". Returns

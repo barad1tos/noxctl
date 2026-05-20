@@ -1,6 +1,6 @@
 // Package engine_test — domain-bootstrap fast-pass tests.
 //
-// Validates `domain.ApplyDomainBootstrap` — the new 4th fast-pass that
+// Validates `fastpass.ApplyDomainBootstrap` — the new 4th fast-pass that
 // canonicalizes any note whose tags match a managed leaf domain. Covers
 // all five real factory shapes (`HubRouted`, `GroupedVerticalFlat`,
 // `FlatList`, etc.), the umbrella-redirect path via `ResolveURLDomain`,
@@ -26,6 +26,7 @@ import (
 	"testing/synctest"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/fastpass"
 	"github.com/barad1tos/noxctl/bear/render"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
@@ -79,7 +80,7 @@ func TestApplyDomainBootstrap_LeafDomain_HubRouted(t *testing.T) {
 		fake := newFakeAutoTagBackend(payload)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -118,7 +119,7 @@ func TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat(t *testing.T) {
 		fake := newFakeAutoTagBackend(payload)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -155,7 +156,7 @@ func TestApplyDomainBootstrap_LeafDomain_FlatList(t *testing.T) {
 		fake := newFakeAutoTagBackend(payload)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -197,7 +198,7 @@ func TestApplyDomainBootstrap_UmbrellaRedirect(t *testing.T) {
 		fake := newFakeAutoTagBackend(payload)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -233,7 +234,7 @@ func TestApplyDomainBootstrap_MultipleLeafsMostSpecific(t *testing.T) {
 		fake := newFakeAutoTagBackend(payload)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -275,7 +276,7 @@ func TestApplyDomainBootstrap_MultipleLeafsTieSkip(t *testing.T) {
 		fake := newFakeAutoTagBackend(payload)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -311,7 +312,7 @@ func TestApplyDomainBootstrap_AlreadyCanonicalNoOp(t *testing.T) {
 		fake := newFakeAutoTagBackend(payload)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -336,7 +337,7 @@ func TestApplyDomainBootstrap_AlreadyCanonicalNoOp(t *testing.T) {
 func TestApplyDomainBootstrap_StructuralNoteSkip(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domain.ResetBootstrapLoopForTest()
+		fastpass.ResetBootstrapLoopForTest()
 		domains := []*domain.Domain{testutil.Domain(t, "llm/characters")}
 		domainsByTag := domain.DomainsByTag(domains)
 
@@ -349,7 +350,7 @@ func TestApplyDomainBootstrap_StructuralNoteSkip(t *testing.T) {
 		fake := newFakeAutoTagBackend(payload)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -373,7 +374,7 @@ func TestApplyDomainBootstrap_StructuralNoteSkip(t *testing.T) {
 func TestApplyDomainBootstrap_SubTagBucketNoOp(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domain.ResetBootstrapLoopForTest()
+		fastpass.ResetBootstrapLoopForTest()
 		domains := []*domain.Domain{testutil.Domain(t, "health")}
 		domainsByTag := domain.DomainsByTag(domains)
 
@@ -394,7 +395,7 @@ func TestApplyDomainBootstrap_SubTagBucketNoOp(t *testing.T) {
 		fake := newFakeAutoTagBackend(payload)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -445,7 +446,7 @@ func TestApplyDomainBootstrap_AlreadyBucketedNoOp(t *testing.T) {
 		fake := newFakeAutoTagBackend(payload)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -476,7 +477,7 @@ func TestApplyDomainBootstrap_NoManagedTagSkip(t *testing.T) {
 		fake := newFakeAutoTagBackend(payload)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -527,7 +528,7 @@ func TestApplyDomainBootstrap_DefensiveUmbrellaGuard(t *testing.T) {
 		fake := newFakeAutoTagBackend(payload)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 
-		n, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("ApplyDomainBootstrap: %v", err)
 		}
@@ -550,7 +551,7 @@ func TestApplyDomainBootstrap_DefensiveUmbrellaGuard(t *testing.T) {
 func TestApplyDomainBootstrap_LoopGuard_SkipsAfterCap(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domain.ResetBootstrapLoopForTest()
+		fastpass.ResetBootstrapLoopForTest()
 		domains := []*domain.Domain{testutil.Domain(t, "llm/characters")}
 		domainsByTag := domain.DomainsByTag(domains)
 
@@ -583,7 +584,7 @@ func driveBootstrapNTimes(
 ) {
 	t.Helper()
 	for i := 1; i <= n; i++ {
-		got, err := domain.ApplyDomainBootstrap(ctx, domainsByTag)
+		got, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
 			t.Fatalf("call %d: ApplyDomainBootstrap: %v", i, err)
 		}
@@ -606,14 +607,14 @@ func assertOverwriteCount(t *testing.T, fake *fakeAutoTagBackend, want int, labe
 // TestApplyDomainBootstrap_SourceRegexUmbrellaGuard is a source-regex
 // regression lock asserting the defensive
 // `if d.SkipAtomicsPass` branch literal stays present in
-// bear/domain/bootstrap.go AND that the word "umbrella" appears within 5
+// bear/fastpass/bootstrap.go AND that the word "umbrella" appears within 5
 // lines of it (the comment that explains why the branch exists).
 // Future refactors that delete the guard as "unreachable dead code"
 // will trip this test instead of silently restoring the bug class.
 func TestApplyDomainBootstrap_SourceRegexUmbrellaGuard(t *testing.T) {
-	source, err := os.ReadFile("../../../bear/domain/bootstrap.go")
+	source, err := os.ReadFile("../../../bear/fastpass/bootstrap.go")
 	if err != nil {
-		t.Fatalf("read bear/domain/bootstrap.go: %v", err)
+		t.Fatalf("read bear/fastpass/bootstrap.go: %v", err)
 	}
 	lines := strings.Split(string(source), "\n")
 	guardRE := regexp.MustCompile(`if\s+d\.SkipAtomicsPass`)
@@ -626,7 +627,7 @@ func TestApplyDomainBootstrap_SourceRegexUmbrellaGuard(t *testing.T) {
 		}
 	}
 	if len(guardLines) == 0 {
-		t.Fatalf("defensive `if d.SkipAtomicsPass` guard missing from bear/domain/bootstrap.go — defensive-guard regression lock failed")
+		t.Fatalf("defensive `if d.SkipAtomicsPass` guard missing from bear/fastpass/bootstrap.go — defensive-guard regression lock failed")
 	}
 	for _, gl := range guardLines {
 		// Scan ±5 lines for the word "umbrella" — the comment that
