@@ -348,5 +348,3 @@ func collectExtraTags(line, family string) []string {
 	}
 	return out
 }
-
-// atomicParseState carries small mutable state across parseAtomicContent's loop.

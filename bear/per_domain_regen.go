@@ -2,10 +2,10 @@ package bear
 
 // RunRegen — the per-domain orchestration entry point. Composes the
 // listing, grouping, hub upsert, master upsert, and atomics-pass
-// sub-steps that live in their own files (core_listing.go,
-// core_grouping.go, core_upsert.go, core_atom.go). The split keeps
-// RunRegen as a small, readable entrypoint while the heavy lifting
-// stays in topic-specific files.
+// sub-steps that live in their own files (bearcli_reads.go,
+// atom_routing.go, regen_writes.go, canonical_lifecycle.go). The
+// split keeps RunRegen as a small, readable entrypoint while the
+// heavy lifting stays in topic-specific files.
 
 import (
 	"context"
@@ -70,26 +70,4 @@ func (d *Domain) RunRegen(ctx context.Context) {
 	} else {
 		d.Logf("complete (%d buckets, %s elapsed)", len(groups), time.Since(start).Round(time.Millisecond))
 	}
-}
-
-// EqualIgnoringNewNoteLink is the exported wrapper around the
-// unexported equalIgnoringNewNoteLink predicate (non-strict, atomic
-// flavor). plan engine and parity check read this from outside
-// package bear. Internal callers continue using the lowercase original
-// to keep the export footprint minimal.
-//
-// Non-strict semantics: URL-shape drift (legacy title= vs current
-// no-title=) is ignored. Master/hub diffs should call
-// EqualIgnoringNewNoteLinkStrict instead.
-func EqualIgnoringNewNoteLink(a, b string) bool {
-	return equalIgnoringNewNoteLink(a, b)
-}
-
-// EqualIgnoringNewNoteLinkStrict is the exported wrapper around the
-// strict (master/hub) variant. Used by bear/engine/plan to surface
-// URL-shape drift as a real desired-state diff so the engine forces a
-// one-shot rewrite of master canonical lines on the first regen cycle
-// after the Task 2 URL change deploys.
-func EqualIgnoringNewNoteLinkStrict(a, b string) bool {
-	return equalIgnoringNewNoteLinkStrict(a, b)
 }

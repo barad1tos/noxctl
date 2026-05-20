@@ -184,13 +184,3 @@ func ApplyOrder(bySection map[string][]Note, order map[string][]string) {
 		bySection[path] = reorderForOutput(items, order[path])
 	}
 }
-
-// upsertHub creates or updates a Tier-2 Hub note for one bucket. No-op when
-// d.RenderHub == nil (domain doesn't have Tier-2 hubs). Returns a human-
-// readable summary; an err signals the caller to aggregate failure counts.
-//
-// `bucket` is the canonical bucket name (matches atomic canonical-header
-// segment). The note title comes from d.hubTitleFor(bucket) so sub-tag
-// preserving domains can namespace hubs as `<top> · <bucket>` while keeping
-// bucket-keyed group lookups intact. RenderHub still receives bucket — it
-// can resolve the title via d.hubTitleFor when needed.

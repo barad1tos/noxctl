@@ -201,9 +201,3 @@ func (d *Domain) runHubsPass(ctx context.Context, groups map[string][]Note) (fai
 	}
 	return failed
 }
-
-// RunRegen runs one full regeneration cycle for this domain: list → group →
-// atomics-pass → hubs-pass (if Tier-2) → master. Logs progress with the
-// per-domain prefix; aggregates failure counts so a noisy regen is visible at
-// a glance. Caller (main.go orchestrator) brackets the self-write gate around
-// all domains, NOT around individual RunRegen calls.

@@ -143,7 +143,7 @@ func seedDuplicateRegistry(ctx context.Context, domains []*bear.Domain, stderr i
 // current Bear state (FetchMasterContent) and rendering desired state
 // via bear.SnapshotDomainRenderInputs + d.RenderMaster, comparing via
 // bear.EqualIgnoringNewNoteLinkStrict (master flavor — URL-shape drift
-// surfaces as a real diff). Mirrors bear/core.go::upsertMasterIndex
+// surfaces as a real diff). Mirrors bear/regen_writes.go::upsertMasterIndex
 // with overwriteWithRetry calls replaced by Diff{} appends.
 //
 // Hub layer is summary-only — full per-hub diff fidelity requires
@@ -171,8 +171,8 @@ func computeDomainDelta(ctx context.Context, d *bear.Domain, verbose bool) (Doma
 	// the header).
 	desiredAuto = bear.StripNewNoteURLsFromBody(desiredAuto)
 	// Preserve the curator zone (below `## ✱ Куратор`) before
-	// comparing. `upsertMasterIndex` in `bear/core.go` composes the
-	// final write as `desiredAuto + "\n" + manual`; plan MUST mirror
+	// comparing. `upsertMasterIndex` in `bear/regen_writes.go` composes
+	// the final write as `desiredAuto + "\n" + manual`; plan MUST mirror
 	// that or every master with a curator zone surfaces as false
 	// drift here.
 	_, manual := bear.SplitMarker(currentMaster)

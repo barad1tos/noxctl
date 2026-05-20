@@ -73,6 +73,3 @@ func (d *Domain) findIndexID(ctx context.Context) (string, error) {
 // showHash moved to bearcli.ShowHash. No bear-package callers; the
 // previous overwriteWithRetry was its only consumer and now lives in
 // bear/bearcli/overwrite.go.
-
-// firstWikilinkAuthor scans the header zone for any wikilink target that isn't
-// empty or the master index title. Maps OwnAliases to OwnGroup. Returns "" if

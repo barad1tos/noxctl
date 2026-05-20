@@ -15,7 +15,7 @@
 // The empty-tag case exercises the live bearcli boundary by design: it
 // is the smallest end-to-end shape that proves the facade calls
 // listNotes → computeMasterOverrides → computeHubOverrides → groupAtomics
-// in the same order Apply does (bear/core.go RunRegen, lines 939-989).
+// in the same order Apply does (bear/per_domain_regen.go::RunRegen).
 // On hosts without bearcli installed (CI containers, non-darwin) the
 // test skips with a clear marker rather than spuriously failing.
 package bear_test

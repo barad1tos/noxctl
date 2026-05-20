@@ -262,7 +262,7 @@ func (f *fakeRefreshBackend) Run(_ context.Context, args []string, stdin string)
 		f.listArgsCapture = append(f.listArgsCapture, args...)
 		return f.listPayload, nil
 	case "overwrite":
-		// bear/core.go::overwriteWithRetry passes the note ID positionally as
+		// bear/bearcli_reads.go::overwriteWithRetry passes the note ID positionally as
 		// args[1]. The full call shape is ["overwrite", noteID, "--base", hash].
 		var noteID string
 		if len(args) >= 2 && !strings.HasPrefix(args[1], "--") {

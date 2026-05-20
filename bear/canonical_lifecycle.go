@@ -270,12 +270,3 @@ func (d *Domain) RenderCanonicalForBootstrap(existingContent string) string {
 		d.backlinkFor(d.UnknownBucket), d.sectionFor(d.UnknownBucket, parts), contentBody,
 	)
 }
-
-// equalIgnoringNewNoteLink (non-strict, atomic flavor) reports whether
-// two note bodies match after stripping new-note URL decorations and
-// trailing whitespace. URL-shape drift is ignored — an atom carrying
-// a stale URL stays put until it's touched for another reason. Used
-// by upsertAtomicBacklink's atom path (via equalIgnoringNewNoteLinkStrict's
-// fallback) and by promoteAtomToDomain's soft-move no-op gate.
-//
-// Hub/master callers want the strict variant — see

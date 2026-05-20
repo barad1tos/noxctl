@@ -43,7 +43,7 @@ func listPayload(t *testing.T, notes []map[string]any) []byte {
 
 // lastOverwriteBody pulls the body argument from the most recent
 // "overwrite" call recorded by the fake. `bearcli overwrite` carries
-// the note body on stdin (see `overwriteWithRetry` in bear/core.go),
+// the note body on stdin (see `overwriteWithRetry` in bear/bearcli_reads.go),
 // captured into `fakeAutoTagCall.Body` by the fake's `Run` method.
 func lastOverwriteBody(t *testing.T, fake *fakeAutoTagBackend) string {
 	t.Helper()

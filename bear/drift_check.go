@@ -11,7 +11,11 @@ package bear
 
 import "strings"
 
-// equalIgnoringNewNoteLinkStrict.
+// equalIgnoringNewNoteLink is the non-strict (atomic) body compare:
+// strip the trailing `[Нова нотатка]` URL segment, normalize trailing
+// whitespace, then string-equal. Lets timestamp-only drift on
+// otherwise-identical bodies skip overwrite. The strict variant adds
+// a structural URL diff on top.
 func equalIgnoringNewNoteLink(a, b string) bool {
 	stripA := strings.TrimRight(StripNewNoteURLsFromBody(a), " \n")
 	stripB := strings.TrimRight(StripNewNoteURLsFromBody(b), " \n")
@@ -23,7 +27,7 @@ func equalIgnoringNewNoteLink(a, b string) bool {
 // are compared position-by-position via FindAllNewNoteURLsInBody and
 // NewNoteURL.Equals. ANY structural change (Backlink, PlaceholderH1,
 // Label, Tag, CanonicalTag, Form, Inner) triggers rewrite — that's
-// the the URL-emission SSOT contract that ends the recurring-bug pattern.
+// the URL-emission SSOT contract that ends the recurring-bug pattern.
 //
 // The non-strict body compare runs as a fallback so trailing-whitespace
 // drift on otherwise-identical bodies doesn't loop-rewrite.
@@ -51,5 +55,24 @@ func EqualIgnoringNewNoteLinkStrictForTest(a, b string) bool {
 	return equalIgnoringNewNoteLinkStrict(a, b)
 }
 
-// GroupNotesBySection partitions a sorted note list by canonical-header section
-// path. Notes without a section land under the empty-string key.
+// EqualIgnoringNewNoteLink is the exported wrapper around the
+// unexported equalIgnoringNewNoteLink predicate (non-strict, atomic
+// flavor). plan engine and parity check read this from outside
+// package bear. Internal callers continue using the lowercase original
+// to keep the export footprint minimal.
+//
+// Non-strict semantics: URL-shape drift (legacy title= vs current
+// no-title=) is ignored. Master/hub diffs should call
+// EqualIgnoringNewNoteLinkStrict instead.
+func EqualIgnoringNewNoteLink(a, b string) bool {
+	return equalIgnoringNewNoteLink(a, b)
+}
+
+// EqualIgnoringNewNoteLinkStrict is the exported wrapper around the
+// strict (master/hub) variant. Used by bear/engine/plan to surface
+// URL-shape drift as a real desired-state diff so the engine forces a
+// one-shot rewrite of master canonical lines on the first regen cycle
+// after the URL emission change deploys.
+func EqualIgnoringNewNoteLinkStrict(a, b string) bool {
+	return equalIgnoringNewNoteLinkStrict(a, b)
+}
