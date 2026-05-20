@@ -82,7 +82,7 @@ func quicknoteDailyBootstrapURL() bear.NewNoteURL {
 }
 
 // TestNewNoteURL_Equals_InnerPresenceMismatch closes the R5 gap: the
-// recursive Inner-equality branch in NewNoteURL.Equals (new_note_url.go:220)
+// recursive Inner-equality branch in NewNoteURL.Equals (xcallback.go:220)
 // must reject (Inner != nil) vs (Inner == nil) pairs in either direction.
 // Previously uncovered because the existing struct-drift test exercises
 // flat (Inner == nil) values only.

@@ -3,8 +3,8 @@ package bear
 // Lint pass — types + sort utility.
 //
 // Per-atom detection (LintAtom) and auto-fix logic (AutoFixAtom) live
-// in lint_atom.go; the audit orchestrator (AuditDomains, PrintFindings,
-// LintApplyDomains) lives in lint_audit.go. This file owns only the
+// in lints.go; the audit orchestrator (AuditDomains, PrintFindings,
+// LintApplyDomains) lives in audit.go. This file owns only the
 // shared types (LintCategory + Finding) and the SortFindings utility
 // callers across both halves rely on.
 

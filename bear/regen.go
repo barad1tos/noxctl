@@ -2,8 +2,8 @@ package bear
 
 // RunRegen — the per-domain orchestration entry point. Composes the
 // listing, grouping, hub upsert, master upsert, and atomics-pass
-// sub-steps that live in their own files (bearcli_reads.go,
-// atom_routing.go, regen_writes.go, canonical_lifecycle.go). The
+// sub-steps that live in their own files (fetches.go,
+// routing.go, upserts.go, canonical.go). The
 // split keeps RunRegen as a small, readable entrypoint while the
 // heavy lifting stays in topic-specific files.
 
