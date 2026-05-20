@@ -504,7 +504,8 @@ func TestApplyDomainBootstrap_DefensiveUmbrellaGuard(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		// Bare umbrella — no DefaultChild leaf wired. ResolveURLDomain
-		// returns self when defaultChildDomain == nil (bear/domain.go:303).
+		// returns self when defaultChildDomain == nil (see
+		// bear/domain_methods.go for the post-PR-H3 location).
 		bareUmbrella := &bear.Domain{
 			Tag:             "phantom",
 			CanonicalTag:    "#phantom",

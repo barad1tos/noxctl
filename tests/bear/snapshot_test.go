@@ -31,10 +31,11 @@ import (
 	"github.com/barad1tos/noxctl/bear"
 )
 
-// bearcliPath mirrors bear.runBearcli's hardcoded binary location
-// (bear/domain.go:34). Tests that invoke any facade that ultimately
-// exec's bearcli must skip when this path is missing — keeps the
-// tests/bear/ suite green on hosts that don't have Bear.app installed.
+// bearcliPath mirrors the hardcoded binary location used by
+// bearcli.Run (declared inside bear/bearcli/client.go). Tests that
+// invoke any facade that ultimately exec's bearcli must skip when
+// this path is missing — keeps the tests/bear/ suite green on hosts
+// that don't have Bear.app installed.
 const bearcliPath = "/Applications/Bear.app/Contents/MacOS/bearcli"
 
 func skipIfNoBearcli(t *testing.T) {
