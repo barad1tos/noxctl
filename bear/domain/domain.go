@@ -9,11 +9,12 @@ package domain
 
 import "github.com/barad1tos/noxctl/bear/note"
 
-// ErrHashConflict + BearcliTimeout + bearcli command-line constants
-// (FlagFormat, FlagFields, FlagBase, FormatJSON, FieldsIDTitle,
-// FieldsAutoTag) now live in bear/bearcli. bear/ re-exports the
-// most-used ones via bear/aliases.go for backward
-// compatibility.
+// bearcli sentinels and command-line constants (Timeout,
+// ErrHashConflict, FlagFormat, FlagFields, FlagBase, FormatJSON,
+// FieldsIDTitle, FieldsAutoTag) live in bear/bearcli. Callers reach
+// them directly via the bearcli package; bear/domain/aliases.go
+// keeps a handful of wrappers for symbols the regen pipeline still
+// references under bear/domain.X spelling.
 
 // HubMarker splits a Hub note's auto-zone (above) from the
 // curator-managed zone (below). Same convention is reused across all

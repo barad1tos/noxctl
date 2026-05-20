@@ -15,7 +15,7 @@
 // The empty-tag case exercises the live bearcli boundary by design: it
 // is the smallest end-to-end shape that proves the facade calls
 // listNotes → computeMasterOverrides → computeHubOverrides → groupAtomics
-// in the same order Apply does (bear/regen.go::RunRegen).
+// in the same order Apply does (bear/domain/regen.go::RunRegen).
 // On hosts without bearcli installed (CI containers, non-darwin) the
 // test skips with a clear marker rather than spuriously failing.
 package bear_test
@@ -92,14 +92,19 @@ func TestSnapshotDomainRenderInputs(t *testing.T) {
 }
 
 // TestSnapshotDomainRenderInputs_LintUntrackedConstant locks the
-// JSON wire value the untracked-scan emitter and the diff renderer
-// both serialize against. Renaming the constant silently breaks
-// `noxctl plan --json` output for every downstream consumer.
+// underlying string value of `audit.LintUntracked` against a
+// regression where a future rename of the constant silently shifts
+// what every operator-facing renderer and JSON-marshal call site
+// would emit downstream.
 //
-// Asserted via json.Marshal so the comparison is runtime (not
-// const-folded at compile time): the test must fail when the
-// constant changes value, even though the constant and the literal
-// "untracked" both appear in this file.
+// Asserted via json.Marshal of a local struct so the comparison
+// runs at runtime — a direct `string(audit.LintUntracked) == "x"`
+// check would be constant-folded by the compiler under the current
+// value and trip IntelliJ's always-false inspection. The local
+// struct's `json:"category"` tag is purely a wire-format harness;
+// `audit.Finding` itself does not yet serialize to JSON in
+// production paths, so the test locks the constant value (not a
+// shipping wire schema).
 func TestSnapshotDomainRenderInputs_LintUntrackedConstant(t *testing.T) {
 	const wantWire = `"category":"untracked"`
 	payload := struct {

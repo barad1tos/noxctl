@@ -110,7 +110,7 @@ func TestDaemon_GracefulShutdown(t *testing.T) {
 			t.Errorf("expected context canceled error, got %v", err)
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatalf("daemon did not shut down within BearcliTimeout (10s)")
+		t.Fatalf("daemon did not shut down within bearcli.Timeout (10s)")
 	}
 }
 

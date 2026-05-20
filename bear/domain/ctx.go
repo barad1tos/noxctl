@@ -4,7 +4,7 @@ import "context"
 
 // CheckCtx returns ctx.Err without performing any other work. Used at
 // the head of per-atom for-loops in the engine path so SIGINT response
-// time is bounded by at most one bearcli call (BearcliTimeout=10s)
+// time is bounded by at most one bearcli call (bearcli.Timeout=10s)
 // instead of the full pre-pass duration. Tested in isolation in
 // tests/bear/ctx_test.go without bearcli dependency.
 //
