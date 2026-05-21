@@ -30,12 +30,12 @@ func renderJSON(w io.Writer, result *Result) error {
 // renderText prints a human-readable per-check status block followed
 // by a final PASS / FAIL / ERROR verdict.
 func renderText(w io.Writer, result *Result) error {
-	for _, c := range result.Checks {
-		if _, err := fmt.Fprintf(w, "%s %s — %s\n", statusGlyph(c.Status), c.Name, c.Message); err != nil {
+	for _, check := range result.Checks {
+		if _, err := fmt.Fprintf(w, "%s %s — %s\n", statusGlyph(check.Status), check.Name, check.Message); err != nil {
 			return err
 		}
-		for _, d := range c.Details {
-			if _, err := fmt.Fprintf(w, "    %s\n", d); err != nil {
+		for _, detail := range check.Details {
+			if _, err := fmt.Fprintf(w, "    %s\n", detail); err != nil {
 				return err
 			}
 		}
@@ -54,8 +54,8 @@ func renderText(w io.Writer, result *Result) error {
 // StatusError (verify couldn't make a verdict) from StatusFail
 // (verify made a verdict and the answer is no) — the operator
 // remediation is different (fix infrastructure vs fix drift).
-func statusGlyph(s Status) string {
-	switch s {
+func statusGlyph(status Status) string {
+	switch status {
 	case StatusPass:
 		return "✓"
 	case StatusFail:
@@ -75,11 +75,11 @@ func RenderForTest(opts Options, result *Result) error {
 // overallVerdict reduces the summary to a single bold label. Error
 // trumps fail (verify couldn't make a verdict ⇒ tell the operator
 // loudly); fail trumps pass; otherwise PASS.
-func overallVerdict(s Summary) string {
+func overallVerdict(summary Summary) string {
 	switch {
-	case s.Error > 0:
+	case summary.Error > 0:
 		return "ERROR"
-	case s.Fail > 0:
+	case summary.Fail > 0:
 		return "FAIL"
 	}
 	return "PASS"

@@ -50,20 +50,20 @@ func (d *Daemon) Run(ctx context.Context) error {
 	maxTimer.Stop()
 	burstActive := false
 
-	// Poll-ticker setup. When MtimePollInterval == 0 the pollCh stays
-	// nil and `case <-pollCh:` blocks forever — Go's canonical
+	// Poll-ticker setup. When MtimePollInterval == 0 the pollTick stays
+	// nil and `case <-pollTick:` blocks forever — Go's canonical
 	// "disabled select arm" idiom. lastMtime tracks the most recent
 	// ModTime observed; initialized to the zero time.Time so the FIRST
 	// poll tick after daemon startup ALWAYS observes "changed" and
 	// forces a catch-up cycle.
 	var lastMtime time.Time
-	pollCh, stopPoll := startTickerOrNil(d.opts.MtimePollInterval)
+	pollTick, stopPoll := startTickerOrNil(d.opts.MtimePollInterval)
 	defer stopPoll()
 
 	// Auto-tag fast-pass ticker setup. Same nil-channel idiom as
-	// pollCh: when AutoTagPollInterval == 0 the channel stays nil and
-	// `case <-autoTagCh:` blocks forever.
-	autoTagCh, stopAutoTag := startTickerOrNil(d.opts.AutoTagPollInterval)
+	// pollTick: when AutoTagPollInterval == 0 the channel stays nil and
+	// `case <-autoTagTick:` blocks forever.
+	autoTagTick, stopAutoTag := startTickerOrNil(d.opts.AutoTagPollInterval)
 	defer stopAutoTag()
 
 	for {
@@ -88,13 +88,13 @@ func (d *Daemon) Run(ctx context.Context) error {
 			d.updatePollBaseline(&lastMtime)
 			burstActive = false
 			quietTimer.Stop()
-		case <-pollCh:
+		case <-pollTick:
 			// Stat database.sqlite, compare ModTime to lastMtime, route
 			// a change through the same handleEvent path FSEvents use
 			// (debounce, burst, self-write-gate all apply uniformly) —
 			// no fast-path for poll.
 			d.handlePollTick(quietTimer, maxTimer, &burstActive, &lastMtime)
-		case <-autoTagCh:
+		case <-autoTagTick:
 			// Run ONLY the four fast-passes (foreign-tag escape, daily-
 			// default, domain-bootstrap, placeholder-refresh — in that
 			// order) — NEVER the full per-domain regen cycle. Skips

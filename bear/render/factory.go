@@ -94,9 +94,9 @@ func NewUmbrellaDomainStrict(tag, indexTitle, defaultChild string, children []*d
 		return nil, fmt.Errorf("DefaultChild is required for umbrella %q", tag)
 	}
 	var matched *domain.Domain
-	for _, c := range children {
-		if c.Tag == defaultChild {
-			matched = c
+	for _, child := range children {
+		if child.Tag == defaultChild {
+			matched = child
 			break
 		}
 	}

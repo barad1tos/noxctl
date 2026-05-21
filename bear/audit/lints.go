@@ -15,42 +15,42 @@ import (
 // LintAtom inspects one atom and returns every finding that fires. Empty
 // slice when the atom is clean. Skips notes that the domain treats as
 // non-atomic (master, Tier-2 hubs).
-func LintAtom(d *domain.Domain, n domain.Note) []Finding {
-	if domain.IsAuxNote(d, n) {
+func LintAtom(d *domain.Domain, note domain.Note) []Finding {
+	if domain.IsAuxNote(d, note) {
 		return nil
 	}
 	var out []Finding
 
-	if titleFinding, ok := titleLevelFinding(d, n); ok {
+	if titleFinding, ok := titleLevelFinding(d, note); ok {
 		out = append(out, titleFinding)
 	}
 
-	canonicalLines := findCanonicalLineIndices(n.Content, d.Tag)
+	canonicalLines := findCanonicalLineIndices(note.Content, d.Tag)
 	if len(canonicalLines) > 1 {
 		out = append(out, Finding{
-			DomainTag: d.Tag, NoteID: n.ID, Title: n.Title,
+			DomainTag: d.Tag, NoteID: note.ID, Title: note.Title,
 			Category: LintMultiCanonical,
 			Detail:   fmt.Sprintf("%d canonical-shape lines; auto-fix keeps the first", len(canonicalLines)),
 			Fixable:  true,
 		})
 	}
 
-	if findOrphanTagLines(n.Content, d.Tag, canonicalLines) {
+	if findOrphanTagLines(note.Content, d.Tag, canonicalLines) {
 		if len(canonicalLines) == 0 {
-			_, _, reconstructible := reconstructFirstCanonicalLine(n.Content, d.Tag)
+			_, _, reconstructible := reconstructFirstCanonicalLine(note.Content, d.Tag)
 			detail := fmt.Sprintf("`#%s` token present but no canonical-shape line; manual review", d.Tag)
 			if reconstructible {
 				detail = fmt.Sprintf("malformed canonical for `#%s`; auto-rebuild from tag + wikilink available", d.Tag)
 			}
 			out = append(out, Finding{
-				DomainTag: d.Tag, NoteID: n.ID, Title: n.Title,
+				DomainTag: d.Tag, NoteID: note.ID, Title: note.Title,
 				Category: LintMalformedCanonical,
 				Detail:   detail,
 				Fixable:  reconstructible,
 			})
 		} else {
 			out = append(out, Finding{
-				DomainTag: d.Tag, NoteID: n.ID, Title: n.Title,
+				DomainTag: d.Tag, NoteID: note.ID, Title: note.Title,
 				Category: LintOrphanTag,
 				Detail:   fmt.Sprintf("standalone `#%s` or `#%s/<sub>` outside canonical line", d.Tag, d.Tag),
 				Fixable:  true,
@@ -113,21 +113,21 @@ func AutoFixAtom(d *domain.Domain, content string) (string, bool) {
 // when the title is clean. broken-H1 wins over unsafe-title because a
 // title with a leading pipe is structurally corrupt — the URL-form
 // fallback would render fine but the title itself is wrong.
-func titleLevelFinding(d *domain.Domain, n domain.Note) (Finding, bool) {
+func titleLevelFinding(d *domain.Domain, note domain.Note) (Finding, bool) {
 	var category LintCategory
 	var detail string
 	switch {
-	case titleLooksBroken(n.Title):
+	case titleLooksBroken(note.Title):
 		category = LintBrokenH1
 		detail = "title starts with canonical-line fragment; original H1 lost"
-	case domain.TitleNeedsURLForm(n.Title):
+	case domain.TitleNeedsURLForm(note.Title):
 		category = LintUnsafeTitle
 		detail = "title contains | ] [ — wikilink emitted as bear:// URL by render"
 	default:
 		return Finding{}, false
 	}
 	return Finding{
-		DomainTag: d.Tag, NoteID: n.ID, Title: n.Title,
+		DomainTag: d.Tag, NoteID: note.ID, Title: note.Title,
 		Category: category, Detail: detail,
 	}, true
 }

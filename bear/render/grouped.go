@@ -48,9 +48,9 @@ func MasterFlatGrouped(d *domain.Domain, groups map[string][]domain.Note, column
 // `## <bucket> (N)` with atomics sorted via domain.ByTitle. domain.AtomicWikilink picks
 // URL form for duplicate titles automatically.
 func flatGroupedSections(d *domain.Domain, groups map[string][]domain.Note, columns []string) []Section {
-	cols := OrderFlatColumns(groups, columns)
-	sections := make([]Section, 0, len(cols))
-	for _, bucket := range cols {
+	orderedColumns := OrderFlatColumns(groups, columns)
+	sections := make([]Section, 0, len(orderedColumns))
+	for _, bucket := range orderedColumns {
 		notes := append([]domain.Note(nil), groups[bucket]...)
 		if len(notes) == 0 {
 			continue

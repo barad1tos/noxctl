@@ -75,8 +75,8 @@ func Load(path string) (*State, error) {
 	if err != nil {
 		return nil, fmt.Errorf("state load %s: %w", path, err)
 	}
-	var s State
-	if unmarshalErr := json.Unmarshal(raw, &s); unmarshalErr != nil {
+	var loaded State
+	if unmarshalErr := json.Unmarshal(raw, &loaded); unmarshalErr != nil {
 		corrupt := path + ".corrupt-" + time.Now().UTC().Format(time.RFC3339)
 		if renameErr := os.Rename(path, corrupt); renameErr != nil {
 			slog.Warn("state file corrupt; rename failed",
@@ -87,7 +87,7 @@ func Load(path string) (*State, error) {
 		}
 		return &State{Version: SchemaVersion}, nil
 	}
-	return &s, nil
+	return &loaded, nil
 }
 
 // Save writes State to path via the domain.AtomicWriteJSON helper. perm

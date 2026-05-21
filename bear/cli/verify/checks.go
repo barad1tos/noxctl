@@ -29,54 +29,54 @@ func failCheck(name, message string, details []string) Check {
 // zero per-domain errors. Strict mode additionally fails when the
 // residue scan reports untracked tag-families.
 func checkPlanParity(ctx context.Context, opts Options, domains []*domain.Domain) Check {
-	c := Check{Name: "plan-parity"}
+	check := Check{Name: "plan-parity"}
 	res, err := engine.Plan(ctx, engine.PlanOpts{
 		Domains: domains,
 		Stderr:  opts.Stderr,
 	})
 	if err != nil {
-		c.Status = StatusError
-		c.Message = fmt.Sprintf("engine.Plan returned error: %v", err)
-		return c
+		check.Status = StatusError
+		check.Message = fmt.Sprintf("engine.Plan returned error: %v", err)
+		return check
 	}
 	if res.Interrupted {
-		c.Status = StatusError
-		c.Message = "engine.Plan interrupted (ctx canceled)"
-		return c
+		check.Status = StatusError
+		check.Message = "engine.Plan interrupted (ctx canceled)"
+		return check
 	}
 	if res.HasDrift() || res.Summary.DomainsError > 0 {
-		c.Status = StatusFail
-		c.Message = fmt.Sprintf(
+		check.Status = StatusFail
+		check.Message = fmt.Sprintf(
 			"plan reports drift: %d drift / %d error / %d clean across %d domains",
 			res.Summary.DomainsDrift, res.Summary.DomainsError,
 			res.Summary.DomainsClean, res.Summary.DomainsTotal,
 		)
-		c.Details = driftDomainList(res)
-		return c
+		check.Details = driftDomainList(res)
+		return check
 	}
 	if opts.Strict && res.Summary.UntrackedFamilies > 0 {
-		c.Status = StatusFail
-		c.Message = fmt.Sprintf(
+		check.Status = StatusFail
+		check.Message = fmt.Sprintf(
 			"strict: %d untracked tag-family/families detected",
 			res.Summary.UntrackedFamilies,
 		)
-		return c
+		return check
 	}
-	c.Status = StatusPass
-	c.Message = fmt.Sprintf(
+	check.Status = StatusPass
+	check.Message = fmt.Sprintf(
 		"%d domains clean (0 drift, 0 errors)",
 		res.Summary.DomainsTotal,
 	)
-	return c
+	return check
 }
 
 // driftDomainList collects the tags of the drift / error domains so
 // the operator can target them without digging through the full JSON.
 func driftDomainList(res *engine.PlanResult) []string {
 	out := make([]string, 0, len(res.Domains))
-	for _, d := range res.Domains {
-		if d.Status == engine.StatusDrift || d.Status == engine.StatusError {
-			out = append(out, fmt.Sprintf("%s (%s)", d.Tag, d.Status))
+	for _, domainResult := range res.Domains {
+		if domainResult.Status == engine.StatusDrift || domainResult.Status == engine.StatusError {
+			out = append(out, fmt.Sprintf("%s (%s)", domainResult.Tag, domainResult.Status))
 		}
 	}
 	return out
@@ -100,45 +100,45 @@ var daemonLogWarnPattern = regexp.MustCompile(`(LOOP detected|EMERGENCY DISABLE|
 // onward. Distinguishes "daemon never ran" (StatusError) from "daemon
 // ran clean" (StatusPass) — different operator actions follow.
 func checkDaemonLog(opts Options) Check {
-	c := Check{Name: "daemon-log"}
+	check := Check{Name: "daemon-log"}
 	path, err := resolveDaemonLogPath(opts.LogPath)
 	if err != nil {
-		c.Status = StatusError
-		c.Message = err.Error()
-		return c
+		check.Status = StatusError
+		check.Message = err.Error()
+		return check
 	}
 	f, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		if os.IsNotExist(err) {
-			c.Status = StatusError
-			c.Message = fmt.Sprintf("daemon log not found at %s (daemon never ran?)", path)
-			return c
+			check.Status = StatusError
+			check.Message = fmt.Sprintf("daemon log not found at %s (daemon never ran?)", path)
+			return check
 		}
-		c.Status = StatusError
-		c.Message = fmt.Sprintf("open %s: %v", path, err)
-		return c
+		check.Status = StatusError
+		check.Message = fmt.Sprintf("open %s: %v", path, err)
+		return check
 	}
 	defer func() { _ = f.Close() }()
 
 	warnings, ok, scanErr := scanLogSinceStartup(f)
 	if scanErr != nil {
-		c.Status = StatusError
-		c.Message = fmt.Sprintf("scan %s: %v", path, scanErr)
-		return c
+		check.Status = StatusError
+		check.Message = fmt.Sprintf("scan %s: %v", path, scanErr)
+		return check
 	}
 	if !ok {
-		c.Status = StatusError
-		c.Message = fmt.Sprintf("no %q line in %s — daemon may have never started", daemonLogStartupMarker, path)
-		return c
+		check.Status = StatusError
+		check.Message = fmt.Sprintf("no %q line in %s — daemon may have never started", daemonLogStartupMarker, path)
+		return check
 	}
 	if len(warnings) > 0 {
-		return failCheck(c.Name,
+		return failCheck(check.Name,
 			fmt.Sprintf("%d warning(s) since last daemon startup", len(warnings)),
 			warnings)
 	}
-	c.Status = StatusPass
-	c.Message = "clean since last daemon startup"
-	return c
+	check.Status = StatusPass
+	check.Message = "clean since last daemon startup"
+	return check
 }
 
 // resolveDaemonLogPath honors an explicit override; otherwise falls
@@ -231,7 +231,7 @@ func scanLogSinceStartup(r io.Reader) ([]string, bool, error) {
 // Destructive: opt-in via --with-apply. Acquires the flock; daemon
 // (if running) blocks until verify releases.
 func checkApplyIdempotency(ctx context.Context, opts Options, domains []*domain.Domain) Check {
-	c := Check{Name: "apply-idempotency"}
+	check := Check{Name: "apply-idempotency"}
 
 	// Pass 1: bring the vault to canonical state. Failures here are
 	// not idempotency-class — they're the underlying apply path being
@@ -239,9 +239,9 @@ func checkApplyIdempotency(ctx context.Context, opts Options, domains []*domain.
 	// so the operator sees the right top-line.
 	first, err := runApplyOnce(ctx, opts, domains)
 	if err != nil {
-		c.Status = StatusError
-		c.Message = fmt.Sprintf("first apply failed: %v", err)
-		return c
+		check.Status = StatusError
+		check.Message = fmt.Sprintf("first apply failed: %v", err)
+		return check
 	}
 	// `engine.Apply` returns no err but logs+continues per-domain
 	// failures; `AnyFailed()` is the only signal that an underlying
@@ -249,22 +249,22 @@ func checkApplyIdempotency(ctx context.Context, opts Options, domains []*domain.
 	// "did idempotency hold?" verdict is not muddied by an apply
 	// that never finished its first attempt cleanly.
 	if first.AnyFailed() {
-		c.Status = StatusError
-		c.Message = "first apply pass reported per-domain failures (see daemon log)"
-		return c
+		check.Status = StatusError
+		check.Message = "first apply pass reported per-domain failures (see daemon log)"
+		return check
 	}
 
 	// Pass 2: must be a strict no-op.
 	second, err := runApplyOnce(ctx, opts, domains)
 	if err != nil {
-		c.Status = StatusError
-		c.Message = fmt.Sprintf("second apply failed: %v", err)
-		return c
+		check.Status = StatusError
+		check.Message = fmt.Sprintf("second apply failed: %v", err)
+		return check
 	}
 
 	offenders := nonIdempotentDomains(second)
 	if len(offenders) > 0 {
-		return failCheck(c.Name,
+		return failCheck(check.Name,
 			fmt.Sprintf("%d domain(s) wrote on the second apply pass", len(offenders)),
 			offenders)
 	}
@@ -275,16 +275,16 @@ func checkApplyIdempotency(ctx context.Context, opts Options, domains []*domain.
 		// violated". Surface as StatusError so the operator routes
 		// to the daemon log instead of trying to debug renderer
 		// determinism.
-		c.Status = StatusError
-		c.Message = "second apply pass reported per-domain failures (see daemon log)"
-		return c
+		check.Status = StatusError
+		check.Message = "second apply pass reported per-domain failures (see daemon log)"
+		return check
 	}
 
 	// Capture pass-1 stats in the message — useful to know whether
 	// the vault was already clean (0 changes on pass 1) or whether
 	// verify converged it.
-	c.Status = StatusPass
-	c.Message = fmt.Sprintf(
+	check.Status = StatusPass
+	check.Message = fmt.Sprintf(
 		"second pass clean; pass-1 stats: %d created / %d changed / %d unchanged / %d failed across %d domains",
 		sumApplyField(first, func(d engine.DomainCounts) int { return d.Created }),
 		sumApplyField(first, func(d engine.DomainCounts) int { return d.Changed }),
@@ -292,7 +292,7 @@ func checkApplyIdempotency(ctx context.Context, opts Options, domains []*domain.
 		sumApplyField(first, func(d engine.DomainCounts) int { return d.Failed }),
 		len(first.Domains),
 	)
-	return c
+	return check
 }
 
 // runApplyOnce invokes `engine.Apply` using `opts.ApplyOpts` as the
@@ -337,8 +337,8 @@ func nonIdempotentDomains(res *engine.ApplyResult) []string {
 // site under the lll limit.
 func sumApplyField(res *engine.ApplyResult, pick func(engine.DomainCounts) int) int {
 	total := 0
-	for _, c := range res.Domains {
-		total += pick(c)
+	for _, counts := range res.Domains {
+		total += pick(counts)
 	}
 	return total
 }
