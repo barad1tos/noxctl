@@ -165,7 +165,7 @@ func TestDaemonPoll_ZeroDisables(t *testing.T) {
 
 		// 5 virtual seconds is enough that a 1s ticker would have fired
 		// 5 times. With MtimePollInterval=0 the nil-channel idiom keeps
-		// `case <-pollCh:` unreachable and the poll loop never runs.
+		// `case <-pollTick:` unreachable and the poll loop never runs.
 		time.Sleep(5 * time.Second)
 		cancel()
 		<-errCh

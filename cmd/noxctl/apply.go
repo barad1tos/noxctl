@@ -68,11 +68,11 @@ func runApply(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Config load — uniform error shape via formattedLoadError.
-	domains, cat, loadErr := config.Load(cfgPath)
+	domains, cat, loadErr := config.Load(configPath)
 	if loadErr != nil {
 		return &formattedLoadError{
 			inner: loadErr,
-			msg:   config.FormatLoadError(loadErr, cfgPath),
+			msg:   config.FormatLoadError(loadErr, configPath),
 		}
 	}
 

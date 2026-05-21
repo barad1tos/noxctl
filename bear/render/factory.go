@@ -75,28 +75,28 @@ func NewGroupedVerticalFlatDomain(tag, indexTitle, unknownBucket string, buckets
 // it's the leaf the umbrella master's "Нова нотатка" link targets so clicks
 // land in a tagged leaf domain instead of the bare umbrella tag. Production
 // callers panic on misconfiguration; the soft-error variant is
-// newUmbrellaDomainStrict (used by the TOML loader + test helper).
+// NewUmbrellaDomainStrict (used by the TOML loader + test helper).
 func NewUmbrellaDomain(tag, indexTitle, defaultChild string, children []*domain.Domain) *domain.Domain {
-	d, err := newUmbrellaDomainStrict(tag, indexTitle, defaultChild, children)
+	d, err := NewUmbrellaDomainStrict(tag, indexTitle, defaultChild, children)
 	if err != nil {
 		panic(fmt.Sprintf("NewUmbrellaDomain(%q): %v", tag, err))
 	}
 	return d
 }
 
-// newUmbrellaDomainStrict assembles an umbrella domain.Domain after enforcing
+// NewUmbrellaDomainStrict assembles an umbrella domain.Domain after enforcing
 // the cross-domain DefaultChild rules: must be non-empty, must match a
 // registered child Tag, must not itself be an umbrella. Returns the
 // assembled domain.Domain or an error so the TOML loader can surface a clean
 // error path instead of crashing on malformed config.
-func newUmbrellaDomainStrict(tag, indexTitle, defaultChild string, children []*domain.Domain) (*domain.Domain, error) {
+func NewUmbrellaDomainStrict(tag, indexTitle, defaultChild string, children []*domain.Domain) (*domain.Domain, error) {
 	if defaultChild == "" {
 		return nil, fmt.Errorf("DefaultChild is required for umbrella %q", tag)
 	}
 	var matched *domain.Domain
-	for _, c := range children {
-		if c.Tag == defaultChild {
-			matched = c
+	for _, child := range children {
+		if child.Tag == defaultChild {
+			matched = child
 			break
 		}
 	}
@@ -146,7 +146,7 @@ func NewUmbrellaDomainForTest(
 	children []*domain.Domain,
 ) *domain.Domain {
 	t.Helper()
-	d, err := newUmbrellaDomainStrict(tag, indexTitle, defaultChild, children)
+	d, err := NewUmbrellaDomainStrict(tag, indexTitle, defaultChild, children)
 	if err != nil {
 		return &domain.Domain{
 			Tag:             tag,

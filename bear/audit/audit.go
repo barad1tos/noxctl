@@ -86,8 +86,8 @@ func Scan(ctx context.Context, domains []*domain.Domain) []Finding {
 			log.Printf("audit: %s: list failed: %v", d.Tag, err)
 			continue
 		}
-		LintAndAuditDomain(d, notes, func(f Finding) {
-			findings = append(findings, f)
+		LintAndAuditDomain(d, notes, func(finding Finding) {
+			findings = append(findings, finding)
 		})
 	}
 	SortFindings(findings)

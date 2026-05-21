@@ -72,7 +72,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		Color:     color,
 		Output:    planOutput,
 		Args:      args,
-		CfgPath:   cfgPath,
+		CfgPath:   configPath,
 		PinLegacy: legacyPath,
 		PinTarget: target,
 		Verbose:   verbose,

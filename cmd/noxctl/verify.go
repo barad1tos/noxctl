@@ -73,7 +73,7 @@ func runVerify(cmd *cobra.Command, _ []string) error {
 	// Output validation happens inside `verify.Run → render`; we
 	// don't duplicate the check at the cmd layer (single owner).
 	opts := verify.Options{
-		ConfigPath: cfgPath,
+		ConfigPath: configPath,
 		WithApply:  verifyWithApply,
 		LogPath:    verifyLogPath,
 		Strict:     verifyStrict,
@@ -115,10 +115,10 @@ func runVerify(cmd *cobra.Command, _ []string) error {
 // best-effort (nil-safe registry per bear/pins.go), matching
 // runApply's behavior in cmd/noxctl/apply.go.
 func buildVerifyApplyTemplate() (engine.ApplyOpts, error) {
-	_, cat, loadErr := config.Load(cfgPath)
+	_, cat, loadErr := config.Load(configPath)
 	if loadErr != nil {
 		return engine.ApplyOpts{}, fmt.Errorf("verify --with-apply: %s",
-			config.FormatLoadError(loadErr, cfgPath))
+			config.FormatLoadError(loadErr, configPath))
 	}
 	_, pinTarget := pinPaths()
 	pins, _ := domain.LoadPinRegistry(pinTarget)

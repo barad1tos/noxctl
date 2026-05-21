@@ -180,7 +180,7 @@ func Run(ctx context.Context, opts Options) error {
 			Message: fmt.Sprintf("config.Load(%q) failed: %v", opts.ConfigPath, err),
 		})
 		result.CompletedAt = time.Now().UTC()
-		return finalize(opts, sigCtx, &result)
+		return finalize(sigCtx, opts, &result)
 	}
 
 	result.Checks = append(
@@ -199,7 +199,7 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	result.CompletedAt = time.Now().UTC()
-	return finalize(opts, sigCtx, &result)
+	return finalize(sigCtx, opts, &result)
 }
 
 // defaultIOAndPool fills nil Stdout/Stderr with the process streams
@@ -222,9 +222,9 @@ func defaultIOAndPool(opts *Options) {
 // sees what completed before SIGINT arrived — matches cli.RunPlan's
 // render-then-translate ordering and gives the operator
 // post-mortem visibility instead of a silent stop.
-func finalize(opts Options, ctx context.Context, result *Result) error {
-	for _, c := range result.Checks {
-		switch c.Status {
+func finalize(ctx context.Context, opts Options, result *Result) error {
+	for _, check := range result.Checks {
+		switch check.Status {
 		case StatusPass:
 			result.Summary.Pass++
 		case StatusFail:

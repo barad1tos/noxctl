@@ -47,11 +47,11 @@ func writeDaemonLog(t *testing.T, lines []string) string {
 // checks' verdicts.
 func runVerifyWithLog(t *testing.T, logPath string) (string, error) {
 	t.Helper()
-	cfg := writeMinimalCatalog(t)
+	catalog := writeMinimalCatalog(t)
 	ctx := ctxWithBenignBackend(t)
 	var stdout, stderr strings.Builder
 	err := verify.Run(ctx, verify.Options{
-		ConfigPath: cfg,
+		ConfigPath: catalog,
 		LogPath:    logPath,
 		Output:     "text",
 		Stdout:     &stdout,

@@ -59,13 +59,13 @@ func AcquireApply(ctx context.Context, lockPath string, noWait bool, stderr io.W
 	if stderr == nil {
 		stderr = os.Stderr
 	}
-	if mkErr := os.MkdirAll(filepath.Dir(lockPath), 0o700); mkErr != nil {
-		return nil, fmt.Errorf("AcquireApply mkdir: %w", mkErr)
+	if mkdirErr := os.MkdirAll(filepath.Dir(lockPath), 0o700); mkdirErr != nil {
+		return nil, fmt.Errorf("AcquireApply mkdir: %w", mkdirErr)
 	}
 	sentinelPath := filepath.Join(filepath.Dir(lockPath), SentinelName)
 	// Touch sentinel BEFORE blocking flock so daemon's cycle-start
 	// sentinel check observes it and yields.
-	if f, terr := os.Create(sentinelPath); terr == nil {
+	if f, touchErr := os.Create(sentinelPath); touchErr == nil {
 		_ = f.Close()
 	}
 	fd, openErr := unix.Open(lockPath, lockOpenFlags, 0o600)
@@ -80,10 +80,10 @@ func AcquireApply(ctx context.Context, lockPath string, noWait bool, stderr io.W
 		// Single-line stderr advisory before the blocking flock call.
 		_, _ = fmt.Fprintf(stderr, "noxctl: waiting for lock at %s\n", lockPath)
 	}
-	if lerr := unix.Flock(fd, how); lerr != nil {
+	if flockErr := unix.Flock(fd, how); flockErr != nil {
 		_ = unix.Close(fd)
 		_ = os.Remove(sentinelPath)
-		return nil, fmt.Errorf("AcquireApply flock: %w", lerr)
+		return nil, fmt.Errorf("AcquireApply flock: %w", flockErr)
 	}
 	writeLockPID(fd)
 	return func() {
@@ -98,16 +98,16 @@ func AcquireApply(ctx context.Context, lockPath string, noWait bool, stderr io.W
 // closes only.
 func AcquireDaemon(ctx context.Context, lockPath string) (release func(), err error) {
 	_ = ctx
-	if mkErr := os.MkdirAll(filepath.Dir(lockPath), 0o700); mkErr != nil {
-		return nil, fmt.Errorf("AcquireDaemon mkdir: %w", mkErr)
+	if mkdirErr := os.MkdirAll(filepath.Dir(lockPath), 0o700); mkdirErr != nil {
+		return nil, fmt.Errorf("AcquireDaemon mkdir: %w", mkdirErr)
 	}
 	fd, openErr := unix.Open(lockPath, lockOpenFlags, 0o600)
 	if openErr != nil {
 		return nil, fmt.Errorf("AcquireDaemon open %s: %w", lockPath, openErr)
 	}
-	if lerr := unix.Flock(fd, unix.LOCK_EX); lerr != nil {
+	if flockErr := unix.Flock(fd, unix.LOCK_EX); flockErr != nil {
 		_ = unix.Close(fd)
-		return nil, fmt.Errorf("AcquireDaemon flock: %w", lerr)
+		return nil, fmt.Errorf("AcquireDaemon flock: %w", flockErr)
 	}
 	writeLockPID(fd)
 	return func() {

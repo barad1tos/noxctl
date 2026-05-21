@@ -109,7 +109,7 @@ func assertValidateError(t *testing.T, err error, wantErr string) {
 // TestNewUmbrellaDomain_RejectsNestedUmbrella covers the cross-domain
 // rule: DefaultChild must point at a NON-umbrella child. A nested
 // umbrella would cascade into recursion / unclear semantics. The factory
-// itself enforces this via the error-returning newUmbrellaDomainStrict
+// itself enforces this via the error-returning NewUmbrellaDomainStrict
 // path (NewUmbrellaDomainForTest surfaces it as Validate error).
 func TestNewUmbrellaDomain_RejectsNestedUmbrella(t *testing.T) {
 	innerUmbrella := &domain.Domain{

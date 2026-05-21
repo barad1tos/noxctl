@@ -61,11 +61,11 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: pin migration failed: %v\n", migrationErr)
 	}
 
-	domains, cat, loadErr := config.Load(cfgPath)
+	domains, cat, loadErr := config.Load(configPath)
 	if loadErr != nil {
 		return &formattedLoadError{
 			inner: loadErr,
-			msg:   config.FormatLoadError(loadErr, cfgPath),
+			msg:   config.FormatLoadError(loadErr, configPath),
 		}
 	}
 
@@ -105,8 +105,8 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf(errFmtNoxctlDaemon, err)
 	}
 	defer func() {
-		if cerr := d.Close(); cerr != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "noxctl daemon close: %v\n", cerr)
+		if closeErr := d.Close(); closeErr != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "noxctl daemon close: %v\n", closeErr)
 		}
 	}()
 

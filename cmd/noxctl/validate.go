@@ -39,7 +39,7 @@ var validateCmd = &cobra.Command{
 		// Path resolution: positional arg overrides --config flag,
 		// which defaults to "./noxctl.toml". No env-var override,
 		// no walk-up — the path is always explicit.
-		path := cfgPath
+		path := configPath
 		if len(args) == 1 {
 			path = args[0]
 		}

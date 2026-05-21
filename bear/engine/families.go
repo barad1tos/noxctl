@@ -17,6 +17,24 @@ import (
 	"github.com/barad1tos/noxctl/bear/state"
 )
 
+// applyPerDomain orchestrates the per-domain RunRegen pipeline via a
+// per-umbrella errgroup dependency graph. The outer errgroup fans
+// out one goroutine per umbrella family (one entry per nil-keyed
+// standalone group plus one per real umbrella); each family
+// goroutine runs its leaves concurrently in an inner errgroup, then
+// runs the umbrella's own RunRegen after inner.Wait returns.
+// Independent families fan out in parallel; back-pressure on actual
+// bearcli subprocesses lives in the bearcli.SetConcurrency
+// semaphore, NOT at the errgroup layer.
+//
+// state.State map writes and st.Save calls happen under stateMu,
+// held strictly around the mutation and Save call — never during
+// RunRegen or bearcli I/O.
+//
+// Per-domain RunRegen failures are log-and-continue (same contract
+// as the sequential predecessor); only ctx cancellation propagates
+// as a non-nil errgroup return, which flips
+// result.Interrupted=true on Wait.
 func applyPerDomain(ctx context.Context, opts ApplyOpts, st *state.State, result *ApplyResult) {
 	families := groupByUmbrella(opts.Domains)
 	var stateMu sync.Mutex

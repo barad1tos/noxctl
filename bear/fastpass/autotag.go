@@ -62,8 +62,8 @@ import (
 //
 // Returns the number of notes actually stamped (zero when every note is
 // already tagged). Callers use this to decide whether the pre-pass
-// produced bearcli writes that need to be self-gated downstream (Phase
-// 09 fast-pass gate fix).
+// produced bearcli writes that need to be self-gated downstream by
+// the daemon's self-write epsilon.
 func ApplyDailyDefaultTag(ctx context.Context, dailyDomain *domain.Domain) (int, error) {
 	if dailyDomain == nil {
 		return 0, fmt.Errorf("ApplyDailyDefaultTag: dailyDomain is nil")
@@ -101,40 +101,3 @@ func ApplyDailyDefaultTag(ctx context.Context, dailyDomain *domain.Domain) (int,
 	}
 	return stamped, nil
 }
-
-// ApplyPlaceholderRefresh scans the most recently created notes for
-// ones whose Title equals any opted-in domain's effective placeholder
-// (domain.Domain.QuickPlaceholderH1 override, falling back to
-// bear.DefaultQuickPlaceholderH1). For each match whose tags include
-// the source domain's Tag, rewrites the H1 line with a fresh
-// domain.NowForNewNoteLink timestamp. Body below H1 is preserved
-// byte-for-byte so the user's caret position survives the silent
-// overwrite.
-//
-// Scope is narrowed at the bearcli level: --sort created:desc
-// --limit 20 — placeholder notes are by definition freshly clicked,
-// so the newest slice catches them within ~2 s tick latency. No
-// --tag filter because placeholders are shared across domains; the
-// per-note tag check inside the loop ensures we only act on notes
-// that genuinely belong to an opted-in domain.
-//
-// Two-signal filter (Title==placeholder AND content starts with that
-// H1 marker, via refreshPlaceholderH1) guards against false-positives
-// on notes a user manually titled the placeholder string.
-//
-// Self-cleaning idempotency: once H1 is rewritten, the marker is
-// gone, so the next tick skips the same note.
-//
-// Returns the number of notes actually rewritten.
-
-// refreshPlaceholderH1 rewrites the literal "# <placeholder>\n" H1
-// line at the start of content to "# <stamp>\n". Returns
-// (content, false) when the marker is absent — caller skips the
-// bearcli write in that case. Body below H1 is preserved
-// byte-for-byte. Generalizes the previous quicknote-specific
-// refreshQuicknotePlaceholder by taking the placeholder string as
-// a parameter so any opted-in domain can drive the refresh.
-//
-// Trailing `\n` on the marker is intentional: matched against full
-// lines, not bare strings, so we don't accidentally match
-// "# Quicknote " or "# Quicknote-X".

@@ -69,9 +69,9 @@ func TestRun_OperatorRunsClean_ApplyIdempotencySkipped(t *testing.T) {
 		"2026/05/18 10:00:00 regen-watchd starting",
 		"2026/05/18 10:00:01 regen[poetry]: complete",
 	})
-	cfg := writeMinimalCatalog(t)
+	catalog := writeMinimalCatalog(t)
 	stdout, _ := runVerify(t, verify.Options{
-		ConfigPath: cfg,
+		ConfigPath: catalog,
 		LogPath:    logPath,
 		Output:     "text",
 	})
@@ -91,9 +91,9 @@ func TestRun_OperatorRequestsJSON_OutputIsParseable(t *testing.T) {
 	logPath := writeDaemonLog(t, []string{
 		"2026/05/18 10:00:00 regen-watchd starting",
 	})
-	cfg := writeMinimalCatalog(t)
+	catalog := writeMinimalCatalog(t)
 	stdout, _ := runVerify(t, verify.Options{
-		ConfigPath: cfg,
+		ConfigPath: catalog,
 		LogPath:    logPath,
 		Output:     "json",
 	})
@@ -119,9 +119,9 @@ func TestRun_OperatorRequestsJSON_OutputIsParseable(t *testing.T) {
 // anything. The error is a render-layer error, NOT one of the
 // pass-through sentinels (no exit-code 2 dispatch).
 func TestRun_OperatorRequestsBadOutputFormat_ReturnsValidationError(t *testing.T) {
-	cfg := writeMinimalCatalog(t)
+	catalog := writeMinimalCatalog(t)
 	_, err := runVerify(t, verify.Options{
-		ConfigPath: cfg,
+		ConfigPath: catalog,
 		Output:     "yaml",
 	})
 	if err == nil {
@@ -149,9 +149,9 @@ func TestRun_OperatorRunsDirtyLog_OverallVerdictReflectsFail(t *testing.T) {
 		"2026/05/18 10:00:00 regen-watchd starting",
 		"2026/05/18 10:01:00 LOOP detected for note Q",
 	})
-	cfg := writeMinimalCatalog(t)
+	catalog := writeMinimalCatalog(t)
 	stdout, err := runVerify(t, verify.Options{
-		ConfigPath: cfg,
+		ConfigPath: catalog,
 		LogPath:    logPath,
 		Output:     "text",
 	})
@@ -172,9 +172,9 @@ func TestRun_OperatorWithStrictMode_FlagSurfacesInOpts(t *testing.T) {
 	logPath := writeDaemonLog(t, []string{
 		"2026/05/18 10:00:00 regen-watchd starting",
 	})
-	cfg := writeMinimalCatalog(t)
+	catalog := writeMinimalCatalog(t)
 	stdout, _ := runVerify(t, verify.Options{
-		ConfigPath: cfg,
+		ConfigPath: catalog,
 		LogPath:    logPath,
 		Output:     "text",
 		Strict:     true,
@@ -195,11 +195,11 @@ func TestRun_NilStdout_DefaultsApplied(t *testing.T) {
 			t.Fatalf("panic with nil stdout/stderr: %v", r)
 		}
 	}()
-	cfg := writeMinimalCatalog(t)
+	catalog := writeMinimalCatalog(t)
 	// Don't use runVerify helper here — it always sets stdout/stderr.
 	// Run directly with nil to exercise the default-injection path.
 	_ = verify.Run(ctxWithBenignBackend(t), verify.Options{
-		ConfigPath: cfg,
+		ConfigPath: catalog,
 		Output:     "text",
 		// Stdout & Stderr deliberately omitted — must default to
 		// os.Stdout / os.Stderr without panic.

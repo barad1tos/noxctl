@@ -26,9 +26,9 @@ var (
 const defaultConfigPath = "./noxctl.toml"
 
 var (
-	cfgPath string
-	verbose bool
-	quiet   bool
+	configPath string
+	verbose    bool
+	quiet      bool
 )
 
 // rootCmd is the noxctl entry. Subcommand wiring happens in each
@@ -50,7 +50,7 @@ func init() {
 	rootCmd.SetVersionTemplate(fmt.Sprintf(
 		"noxctl {{.Version}} (commit %s, built %s)\n", commit, date,
 	))
-	rootCmd.PersistentFlags().StringVar(&cfgPath, "config", defaultConfigPath,
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", defaultConfigPath,
 		"path to noxctl.toml (no walk-up; explicit only)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false,
 		"verbose stderr output")

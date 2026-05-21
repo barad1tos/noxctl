@@ -64,7 +64,7 @@ func runDaemonConfigShow(cmd *cobra.Command, _ []string) error {
 		home = "."
 	}
 	path := filepath.Join(home, ".noxctl", "daemon.toml")
-	cfg, loadErr := config.LoadDaemon(path)
+	dc, loadErr := config.LoadDaemon(path)
 	if loadErr != nil {
 		// File present but unparseable → exit 2 per spec. Stat
 		// independently of the load error so a transient ReadFile
@@ -78,14 +78,14 @@ func runDaemonConfigShow(cmd *cobra.Command, _ []string) error {
 	}
 	_, statErr := os.Stat(path)
 	present := !errors.Is(statErr, fs.ErrNotExist)
-	writeDaemonConfigShow(cmd.OutOrStdout(), path, cfg, present)
+	writeDaemonConfigShow(cmd.OutOrStdout(), path, dc, present)
 	return nil
 }
 
 // writeDaemonConfigShow renders the dump. Kept under gocognit by
 // extracting the [daemon] and [daemon.paths] sections into focused
 // helpers — adding new fields touches one of those, not the parent.
-func writeDaemonConfigShow(w io.Writer, path string, cfg config.DaemonConfig, present bool) {
+func writeDaemonConfigShow(w io.Writer, path string, dc config.DaemonConfig, present bool) {
 	writeLine(w, "# Effective daemon configuration (env > ~/.noxctl/daemon.toml > defaults)")
 	if present {
 		writeFormatted(w, "# Config file: %s (present)\n", path)
@@ -93,49 +93,49 @@ func writeDaemonConfigShow(w io.Writer, path string, cfg config.DaemonConfig, pr
 		writeFormatted(w, "# Config file: %s (not found)\n", path)
 	}
 	writeLine(w, "")
-	writeDaemonConfigSection(w, cfg)
+	writeDaemonConfigSection(w, dc)
 	writeLine(w, "")
-	writeDaemonConfigPathsSection(w, cfg)
+	writeDaemonConfigPathsSection(w, dc)
 }
 
 // writeDaemonConfigSection emits the [daemon] table. Field width
 // hand-tuned so the provenance comments line up visually — when
 // adding a field, eyeball the column alignment.
-func writeDaemonConfigSection(w io.Writer, cfg config.DaemonConfig) {
+func writeDaemonConfigSection(w io.Writer, dc config.DaemonConfig) {
 	writeLine(w, "[daemon]")
 	writeFormatted(w, "debounce_pause   = %q   %s\n",
-		cfg.DebouncePause.String(),
-		provenanceTag(cfg.Sources["DebouncePause"], config.EnvDebouncePause))
+		dc.DebouncePause.String(),
+		provenanceTag(dc.Sources["DebouncePause"], config.EnvDebouncePause))
 	writeFormatted(w, "max_burst_window = %q   %s\n",
-		cfg.MaxBurstWindow.String(),
-		provenanceTag(cfg.Sources["MaxBurstWindow"], config.EnvMaxBurstWindow))
+		dc.MaxBurstWindow.String(),
+		provenanceTag(dc.Sources["MaxBurstWindow"], config.EnvMaxBurstWindow))
 	writeFormatted(w, "audit_enabled    = %v        %s\n",
-		cfg.AuditEnabled,
-		provenanceTag(cfg.Sources["AuditEnabled"], config.EnvAuditEnabled))
+		dc.AuditEnabled,
+		provenanceTag(dc.Sources["AuditEnabled"], config.EnvAuditEnabled))
 	writeFormatted(w, "bearcli_concurrency = %d     %s\n",
-		cfg.BearcliConcurrency,
-		provenanceTag(cfg.Sources["BearcliConcurrency"], config.EnvBearcliConcurrency))
+		dc.BearcliConcurrency,
+		provenanceTag(dc.Sources["BearcliConcurrency"], config.EnvBearcliConcurrency))
 	writeFormatted(w, "mtime_poll_interval = %q  %s\n",
-		cfg.MtimePollInterval.String(),
-		provenanceTag(cfg.Sources["MtimePollInterval"], config.EnvMtimePollInterval))
+		dc.MtimePollInterval.String(),
+		provenanceTag(dc.Sources["MtimePollInterval"], config.EnvMtimePollInterval))
 	writeFormatted(w, "auto_tag_poll_interval = %q  %s\n",
-		cfg.AutoTagPollInterval.String(),
-		provenanceTag(cfg.Sources["AutoTagPollInterval"], config.EnvAutoTagPollInterval))
+		dc.AutoTagPollInterval.String(),
+		provenanceTag(dc.Sources["AutoTagPollInterval"], config.EnvAutoTagPollInterval))
 }
 
 // writeDaemonConfigPathsSection emits the [daemon.paths] table.
-func writeDaemonConfigPathsSection(w io.Writer, cfg config.DaemonConfig) {
+func writeDaemonConfigPathsSection(w io.Writer, dc config.DaemonConfig) {
 	writeLine(w, "[daemon.paths]")
-	writeFormatted(w, "state   = %q   %s\n", cfg.StatePath,
-		provenanceTag(cfg.Sources["StatePath"], config.EnvStatePath))
-	writeFormatted(w, "lock    = %q   %s\n", cfg.LockPath,
-		provenanceTag(cfg.Sources["LockPath"], config.EnvLockPath))
-	writeFormatted(w, "pins    = %q   %s\n", cfg.PinsPath,
-		provenanceTag(cfg.Sources["PinsPath"], config.EnvPinsPath))
-	writeFormatted(w, "log     = %q   %s\n", cfg.LogPath,
-		provenanceTag(cfg.Sources["LogPath"], config.EnvLogPath))
-	writeFormatted(w, "bear_db = %q   %s\n", cfg.BearDBDir,
-		provenanceTag(cfg.Sources["BearDBDir"], config.EnvBearDBDir))
+	writeFormatted(w, "state   = %q   %s\n", dc.StatePath,
+		provenanceTag(dc.Sources["StatePath"], config.EnvStatePath))
+	writeFormatted(w, "lock    = %q   %s\n", dc.LockPath,
+		provenanceTag(dc.Sources["LockPath"], config.EnvLockPath))
+	writeFormatted(w, "pins    = %q   %s\n", dc.PinsPath,
+		provenanceTag(dc.Sources["PinsPath"], config.EnvPinsPath))
+	writeFormatted(w, "log     = %q   %s\n", dc.LogPath,
+		provenanceTag(dc.Sources["LogPath"], config.EnvLogPath))
+	writeFormatted(w, "bear_db = %q   %s\n", dc.BearDBDir,
+		provenanceTag(dc.Sources["BearDBDir"], config.EnvBearDBDir))
 }
 
 // writeFormatted wraps fmt.Fprintf so callers don't have to spell out
