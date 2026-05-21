@@ -156,6 +156,36 @@ noxctl version               print version + build metadata
 
 `apply` is the one-shot reconciliation; the daemon runs the same engine on a debounce-2s FSEvents signal plus an `mtime` poll fallback for cases where Bear defers a SQLite WAL commit past the file-system event window. `audit` and `lint` operate on note structure (broken-H1 titles, malformed canonical tag-lines) without touching the hub/master layout `apply` owns.
 
+## Choosing a blueprint
+
+Six rendering blueprints, each fitting a distinct tag shape. Pick by walking the decision tree below; consult the table for the full comparison.
+
+**Decision tree:**
+
+- Are notes grouped under the tag at all?
+  - **No** — every note is a peer, order doesn't matter → **`flat-list`**
+  - **Yes** — what drives the grouping?
+    - A pre-declared bucket name in the canonical tag-line (operator owns the bucket list) → table or vertical layout?
+      - Horizontal table (columns per bucket) → **`flat-table`**
+      - Vertical sections (H2 per bucket, bullets below) → **`grouped-vertical`**
+    - A sub-tag on each atom (`#tag/bucket`) → bucket-discovery style?
+      - Operator pre-declares the bucket set → **`hub-routed-with-subtag`**
+      - Operator authors only the tag, atom bodies drive bucket names → **`hub-routed`**
+- Want a top-level master that aggregates several other domains? → **`umbrella`**
+
+**Comparison table:**
+
+| Blueprint | When to use | Required fields beyond the basics | Bucket source | Output shape |
+|---|---|---|---|---|
+| `flat-list` | inbox / capture tags, no grouping | none | n/a | one master with bullet list of every atom |
+| `flat-table` | bucketed collection, finite bucket set, small N | `buckets`, `unknown_bucket` | operator-declared | one master with markdown table, columns = buckets |
+| `grouped-vertical` | bucketed collection, large N per bucket | `buckets`, `unknown_bucket` | operator-declared | one master with `## Bucket (N)` H2 per bucket |
+| `hub-routed` | author / source grouping where bucket names live in atom bodies | `unknown_bucket`, `hub_h2_prefix` | atom canonical tag-line `[[Bucket Hub]]` | Tier-2: master lists hubs, each hub lists atoms |
+| `hub-routed-with-subtag` | hub-style layout but bucket names are sub-tags | `buckets`, `unknown_bucket` | atom sub-tag `#tag/bucket` | Tier-2: master lists hubs, each hub lists atoms |
+| `umbrella` | aggregate multiple existing domains under one master | `children`, `default_child` | n/a | master lists every child domain |
+
+Required fields beyond the basics — every blueprint also needs `tag`, `index_title`, `blueprint`. See `examples/<blueprint>.toml` for a copy-pasteable starter per blueprint.
+
 ## Idempotency contract
 
 Every change to the engine must keep `noxctl apply` reaching `unchanged` for every hub and master after at most three passes. Order-stabilization passes count toward that three — anything that needs more is a bug. The integration suite under `tests/bear/engine/` pins this contract.
