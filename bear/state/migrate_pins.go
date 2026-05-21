@@ -43,8 +43,8 @@ func MigratePins(legacyPath, targetPath string) error {
 	}
 	defer func() { _ = src.Close() }()
 
-	if mkerr := os.MkdirAll(filepath.Dir(targetPath), 0o700); mkerr != nil {
-		return fmt.Errorf("MigratePins mkdir %s: %w", filepath.Dir(targetPath), mkerr)
+	if mkdirErr := os.MkdirAll(filepath.Dir(targetPath), 0o700); mkdirErr != nil {
+		return fmt.Errorf("MigratePins mkdir %s: %w", filepath.Dir(targetPath), mkdirErr)
 	}
 	// case (a) + (d) — race-safety via O_EXCL: only one concurrent
 	// caller wins the create; the loser observes fs.ErrExist and
@@ -58,13 +58,13 @@ func MigratePins(legacyPath, targetPath string) error {
 	}
 	defer func() { _ = dst.Close() }()
 
-	if _, cerr := io.Copy(dst, src); cerr != nil {
+	if _, copyErr := io.Copy(dst, src); copyErr != nil {
 		_ = os.Remove(targetPath) // partial copy — clean up so retry sees a clean slate
-		return fmt.Errorf("MigratePins copy: %w", cerr)
+		return fmt.Errorf("MigratePins copy: %w", copyErr)
 	}
-	if serr := dst.Sync(); serr != nil {
+	if syncErr := dst.Sync(); syncErr != nil {
 		_ = os.Remove(targetPath)
-		return fmt.Errorf("MigratePins sync: %w", serr)
+		return fmt.Errorf("MigratePins sync: %w", syncErr)
 	}
 	slog.Info("pin registry migrated", "from", legacyPath, "to", targetPath)
 	return nil

@@ -137,13 +137,12 @@ func TestApplyForeignTagEscape_CanonicalizesDestination(t *testing.T) {
 	dst := testutil.Domain(t, "quicknote/weekly")
 	stripped := "# 13 May 2026\n#quicknote/weekly\nweekly recap body\n"
 
-	// Substituting #quicknote/* with a foreign tag (e.g. another
-	// quicknote sub-domain or a real destination) plus running through
-	// the destination's RenderCanonicalForBootstrap should produce:
+	// Running the destination-tagged input through the destination
+	// domain's RenderCanonicalForBootstrap should produce:
 	// - H1 preserved
 	// - destination's canonical tag-line + backlink directly under H1
 	// - body below `---`
-	out := dst.RenderCanonicalForBootstrap(strings.ReplaceAll(stripped, "#quicknote/weekly", "#quicknote/weekly"))
+	out := dst.RenderCanonicalForBootstrap(stripped)
 
 	if !strings.HasPrefix(out, "# 13 May 2026\n") {
 		t.Errorf("H1 not preserved\n  first line: %q", strings.SplitN(out, "\n", 2)[0])
