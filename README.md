@@ -15,6 +15,49 @@ Declarative macOS CLI for Bear notes structure management — *Terraform for Bea
 
 Brownfield — descended from a personal FSEvents-driven daemon (`regen-watchd`) that managed a 28-domain Bear corpus. The closed catalog of six rendering blueprints (`flat-list`, `flat-table`, `grouped-vertical`, `hub-routed`, `hub-routed-with-subtag`, `umbrella`) covers every shape that production used.
 
+## What noxctl does to your vault
+
+For each managed tag, noxctl writes two things to Bear:
+
+1. **A master note** that lists every atom under the tag as a wikilink bullet (shape depends on the blueprint — flat list, bucketed table, or Tier-2 hubs).
+2. **A canonical tag-line** stamped onto every atom — `#tag | [[Bucket]] | [Open](bear://…)` — so the wikilink resolves bidirectionally and the master can pick atoms up on every regen pass.
+
+Atoms keep their human-authored body; noxctl only owns the canonical line at the top and the master/hub layout. Below is what one `flat-list` tag looks like before and after a first `noxctl apply`.
+
+**Before** — three atoms tagged `#library/books`, no master:
+
+```markdown
+# Sapiens
+A book by Yuval Noah Harari about human history.
+
+#library/books
+```
+
+**After** — same atom plus a new `✱ Books` master listing all three:
+
+```markdown
+# Sapiens
+
+#library/books | [Open](bear://x-callback-url/open-note?title=%E2%9C%B1%20Books)
+---
+
+A book by Yuval Noah Harari about human history.
+```
+
+```markdown
+# ✱ Books
+
+#library/books
+---
+
+## Notes (3)
+- [[Sapiens]]
+- [[Foundation]]
+- [[The Pragmatic Programmer]]
+```
+
+*Bear-rendered screenshots: pending — see [docs/screenshots/](docs/screenshots/) once the demo vault assets land.*
+
 ## Quick start
 
 > **Already have Bear tags you want managed?** Skip to [From existing vault](#from-existing-vault) for a `noxctl import`-based bootstrap, then come back here at Step 3.
