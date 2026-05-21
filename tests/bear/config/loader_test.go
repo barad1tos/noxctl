@@ -65,14 +65,16 @@ func assertVersionValidation(t *testing.T, version string, wantValid bool) {
 	}
 }
 
-// TestValidateCatalogLocaleWhitelist: v1 ships uk only.
+// TestValidateCatalogLocaleWhitelist: v1 ships `en` + `uk`; an
+// unsupported locale string is rejected with a `locale`-mentioning
+// error so the operator typo surfaces at load time.
 func TestValidateCatalogLocaleWhitelist(t *testing.T) {
 	cat := &config.Catalog{
-		Meta: config.Meta{Version: "1", Locale: "en"},
+		Meta: config.Meta{Version: "1", Locale: "fr"},
 	}
 	err := config.ValidateCatalog(cat, "test.toml")
 	if err == nil {
-		t.Fatal("locale=en: expected error, got nil")
+		t.Fatal("locale=fr: expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "locale") {
 		t.Errorf("err should mention 'locale': %q", err.Error())
@@ -525,4 +527,17 @@ func configSrcDir(t *testing.T) string {
 	// wd is.../tests/bear/config; bear/config/ is up three then down two.
 	root := filepath.Clean(filepath.Join(wd, "..", "..", "..", "bear", "config"))
 	return root
+}
+
+// TestValidateCatalogLocaleEnAccepted: `en` MUST load cleanly so
+// the English-locale catalog ships with the same first-class
+// status as `uk`. Regression-lock for the locale-allowlist
+// extension that added `en` alongside `uk`.
+func TestValidateCatalogLocaleEnAccepted(t *testing.T) {
+	cat := &config.Catalog{
+		Meta: config.Meta{Version: "1", Locale: "en"},
+	}
+	if err := config.ValidateCatalog(cat, "test.toml"); err != nil {
+		t.Fatalf("locale=en: expected nil err, got %v", err)
+	}
 }

@@ -97,12 +97,17 @@ func domainsWithPreflight() ([]*domain.Domain, error) {
 	if migrationErr := state.MigratePins(legacyPath, target); migrationErr != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: pin migration failed: %v\n", migrationErr)
 	}
-	domains, _, loadErr := config.Load(configPath)
+	domains, catalog, loadErr := config.Load(configPath)
 	if loadErr != nil {
 		return nil, &formattedLoadError{
 			inner: loadErr,
 			msg:   config.FormatLoadError(loadErr, configPath),
 		}
+	}
+	// Apply catalog-declared locale before any T()-driven render.
+	// Empty meta.locale leaves the default in place.
+	if catalog != nil && catalog.Meta.Locale != "" {
+		domain.SetLocale(catalog.Meta.Locale)
 	}
 	return domains, nil
 }

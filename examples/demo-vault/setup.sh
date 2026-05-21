@@ -52,7 +52,6 @@ declare -a BOOKS=(
 )
 
 created=0
-skipped=0
 
 for entry in "${BOOKS[@]}"; do
   title="${entry%%|*}"
@@ -60,31 +59,23 @@ for entry in "${BOOKS[@]}"; do
   author="${rest%%|*}"
   body="${rest#*|}"
 
-  # Bear titles must be unique enough for the demo. Use the title
-  # directly; `bearcli list --tag nox-demo/books --fields title` will
-  # tell us if it already exists.
-  existing=$("$BEARCLI" list --location notes --tag nox-demo/books \
-    --format json --fields title 2>/dev/null | \
-    grep -c "\"title\":\"$title\"" || true)
-
-  if [[ "$existing" != "0" ]]; then
-    echo "skip: \"$title\" already exists" >&2
-    skipped=$((skipped + 1))
-    continue
-  fi
-
-  # Construct the atom body. The H1 IS the title; Bear infers note
-  # title from the first heading. Body below is two paragraphs.
+  # The H1 IS the title; Bear infers the note title from the first
+  # heading. Body carries the #nox-demo/books hashtag so Bear picks
+  # the tag up via in-body parsing.
   content=$(printf '# %s\n\n%s\n\n— %s\n\n#nox-demo/books\n' \
     "$title" "$body" "$author")
 
-  "$BEARCLI" create --title "$title" --text "$content" >/dev/null
-  echo "created: \"$title\""
-  created=$((created + 1))
+  # bearcli's --if-not-exists short-circuits duplicate-title creates
+  # so re-running this script is idempotent — second run produces
+  # five "already exists" lines instead of ten notes.
+  "$BEARCLI" create "$title" --content "$content" --if-not-exists \
+    >/dev/null 2>&1 && \
+    { echo "ok:    \"$title\""; created=$((created + 1)); } || \
+    echo "skip:  \"$title\" (exists or bearcli rejected)"
 done
 
 echo
-echo "demo vault setup complete: $created created, $skipped skipped"
+echo "demo vault setup complete: $created new note(s) created"
 echo
 echo "Next steps:"
 echo "  1. Open Bear, filter by #nox-demo/books, take the BEFORE screenshot"

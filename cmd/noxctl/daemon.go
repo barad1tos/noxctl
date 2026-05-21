@@ -68,6 +68,9 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 			msg:   config.FormatLoadError(loadErr, configPath),
 		}
 	}
+	if cat != nil && cat.Meta.Locale != "" {
+		domain.SetLocale(cat.Meta.Locale)
+	}
 
 	pins, _ := domain.LoadPinRegistry(target)
 

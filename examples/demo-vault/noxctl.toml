@@ -16,6 +16,7 @@
 
 [meta]
   version = "1"
+  locale  = "en"
 
 # flat-list because the demo atoms share no sub-tag categorization
 # — every note is a peer Books entry. Simplest blueprint, matches

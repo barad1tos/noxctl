@@ -114,9 +114,12 @@ func LoadDomains(args []string,
 		_, _ = fmt.Fprintf(stderr, "warning: pin migration failed: %v\n", migrationErr)
 	}
 
-	loaded, _, loadErr := config.Load(configPath)
+	loaded, cat, loadErr := config.Load(configPath)
 	if loadErr != nil {
 		return nil, errors.New(config.FormatLoadError(loadErr, configPath))
+	}
+	if cat != nil && cat.Meta.Locale != "" {
+		domain.SetLocale(cat.Meta.Locale)
 	}
 
 	if len(args) == 1 {

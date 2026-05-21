@@ -75,6 +75,9 @@ func runApply(cmd *cobra.Command, _ []string) error {
 			msg:   config.FormatLoadError(loadErr, configPath),
 		}
 	}
+	if cat != nil && cat.Meta.Locale != "" {
+		domain.SetLocale(cat.Meta.Locale)
+	}
 
 	// Pin registry — best-effort load (nil-safe registry per bear/pins.go).
 	pins, _ := domain.LoadPinRegistry(target)

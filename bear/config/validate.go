@@ -27,7 +27,10 @@ var bucketRejectREs = []*regexp.Regexp{
 // supportedLocales locks v1 to Ukrainian. Future locales must add
 // both their key here AND ship a `bear/locales/<key>.toml` catalog.
 // Empty locale is allowed — caller treats as "use default".
-var supportedLocales = map[string]struct{}{"uk": {}}
+var supportedLocales = map[string]struct{}{
+	"en": {},
+	"uk": {},
+}
 
 // ValidateCatalog runs catalog-level invariants AFTER successful TOML
 // decode and BEFORE per-stanza dispatch. Aggregates every problem
@@ -158,7 +161,7 @@ func validateMeta(catalog *Catalog, path string) []error {
 	if catalog.Meta.Locale != "" {
 		if _, ok := supportedLocales[catalog.Meta.Locale]; !ok {
 			errs = append(errs, fmt.Errorf(
-				"%s: meta.locale %q unsupported (v1 supports: uk)",
+				"%s: meta.locale %q unsupported (v1 supports: en, uk)",
 				path, catalog.Meta.Locale,
 			))
 		}
