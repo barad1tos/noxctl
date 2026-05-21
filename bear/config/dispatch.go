@@ -374,10 +374,11 @@ func buildHubRoutedSubTag(s Stanza, _ func([]string) ([]*domain.Domain, error)) 
 // domains first, umbrellas last). The factory wires the reverse
 // ParentMaster pointer on every child; that side effect is by design.
 //
-// default_child names the leaf the umbrella's "Нова нотатка" link
-// targets (spec component 4); safeNewUmbrellaDomain converts the
-// factory's panic-on-misconfig into an error so malformed TOML produces
-// a clean error path instead of crashing the loader.
+// default_child names the leaf the umbrella's "new note" link
+// targets (spec component 4). The TOML loader calls
+// render.NewUmbrellaDomainStrict directly so malformed user config
+// produces a returned error instead of the panic the
+// render.NewUmbrellaDomain hardcoded-caller path would emit.
 func buildUmbrella(s Stanza, resolveChildren func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
 	if err := validateBlueprintFields("umbrella", s,
 		[]optKey{optChildren, optDefaultChild},
