@@ -22,9 +22,9 @@ func TestRun_OperatorRunsWithApply_NilApplyOpts_SurfacesError(t *testing.T) {
 	logPath := writeDaemonLog(t, []string{
 		"2026/05/18 10:00:00 regen-watchd starting",
 	})
-	cfg := writeMinimalCatalog(t)
+	catalog := writeMinimalCatalog(t)
 	stdout, err := runVerify(t, verify.Options{
-		ConfigPath: cfg,
+		ConfigPath: catalog,
 		LogPath:    logPath,
 		WithApply:  true,
 		// ApplyOpts deliberately left at zero-value to reproduce

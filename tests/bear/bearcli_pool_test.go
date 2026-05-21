@@ -45,11 +45,11 @@ func startHolder(t *testing.T, ctx context.Context, kind string, release <-chan 
 // assertChanBlocked fails the test if ch has already fired by the time
 // the assertion runs. Used after synctest.Wait to assert "this goroutine
 // is durably blocked".
-func assertChanBlocked(t *testing.T, ch <-chan struct{}, msg string) {
+func assertChanBlocked(t *testing.T, ch <-chan struct{}, message string) {
 	t.Helper()
 	select {
 	case <-ch:
-		t.Fatal(msg)
+		t.Fatal(message)
 	default:
 	}
 }
@@ -57,12 +57,12 @@ func assertChanBlocked(t *testing.T, ch <-chan struct{}, msg string) {
 // assertChanFired fails the test if ch has not fired by the time the
 // assertion runs. Used after synctest.Wait to assert "this goroutine
 // has progressed past the blocking point".
-func assertChanFired(t *testing.T, ch <-chan struct{}, msg string) {
+func assertChanFired(t *testing.T, ch <-chan struct{}, message string) {
 	t.Helper()
 	select {
 	case <-ch:
 	default:
-		t.Fatal(msg)
+		t.Fatal(message)
 	}
 }
 

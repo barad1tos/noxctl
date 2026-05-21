@@ -108,15 +108,15 @@ func RunPlan(ctx context.Context, opts PlanOptions) error {
 // narrows the slice to that single domain (or reports an unknown-tag
 // error so the operator gets a loud rejection on a typo).
 func LoadDomains(args []string,
-	cfgPath, pinLegacy, pinTarget string, stderr io.Writer,
+	configPath, pinLegacy, pinTarget string, stderr io.Writer,
 ) ([]*domain.Domain, error) {
 	if migrationErr := state.MigratePins(pinLegacy, pinTarget); migrationErr != nil {
 		_, _ = fmt.Fprintf(stderr, "warning: pin migration failed: %v\n", migrationErr)
 	}
 
-	loaded, _, loadErr := config.Load(cfgPath)
+	loaded, _, loadErr := config.Load(configPath)
 	if loadErr != nil {
-		return nil, errors.New(config.FormatLoadError(loadErr, cfgPath))
+		return nil, errors.New(config.FormatLoadError(loadErr, configPath))
 	}
 
 	if len(args) == 1 {

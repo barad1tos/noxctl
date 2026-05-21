@@ -297,12 +297,12 @@ func TestLoaderUnknownFieldWithLineLoc(t *testing.T) {
 	if err == nil {
 		t.Fatal("broken-typo: expected error")
 	}
-	msg := err.Error()
-	if !strings.Contains(msg, "tags") {
-		t.Errorf("err should name offending key 'tags': %q", msg)
+	message := err.Error()
+	if !strings.Contains(message, "tags") {
+		t.Errorf("err should name offending key 'tags': %q", message)
 	}
-	if !strings.Contains(msg, path) {
-		t.Errorf("err should include path %q: %q", path, msg)
+	if !strings.Contains(message, path) {
+		t.Errorf("err should include path %q: %q", path, message)
 	}
 }
 
@@ -335,12 +335,12 @@ func TestLoaderVersionIntRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("broken-version-int: expected error")
 	}
-	msg := err.Error()
-	if !strings.Contains(msg, "version") {
-		t.Errorf("err should mention 'version': %q", msg)
+	message := err.Error()
+	if !strings.Contains(message, "version") {
+		t.Errorf("err should mention 'version': %q", message)
 	}
-	if !strings.Contains(msg, "type") && !strings.Contains(msg, "string") {
-		t.Errorf("err should mention type-mismatch (type/string): %q", msg)
+	if !strings.Contains(message, "type") && !strings.Contains(message, "string") {
+		t.Errorf("err should mention type-mismatch (type/string): %q", message)
 	}
 }
 
@@ -353,18 +353,18 @@ func TestLoaderAggregatesMultipleErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("broken-multiple: expected aggregate error")
 	}
-	msg := err.Error()
+	message := err.Error()
 	// 1. Top-level [bogus] table flagged as undecoded
-	if !strings.Contains(msg, "bogus") {
-		t.Errorf("err missing 'bogus' (top-level undecoded): %q", msg)
+	if !strings.Contains(message, "bogus") {
+		t.Errorf("err missing 'bogus' (top-level undecoded): %q", message)
 	}
 	// 2. blueprint = "fancy" flagged as unknown
-	if !strings.Contains(msg, "fancy") {
-		t.Errorf("err missing 'fancy' (unknown blueprint): %q", msg)
+	if !strings.Contains(message, "fancy") {
+		t.Errorf("err missing 'fancy' (unknown blueprint): %q", message)
 	}
 	// 3. duplicate tag flagged
 	if !errors.Is(err, config.ErrDuplicateTag) {
-		t.Errorf("err should wrap ErrDuplicateTag for the duplicate stanza pair: %q", msg)
+		t.Errorf("err should wrap ErrDuplicateTag for the duplicate stanza pair: %q", message)
 	}
 }
 

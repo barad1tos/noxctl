@@ -56,7 +56,7 @@ func TestRenderJSON_ChecksArrayShape(t *testing.T) {
 	}
 	c := decoded.Checks[0]
 	if c.Name == "" || c.Status == "" || c.Message == "" {
-		t.Errorf("required check field empty; name=%q status=%q msg=%q", c.Name, c.Status, c.Message)
+		t.Errorf("required check field empty; name=%q status=%q message=%q", c.Name, c.Status, c.Message)
 	}
 }
 

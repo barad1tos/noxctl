@@ -82,7 +82,7 @@ func runLintSweep(cmd *cobra.Command, apply bool) error {
 }
 
 // domainsWithPreflight runs the standard pre-load chore (pin
-// migration) and loads noxctl.toml at cfgPath, wrapping any load
+// migration) and loads noxctl.toml at configPath, wrapping any load
 // error in formattedLoadError so the stderr trace stays uniform
 // across every subcommand.
 //
@@ -97,11 +97,11 @@ func domainsWithPreflight() ([]*domain.Domain, error) {
 	if migrationErr := state.MigratePins(legacyPath, target); migrationErr != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: pin migration failed: %v\n", migrationErr)
 	}
-	domains, _, loadErr := config.Load(cfgPath)
+	domains, _, loadErr := config.Load(configPath)
 	if loadErr != nil {
 		return nil, &formattedLoadError{
 			inner: loadErr,
-			msg:   config.FormatLoadError(loadErr, cfgPath),
+			msg:   config.FormatLoadError(loadErr, configPath),
 		}
 	}
 	return domains, nil

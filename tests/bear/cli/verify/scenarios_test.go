@@ -21,9 +21,9 @@ import (
 // fallback path).
 func TestRun_DefaultLogPath_UsesHomeBaseline(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	cfg := writeMinimalCatalog(t)
+	catalog := writeMinimalCatalog(t)
 	stdout, _ := runVerify(t, verify.Options{
-		ConfigPath: cfg,
+		ConfigPath: catalog,
 		// LogPath deliberately empty → forces default-path resolution.
 		Output: "text",
 	})
@@ -42,13 +42,13 @@ func TestRun_DefaultLogPath_UsesHomeBaseline(t *testing.T) {
 // surface as StatusError so the verdict line shows ERROR (not PASS or
 // FAIL). Covers checkPlanParity's res.Interrupted branch.
 func TestRun_CtxCanceledMidPlan_PlanParitySurfacesInterrupted(t *testing.T) {
-	cfg := writeMinimalCatalog(t)
+	catalog := writeMinimalCatalog(t)
 	ctx, cancel := context.WithCancel(domain.ContextWithBackend(t.Context(), benignBearcliBackend{}))
 	cancel() // pre-cancel; engine.Plan sees Done immediately.
 
 	var stdout, stderr strings.Builder
 	err := verify.Run(ctx, verify.Options{
-		ConfigPath: cfg,
+		ConfigPath: catalog,
 		LogPath:    writeDaemonLog(t, []string{"2026/05/18 10:00:00 regen-watchd starting"}),
 		Output:     "text",
 		Stdout:     &stdout,
@@ -82,12 +82,12 @@ func TestRun_CtxCanceledMidPlan_PlanParitySurfacesInterrupted(t *testing.T) {
 // the residue path. The FIRE branch is exercised by ship-gate.sh
 // against the live vault as part of the full hard-gate run.
 func TestRun_StrictModeWithCleanCatalog_StrictUpgradeDoesNotFire(t *testing.T) {
-	cfg := writeMinimalCatalog(t)
+	catalog := writeMinimalCatalog(t)
 	logPath := writeDaemonLog(t, []string{
 		"2026/05/18 10:00:00 regen-watchd starting",
 	})
 	stdout, _ := runVerify(t, verify.Options{
-		ConfigPath: cfg,
+		ConfigPath: catalog,
 		LogPath:    logPath,
 		Strict:     true,
 		Output:     "text",

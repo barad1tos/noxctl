@@ -61,11 +61,11 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: pin migration failed: %v\n", migrationErr)
 	}
 
-	domains, cat, loadErr := config.Load(cfgPath)
+	domains, cat, loadErr := config.Load(configPath)
 	if loadErr != nil {
 		return &formattedLoadError{
 			inner: loadErr,
-			msg:   config.FormatLoadError(loadErr, cfgPath),
+			msg:   config.FormatLoadError(loadErr, configPath),
 		}
 	}
 
