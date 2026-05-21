@@ -12,7 +12,9 @@
 # Working documentation — design specs, refactor plans, brainstorm
 # notes. Local-only by policy; live source code + user-facing READMEs
 # are the only committed prose.
-/docs/
+/docs/*
+!/docs/screenshots/
+
 
 # IDE / editor (JetBrains, VS Code, Vim).
 .idea/
