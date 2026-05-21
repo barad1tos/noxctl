@@ -66,7 +66,7 @@ non-interactive (CI / script) runs.`,
 // orchestration off to bear/cli/cli.RunDestroy, and maps the typed
 // sentinels back to readable stderr lines before propagating.
 func runDestroy(cmd *cobra.Command, args []string) error {
-	domains, loadErr := domainsWithPreflight()
+	domains, _, _, loadErr := domainsWithPreflight()
 	if loadErr != nil {
 		return loadErr
 	}

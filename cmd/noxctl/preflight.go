@@ -71,7 +71,7 @@ func runWithSignalContext(cmd *cobra.Command, fn func(ctx context.Context) error
 // the CLI dispatch chain finds the body where the rest of the
 // shared plumbing lives.
 func runLintSweep(cmd *cobra.Command, apply bool) error {
-	domains, loadErr := domainsWithPreflight()
+	domains, _, _, loadErr := domainsWithPreflight()
 	if loadErr != nil {
 		return loadErr
 	}
@@ -82,24 +82,26 @@ func runLintSweep(cmd *cobra.Command, apply bool) error {
 }
 
 // domainsWithPreflight runs the standard pre-load chore (pin
-// migration) and loads noxctl.toml at configPath, wrapping any load
-// error in formattedLoadError so the stderr trace stays uniform
-// across every subcommand.
+// migration, catalog load, catalog-declared locale apply) and
+// returns everything the calling subcommand needs to proceed.
+// Load errors get wrapped in formattedLoadError so the stderr
+// trace stays uniform across every subcommand.
 //
-// Audit and lint subcommands share this exact shape; without the
-// helper each call site duplicates 6 lines and trips dupl. Apply,
-// daemon, validate, and verify keep their inline preflights because
-// they need extra wiring (catalog metadata for verbose summaries,
-// state resume, pin registry, feature flags) that this helper
-// would either drag along uselessly or obscure.
-func domainsWithPreflight() ([]*domain.Domain, error) {
+// The four returns let callers ignore what they don't need:
+//   - audit / lint / recap need only domains
+//   - apply / daemon need domains, catalog, AND the pin-target path
+//     (passed to domain.LoadPinRegistry without re-deriving)
+//
+// validate keeps an inline preflight because its config path comes
+// from a positional argument, not the package-level configPath.
+func domainsWithPreflight() ([]*domain.Domain, *config.Catalog, string, error) {
 	legacyPath, target := pinPaths()
 	if migrationErr := state.MigratePins(legacyPath, target); migrationErr != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: pin migration failed: %v\n", migrationErr)
 	}
 	domains, catalog, loadErr := config.Load(configPath)
 	if loadErr != nil {
-		return nil, &formattedLoadError{
+		return nil, nil, "", &formattedLoadError{
 			inner: loadErr,
 			msg:   config.FormatLoadError(loadErr, configPath),
 		}
@@ -109,7 +111,7 @@ func domainsWithPreflight() ([]*domain.Domain, error) {
 	if catalog != nil && catalog.Meta.Locale != "" {
 		domain.SetLocale(catalog.Meta.Locale)
 	}
-	return domains, nil
+	return domains, catalog, target, nil
 }
 
 // featuresFromCatalog copies `*config.Catalog.Features` (whose fields

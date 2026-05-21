@@ -11,10 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
-	"github.com/barad1tos/noxctl/bear/state"
 )
 
 var daemonBearDBFlag string // --bear-db override
@@ -55,21 +53,9 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 	// keep working across the rename.
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
-	// Inline preflight — mirrors apply.go.
-	legacyPath, target := pinPaths()
-	if migrationErr := state.MigratePins(legacyPath, target); migrationErr != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "warning: pin migration failed: %v\n", migrationErr)
-	}
-
-	domains, cat, loadErr := config.Load(configPath)
+	domains, cat, target, loadErr := domainsWithPreflight()
 	if loadErr != nil {
-		return &formattedLoadError{
-			inner: loadErr,
-			msg:   config.FormatLoadError(loadErr, configPath),
-		}
-	}
-	if cat != nil && cat.Meta.Locale != "" {
-		domain.SetLocale(cat.Meta.Locale)
+		return loadErr
 	}
 
 	pins, _ := domain.LoadPinRegistry(target)

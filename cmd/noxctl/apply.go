@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/barad1tos/noxctl/bear/cli"
-	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/state"
@@ -61,22 +60,9 @@ Exit codes: 0=success, 1=error or per-domain failures, 130=interrupted by SIGINT
 // command literal stays small and so the gocognit budget is enforced
 // against a single named symbol rather than an anonymous closure.
 func runApply(cmd *cobra.Command, _ []string) error {
-	// Inline preflight — mirrors validate.go:50-56.
-	legacyPath, target := pinPaths()
-	if migrationErr := state.MigratePins(legacyPath, target); migrationErr != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "warning: pin migration failed: %v\n", migrationErr)
-	}
-
-	// Config load — uniform error shape via formattedLoadError.
-	domains, cat, loadErr := config.Load(configPath)
+	domains, cat, target, loadErr := domainsWithPreflight()
 	if loadErr != nil {
-		return &formattedLoadError{
-			inner: loadErr,
-			msg:   config.FormatLoadError(loadErr, configPath),
-		}
-	}
-	if cat != nil && cat.Meta.Locale != "" {
-		domain.SetLocale(cat.Meta.Locale)
+		return loadErr
 	}
 
 	// Pin registry — best-effort load (nil-safe registry per bear/pins.go).
