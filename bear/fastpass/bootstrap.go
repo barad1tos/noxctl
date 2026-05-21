@@ -211,21 +211,18 @@ func (g *bootstrapLoopGuard) recordRewrite(noteID, title string) {
 	}
 }
 
-// resetBootstrapLoopForTest zeroes the singleton guard. Test-only
-// seam — production code never resets the counters (stuck notes stay
-// suppressed for the daemon's lifetime by design).
-func resetBootstrapLoopForTest() {
+// ResetBootstrapLoopForTest zeroes the singleton guard. Test-only
+// seam — production code never resets the counters (stuck notes
+// stay suppressed for the daemon's lifetime by design). Exported
+// for the integration tests in `tests/bear/engine`; production
+// callers MUST NOT use it.
+func ResetBootstrapLoopForTest() {
 	bootstrapLoop.mu.Lock()
 	defer bootstrapLoop.mu.Unlock()
 	bootstrapLoop.counts = make(map[string]int)
 	bootstrapLoop.stuck = make(map[string]struct{})
 	bootstrapLoop.disabled = false
 }
-
-// ResetBootstrapLoopForTest exports the test-only reset seam to the
-// integration tests in `tests/bear/engine`. Production callers MUST
-// NOT use it.
-func ResetBootstrapLoopForTest() { resetBootstrapLoopForTest() }
 
 // hasCanonicalLineForLeaf reports whether `content` already carries a
 // canonical tag-line for the given leaf `tag`. Accepts two shapes:
@@ -234,11 +231,11 @@ func ResetBootstrapLoopForTest() { resetBootstrapLoopForTest() }
 // Bear materializes the bucket as a sibling sub-tag)
 //
 // Used by `applyDomainBootstrapOne` as the loop-prevention guard
-// against `domain.RenderCanonicalForBootstrap`'s `UnknownBucket` reset. The
-// sub-tag form caught us on 2026-05-17 incident #2 — health-domain
-// notes with bucket-as-subtag pattern (`#health/інше | …`) slipped
-// past a strict `#health | ` prefix check and looped against per-
-// domain regen until the circuit-breaker fired.
+// against `domain.RenderCanonicalForBootstrap`'s `UnknownBucket`
+// reset. The sub-tag form (`#<top>/<unknown-bucket> | …`) slipped
+// past a strict `#<top> | ` prefix check in an earlier incident and
+// looped against per-domain regen until the circuit-breaker fired —
+// hence this predicate accepts BOTH `#tag | ` and `#tag/<sub> | `.
 func hasCanonicalLineForLeaf(content, tag string) bool {
 	base := "#" + tag
 	for line := range strings.SplitSeq(content, "\n") {

@@ -391,19 +391,13 @@ func buildUmbrella(s Stanza, resolveChildren func([]string) ([]*domain.Domain, e
 	if err != nil {
 		return nil, fmt.Errorf("umbrella %q: %w", s.Tag, err)
 	}
-	return safeNewUmbrellaDomain(s.Tag, s.IndexTitle, *s.DefaultChild, kids)
-}
-
-// safeNewUmbrellaDomain wraps render.NewUmbrellaDomain, recovering its
-// panic-on-misconfig into a returned error. The factory panics so
-// hardcoded callers fail fast at init; the TOML loader needs a soft
-// error path so malformed user config produces a friendly message
-// instead of crashing the daemon.
-func safeNewUmbrellaDomain(tag, indexTitle, defaultChild string, kids []*domain.Domain) (d *domain.Domain, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("umbrella %q: %v", tag, r)
-		}
-	}()
-	return render.NewUmbrellaDomain(tag, indexTitle, defaultChild, kids), nil
+	// Call the strict (error-returning) factory directly so malformed
+	// user config produces a friendly returned error instead of a
+	// panic-recover dance. The panicking `NewUmbrellaDomain` is kept
+	// for hardcoded callers that prefer fail-fast at init.
+	d, err := render.NewUmbrellaDomainStrict(s.Tag, s.IndexTitle, *s.DefaultChild, kids)
+	if err != nil {
+		return nil, fmt.Errorf("umbrella %q: %w", s.Tag, err)
+	}
+	return d, nil
 }

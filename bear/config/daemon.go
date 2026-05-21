@@ -137,96 +137,96 @@ func daemonDefaults() DaemonConfig {
 // unparseable, returns the parse error so callers can decide whether
 // to fatal-out.
 func LoadDaemon(path string) (DaemonConfig, error) {
-	cfg := daemonDefaults()
+	dc := daemonDefaults()
 	for _, field := range []string{
 		"DebouncePause", "MaxBurstWindow", "AuditEnabled",
 		"StatePath", "LockPath", "PinsPath", "LogPath", "BearDBDir",
 		"BearcliConcurrency", "MtimePollInterval", "AutoTagPollInterval",
 		"DomainBootstrap",
 	} {
-		cfg.Sources[field] = SourceDefault
+		dc.Sources[field] = SourceDefault
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return cfg, fmt.Errorf("config: read %s: %w", path, err)
+		return dc, fmt.Errorf("config: read %s: %w", path, err)
 	}
 	if err == nil {
 		var file daemonFileContents
 		if _, decodeErr := toml.Decode(string(raw), &file); decodeErr != nil {
-			return cfg, fmt.Errorf("config: parse %s: %w", path, decodeErr)
+			return dc, fmt.Errorf("config: parse %s: %w", path, decodeErr)
 		}
-		if overlayErr := applyFileOverlay(&cfg, file.Daemon); overlayErr != nil {
-			return cfg, fmt.Errorf("config: %s: %w", path, overlayErr)
+		if overlayErr := applyFileOverlay(&dc, file.Daemon); overlayErr != nil {
+			return dc, fmt.Errorf("config: %s: %w", path, overlayErr)
 		}
 	}
-	if envErr := applyEnvOverlay(&cfg); envErr != nil {
-		return cfg, fmt.Errorf("config: %w", envErr)
+	if envErr := applyEnvOverlay(&dc); envErr != nil {
+		return dc, fmt.Errorf("config: %w", envErr)
 	}
-	cfg.StatePath = expandPath(cfg.StatePath)
-	cfg.LockPath = expandPath(cfg.LockPath)
-	cfg.PinsPath = expandPath(cfg.PinsPath)
-	cfg.LogPath = expandPath(cfg.LogPath)
-	cfg.BearDBDir = expandPath(cfg.BearDBDir)
-	return cfg, nil
+	dc.StatePath = expandPath(dc.StatePath)
+	dc.LockPath = expandPath(dc.LockPath)
+	dc.PinsPath = expandPath(dc.PinsPath)
+	dc.LogPath = expandPath(dc.LogPath)
+	dc.BearDBDir = expandPath(dc.BearDBDir)
+	return dc, nil
 }
 
-// applyFileOverlay applies non-nil daemonStanza fields onto cfg and
+// applyFileOverlay applies non-nil daemonStanza fields onto dc and
 // flips Sources to SourceFile for each overridden field. Duration
 // strings are validated here so a bad value in the file produces a
 // clear error mentioning the field name.
-func applyFileOverlay(cfg *DaemonConfig, s daemonStanza) error {
+func applyFileOverlay(dc *DaemonConfig, s daemonStanza) error {
 	if err := setDurationFromFile(
 		s.DebouncePause, "debounce_pause", "DebouncePause",
-		&cfg.DebouncePause, cfg.Sources,
+		&dc.DebouncePause, dc.Sources,
 	); err != nil {
 		return err
 	}
 	if err := setDurationFromFile(
 		s.MaxBurstWindow, "max_burst_window", "MaxBurstWindow",
-		&cfg.MaxBurstWindow, cfg.Sources,
+		&dc.MaxBurstWindow, dc.Sources,
 	); err != nil {
 		return err
 	}
 	if err := setDurationFromFile(
 		s.MtimePollInterval, "mtime_poll_interval", "MtimePollInterval",
-		&cfg.MtimePollInterval, cfg.Sources,
+		&dc.MtimePollInterval, dc.Sources,
 	); err != nil {
 		return err
 	}
-	if cfg.MtimePollInterval < 0 {
+	if dc.MtimePollInterval < 0 {
 		return fmt.Errorf(
 			"mtime_poll_interval = %s: must be >= 0 (0 disables polling)",
-			cfg.MtimePollInterval,
+			dc.MtimePollInterval,
 		)
 	}
 	if err := setDurationFromFile(
 		s.AutoTagPollInterval, "auto_tag_poll_interval", "AutoTagPollInterval",
-		&cfg.AutoTagPollInterval, cfg.Sources,
+		&dc.AutoTagPollInterval, dc.Sources,
 	); err != nil {
 		return err
 	}
-	if cfg.AutoTagPollInterval < 0 {
+	if dc.AutoTagPollInterval < 0 {
 		return fmt.Errorf("auto_tag_poll_interval = %s: must be >= 0 (0 disables fast-pass)",
-			cfg.AutoTagPollInterval,
+			dc.AutoTagPollInterval,
 		)
 	}
 	if s.AuditEnabled != nil {
-		cfg.AuditEnabled = *s.AuditEnabled
-		cfg.Sources["AuditEnabled"] = SourceFile
+		dc.AuditEnabled = *s.AuditEnabled
+		dc.Sources["AuditEnabled"] = SourceFile
 	}
 	if s.DomainBootstrap != nil {
-		cfg.DomainBootstrap = *s.DomainBootstrap
-		cfg.Sources["DomainBootstrap"] = SourceFile
+		dc.DomainBootstrap = *s.DomainBootstrap
+		dc.Sources["DomainBootstrap"] = SourceFile
 	}
 	if s.BearcliConcurrency != nil {
 		if err := validateConcurrency(*s.BearcliConcurrency, "bearcli_concurrency"); err != nil {
 			return err
 		}
-		cfg.BearcliConcurrency = *s.BearcliConcurrency
-		cfg.Sources["BearcliConcurrency"] = SourceFile
+		dc.BearcliConcurrency = *s.BearcliConcurrency
+		dc.Sources["BearcliConcurrency"] = SourceFile
 	}
 	if s.Paths != nil {
-		applyPathsOverlay(cfg, *s.Paths)
+		applyPathsOverlay(dc, *s.Paths)
 	}
 	return nil
 }
@@ -267,93 +267,93 @@ func setDurationFromFile(raw *string, tomlKey, sourceKey string, dst *time.Durat
 	return nil
 }
 
-// applyPathsOverlay applies non-nil [daemon.paths] fields onto cfg.
-func applyPathsOverlay(cfg *DaemonConfig, p daemonPathsStanza) {
+// applyPathsOverlay applies non-nil [daemon.paths] fields onto dc.
+func applyPathsOverlay(dc *DaemonConfig, p daemonPathsStanza) {
 	if p.State != nil {
-		cfg.StatePath = *p.State
-		cfg.Sources["StatePath"] = SourceFile
+		dc.StatePath = *p.State
+		dc.Sources["StatePath"] = SourceFile
 	}
 	if p.Lock != nil {
-		cfg.LockPath = *p.Lock
-		cfg.Sources["LockPath"] = SourceFile
+		dc.LockPath = *p.Lock
+		dc.Sources["LockPath"] = SourceFile
 	}
 	if p.Pins != nil {
-		cfg.PinsPath = *p.Pins
-		cfg.Sources["PinsPath"] = SourceFile
+		dc.PinsPath = *p.Pins
+		dc.Sources["PinsPath"] = SourceFile
 	}
 	if p.Log != nil {
-		cfg.LogPath = *p.Log
-		cfg.Sources["LogPath"] = SourceFile
+		dc.LogPath = *p.Log
+		dc.Sources["LogPath"] = SourceFile
 	}
 	if p.BearDB != nil {
-		cfg.BearDBDir = *p.BearDB
-		cfg.Sources["BearDBDir"] = SourceFile
+		dc.BearDBDir = *p.BearDB
+		dc.Sources["BearDBDir"] = SourceFile
 	}
 }
 
 // applyEnvOverlay walks every supported env-var, applies the value
-// onto cfg if set, and flips Sources to SourceEnv. Duration parse
+// onto dc if set, and flips Sources to SourceEnv. Duration parse
 // errors short-circuit with a fmt.Errorf mentioning the env-var name
 // so operators can locate the bad value quickly.
-func applyEnvOverlay(cfg *DaemonConfig) error {
+func applyEnvOverlay(dc *DaemonConfig) error {
 	if err := envOverlayDuration(
-		cfg, EnvDebouncePause, "DebouncePause",
-		&cfg.DebouncePause); err != nil {
+		dc, EnvDebouncePause, "DebouncePause",
+		&dc.DebouncePause); err != nil {
 		return err
 	}
 	if err := envOverlayDuration(
-		cfg, EnvMaxBurstWindow, "MaxBurstWindow",
-		&cfg.MaxBurstWindow); err != nil {
+		dc, EnvMaxBurstWindow, "MaxBurstWindow",
+		&dc.MaxBurstWindow); err != nil {
 		return err
 	}
 	if err := envOverlayDuration(
-		cfg, EnvMtimePollInterval, "MtimePollInterval",
-		&cfg.MtimePollInterval); err != nil {
+		dc, EnvMtimePollInterval, "MtimePollInterval",
+		&dc.MtimePollInterval); err != nil {
 		return err
 	}
-	if cfg.MtimePollInterval < 0 {
+	if dc.MtimePollInterval < 0 {
 		return fmt.Errorf("env %s %s: must be >= 0 (0 disables polling)",
-			EnvMtimePollInterval, cfg.MtimePollInterval)
+			EnvMtimePollInterval, dc.MtimePollInterval)
 	}
 	if err := envOverlayDuration(
-		cfg, EnvAutoTagPollInterval, "AutoTagPollInterval",
-		&cfg.AutoTagPollInterval,
+		dc, EnvAutoTagPollInterval, "AutoTagPollInterval",
+		&dc.AutoTagPollInterval,
 	); err != nil {
 		return err
 	}
-	if cfg.AutoTagPollInterval < 0 {
+	if dc.AutoTagPollInterval < 0 {
 		return fmt.Errorf("env %s %s: must be >= 0 (0 disables fast-pass)",
-			EnvAutoTagPollInterval, cfg.AutoTagPollInterval)
+			EnvAutoTagPollInterval, dc.AutoTagPollInterval)
 	}
 	if v := os.Getenv(EnvAuditEnabled); v != "" {
 		// REGEN_AUDIT quirk: only "off" disables; anything else enables.
 		// Backward-compat with the legacy daemon's semantics.
-		cfg.AuditEnabled = v != "off"
-		cfg.Sources["AuditEnabled"] = SourceEnv
+		dc.AuditEnabled = v != "off"
+		dc.Sources["AuditEnabled"] = SourceEnv
 	}
 	if v := os.Getenv(EnvDomainBootstrap); v != "" {
 		// REGEN_DOMAIN_BOOTSTRAP mirrors REGEN_AUDIT semantics: only "off"
 		// disables; anything else enables. env > file > default precedence
 		// is enforced by the call order — the file overlay ran above; this
 		// env block writes last.
-		cfg.DomainBootstrap = v != "off"
-		cfg.Sources["DomainBootstrap"] = SourceEnv
+		dc.DomainBootstrap = v != "off"
+		dc.Sources["DomainBootstrap"] = SourceEnv
 	}
-	envOverlayString(cfg, EnvStatePath, "StatePath", &cfg.StatePath)
-	envOverlayString(cfg, EnvLockPath, "LockPath", &cfg.LockPath)
-	envOverlayString(cfg, EnvPinsPath, "PinsPath", &cfg.PinsPath)
-	envOverlayString(cfg, EnvLogPath, "LogPath", &cfg.LogPath)
-	envOverlayString(cfg, EnvBearDBDir, "BearDBDir", &cfg.BearDBDir)
-	if err := envOverlayBearcliConcurrency(cfg); err != nil {
+	envOverlayString(dc, EnvStatePath, "StatePath", &dc.StatePath)
+	envOverlayString(dc, EnvLockPath, "LockPath", &dc.LockPath)
+	envOverlayString(dc, EnvPinsPath, "PinsPath", &dc.PinsPath)
+	envOverlayString(dc, EnvLogPath, "LogPath", &dc.LogPath)
+	envOverlayString(dc, EnvBearDBDir, "BearDBDir", &dc.BearDBDir)
+	if err := envOverlayBearcliConcurrency(dc); err != nil {
 		return err
 	}
 	return nil
 }
 
 // envOverlayBearcliConcurrency parses REGEN_BEARCLI_CONCURRENCY into
-// cfg.BearcliConcurrency. Separated from applyEnvOverlay to keep that
+// dc.BearcliConcurrency. Separated from applyEnvOverlay to keep that
 // function's gocognit budget intact.
-func envOverlayBearcliConcurrency(cfg *DaemonConfig) error {
+func envOverlayBearcliConcurrency(dc *DaemonConfig) error {
 	v := os.Getenv(EnvBearcliConcurrency)
 	if v == "" {
 		return nil
@@ -365,14 +365,14 @@ func envOverlayBearcliConcurrency(cfg *DaemonConfig) error {
 	if err := validateConcurrency(n, EnvBearcliConcurrency); err != nil {
 		return err
 	}
-	cfg.BearcliConcurrency = n
-	cfg.Sources["BearcliConcurrency"] = SourceEnv
+	dc.BearcliConcurrency = n
+	dc.Sources["BearcliConcurrency"] = SourceEnv
 	return nil
 }
 
 // envOverlayDuration parses an env-var as a time.Duration and applies it.
 // No-op if the env-var is unset/empty.
-func envOverlayDuration(cfg *DaemonConfig, envName, sourceKey string, dst *time.Duration) error {
+func envOverlayDuration(dc *DaemonConfig, envName, sourceKey string, dst *time.Duration) error {
 	v := os.Getenv(envName)
 	if v == "" {
 		return nil
@@ -382,18 +382,18 @@ func envOverlayDuration(cfg *DaemonConfig, envName, sourceKey string, dst *time.
 		return fmt.Errorf("env %s %q: %w", envName, v, err)
 	}
 	*dst = d
-	cfg.Sources[sourceKey] = SourceEnv
+	dc.Sources[sourceKey] = SourceEnv
 	return nil
 }
 
 // envOverlayString applies an env-var string verbatim. No-op if unset/empty.
-func envOverlayString(cfg *DaemonConfig, envName, sourceKey string, dst *string) {
+func envOverlayString(dc *DaemonConfig, envName, sourceKey string, dst *string) {
 	v := os.Getenv(envName)
 	if v == "" {
 		return
 	}
 	*dst = v
-	cfg.Sources[sourceKey] = SourceEnv
+	dc.Sources[sourceKey] = SourceEnv
 }
 
 // expandPath performs ~/ -> $HOME/ rewriting then $VAR substitution.

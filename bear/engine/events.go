@@ -88,6 +88,13 @@ type autoTagPass struct {
 //
 // Bearcli semaphore: all pre-pass calls route through
 // domain.runBearcli → SetBearcliConcurrency pool. No bypass.
+//
+// Best-effort error contract: per-pass failures are logged with a
+// `(continuing)` suffix and the tick keeps going. There is no return
+// value because the daemon select loop has no consumer for it —
+// fast-pass failure is not a user-visible event, the operator sees
+// it in the daemon log. Use `noxctl verify --check daemon-log` to
+// gate on the post-startup error rate.
 func (d *Daemon) handleAutoTagTick(ctx context.Context) {
 	d.regenMu.Lock()
 	if d.regenInProgress {
