@@ -97,6 +97,39 @@ Bear ships a built-in backup in **File → Backup Database…** — recommended 
 **Q: Where do destroyed notes go?**
 `noxctl destroy <tag>` calls `bearcli` to trash the auto-generated master and any hubs under the tag. Trashed notes stay in Bear's trash (recoverable via the Bear UI) until you empty it manually. Atom notes are NOT trashed by `destroy` — only their canonical tag-line (the top-of-body `#tag | …` line) is stripped; the human-authored body below stays intact in place.
 
+## From existing vault
+
+If your Bear vault already has tags you want to put under noxctl management, run `noxctl import <bear-tag>` instead of editing the starter from scratch. It scans the notes under that tag, infers a likely blueprint based on observable structure (note count, sub-tag shape, body patterns), and prints a candidate `[[domain]]` stanza to stdout — copy-paste-ready into your `noxctl.toml`.
+
+```bash
+# After `noxctl init` (Step 2 in Quick Start) but before `noxctl validate`:
+noxctl import library/poetry >> ~/.config/noxctl/noxctl.toml
+noxctl import research/papers >> ~/.config/noxctl/noxctl.toml
+# …repeat per tag, then open the file and tidy the inferred fields
+# (index_title, bucket names, etc.) before running validate.
+```
+
+Output sample for one tag:
+
+```toml
+# noxctl import library/poetry — 47 notes scanned
+# every note carries a single-segment sub-tag (4 distinct buckets observed).
+#
+# Paste the [[domain]] block below into your noxctl.toml
+# (review the field values first — they are educated guesses).
+
+[[domain]]
+  tag         = "library/poetry"
+  index_title = "✱ Poetry"
+  blueprint   = "flat-table"
+  buckets        = ["Frost", "Rilke", "Heaney", "Plath"]
+  unknown_bucket = "Other"
+```
+
+Import is non-destructive — it never writes to `noxctl.toml` itself or touches your Bear notes. The operator owns the catalog file; `import` just generates pasteable text.
+
+Bulk multi-tag import (`noxctl import --all`) is on the roadmap. For now, run `import` per tag and concatenate output.
+
 ## Status & scope
 
 - **Platform:** macOS only. Bear is macOS-only; the watcher uses FSEvents via `fsnotify`'s Darwin backend; the CLI bridge is `bearcli` at `/Applications/Bear.app/Contents/MacOS/bearcli`.
