@@ -1,0 +1,29 @@
+# noxctl.toml — flat-table blueprint example
+#
+# Use flat-table when:
+# - Notes share a single-segment sub-tag categorization
+#   (e.g. `#library/aphorisms/books`, `#library/aphorisms/films`).
+# - You want one master with a horizontal bucket-table layout —
+#   each bucket renders as a markdown table column.
+# - Bucket set is finite and operator-declared (vs hub-routed,
+#   which discovers buckets via canonical tag-lines).
+#
+# What it produces:
+#   | Books         | Films       | Games       |
+#   |---------------|-------------|-------------|
+#   | [[Atom A]]    | [[Atom C]]  | [[Atom E]]  |
+#   | [[Atom B]]    | [[Atom D]]  | (Other)     |
+#
+# Required: tag, index_title, blueprint, buckets, unknown_bucket.
+# Atoms whose canonical tag-line names a bucket NOT in `buckets`
+# land under `unknown_bucket`.
+
+[meta]
+  version = "1"
+
+[[domain]]
+  tag            = "library/aphorisms"
+  index_title    = "✱ Aphorisms"
+  blueprint      = "flat-table"
+  buckets        = ["Books", "Films", "Games"]
+  unknown_bucket = "Other"
