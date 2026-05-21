@@ -45,8 +45,8 @@ func Load(path string) ([]*domain.Domain, *Catalog, error) {
 	}
 
 	aggregated := append([]error(nil), undecoded...)
-	if verr := ValidateCatalog(cat, path); verr != nil {
-		aggregated = append(aggregated, verr)
+	if validateErr := ValidateCatalog(cat, path); validateErr != nil {
+		aggregated = append(aggregated, validateErr)
 	}
 
 	built, dispatchErrs := dispatchAllStanzas(cat, path)
@@ -133,8 +133,8 @@ func dispatchOne(s Stanza, i int, path string,
 		*errs = append(*errs, fmt.Errorf("%s: domain[%d] tag=%q: %w", path, i, s.Tag, err))
 		return nil
 	}
-	if verr := d.Validate(); verr != nil {
-		*errs = append(*errs, fmt.Errorf("%s: domain[%d] tag=%q validate: %w", path, i, s.Tag, verr))
+	if validateErr := d.Validate(); validateErr != nil {
+		*errs = append(*errs, fmt.Errorf("%s: domain[%d] tag=%q validate: %w", path, i, s.Tag, validateErr))
 		return nil
 	}
 	return d

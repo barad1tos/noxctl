@@ -119,14 +119,14 @@ func TestState_CorruptRenamesAndWarns(t *testing.T) {
 	// Original path must no longer hold the garbage bytes (it was
 	// renamed). A NEW state.json may or may not exist; the contract
 	// is that the corrupt bytes are GONE from `path` itself.
-	raw, rerr := os.ReadFile(path)
-	if rerr == nil && string(raw) == "not json" {
+	raw, renameErr := os.ReadFile(path)
+	if renameErr == nil && string(raw) == "not json" {
 		t.Errorf("garbage still at %s — rename did not happen", path)
 	}
 	// One sibling file matching state.json.corrupt-<RFC3339> must exist.
-	entries, derr := os.ReadDir(dir)
-	if derr != nil {
-		t.Fatalf("ReadDir: %v", derr)
+	entries, readDirErr := os.ReadDir(dir)
+	if readDirErr != nil {
+		t.Fatalf("ReadDir: %v", readDirErr)
 	}
 	var foundCorrupt bool
 	for _, e := range entries {
@@ -196,7 +196,7 @@ func TestState_AtomicCrashInvariant(t *testing.T) {
 		t.Fatalf("ReadFile canonical: %v", err)
 	}
 	var probe map[string]any
-	if uerr := json.Unmarshal(raw, &probe); uerr != nil {
-		t.Errorf("canonical state.json no longer parses: %v (raw=%q)", uerr, string(raw))
+	if unmarshalErr := json.Unmarshal(raw, &probe); unmarshalErr != nil {
+		t.Errorf("canonical state.json no longer parses: %v (raw=%q)", unmarshalErr, string(raw))
 	}
 }

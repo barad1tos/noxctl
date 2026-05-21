@@ -105,8 +105,8 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf(errFmtNoxctlDaemon, err)
 	}
 	defer func() {
-		if cerr := d.Close(); cerr != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "noxctl daemon close: %v\n", cerr)
+		if closeErr := d.Close(); closeErr != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "noxctl daemon close: %v\n", closeErr)
 		}
 	}()
 

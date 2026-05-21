@@ -70,13 +70,13 @@ func snapshotDomainContent(
 	ctx context.Context,
 	d *domain.Domain,
 ) (master string, hubs map[string]string, err error) {
-	master, mErr := domain.FetchMasterContent(ctx, d)
-	if mErr != nil {
-		return "", nil, fmt.Errorf("snapshotDomainContent(%s) master: %w", d.Tag, mErr)
+	master, masterErr := domain.FetchMasterContent(ctx, d)
+	if masterErr != nil {
+		return "", nil, fmt.Errorf("snapshotDomainContent(%s) master: %w", d.Tag, masterErr)
 	}
-	hubs, hErr := domain.FetchHubContents(ctx, d)
-	if hErr != nil {
-		return "", nil, fmt.Errorf("snapshotDomainContent(%s) hubs: %w", d.Tag, hErr)
+	hubs, hubsErr := domain.FetchHubContents(ctx, d)
+	if hubsErr != nil {
+		return "", nil, fmt.Errorf("snapshotDomainContent(%s) hubs: %w", d.Tag, hubsErr)
 	}
 	return master, hubs, nil
 }

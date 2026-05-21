@@ -31,8 +31,8 @@ func AtomicWriteJSON(path string, v any, perm os.FileMode) error {
 		return fmt.Errorf("AtomicWriteJSON marshal: %w", err)
 	}
 	dir := filepath.Dir(path)
-	if mkErr := os.MkdirAll(dir, 0o700); mkErr != nil {
-		return fmt.Errorf("AtomicWriteJSON mkdir %s: %w", dir, mkErr)
+	if mkdirErr := os.MkdirAll(dir, 0o700); mkdirErr != nil {
+		return fmt.Errorf("AtomicWriteJSON mkdir %s: %w", dir, mkdirErr)
 	}
 	base := filepath.Base(path)
 	tmp, err := os.CreateTemp(dir, base+".*.tmp")
@@ -41,35 +41,35 @@ func AtomicWriteJSON(path string, v any, perm os.FileMode) error {
 	}
 	tmpName := tmp.Name()
 	cleanup := func() { _ = os.Remove(tmpName) }
-	if _, werr := tmp.Write(data); werr != nil {
+	if _, writeErr := tmp.Write(data); writeErr != nil {
 		_ = tmp.Close()
 		cleanup()
-		return fmt.Errorf("AtomicWriteJSON write: %w", werr)
+		return fmt.Errorf("AtomicWriteJSON write: %w", writeErr)
 	}
 	// chmod BEFORE Sync so the durable bytes-on-disk carry the right
 	// perm — avoids a window where 0o600 flips to default on a
 	// re-mounted filesystem between Sync and an out-of-band chmod.
-	if cherr := tmp.Chmod(perm); cherr != nil {
+	if chmodErr := tmp.Chmod(perm); chmodErr != nil {
 		_ = tmp.Close()
 		cleanup()
-		return fmt.Errorf("AtomicWriteJSON chmod: %w", cherr)
+		return fmt.Errorf("AtomicWriteJSON chmod: %w", chmodErr)
 	}
-	if serr := tmp.Sync(); serr != nil {
+	if syncErr := tmp.Sync(); syncErr != nil {
 		_ = tmp.Close()
 		cleanup()
-		return fmt.Errorf("AtomicWriteJSON sync: %w", serr)
+		return fmt.Errorf("AtomicWriteJSON sync: %w", syncErr)
 	}
-	if cerr := tmp.Close(); cerr != nil {
+	if closeErr := tmp.Close(); closeErr != nil {
 		cleanup()
-		return fmt.Errorf("AtomicWriteJSON close: %w", cerr)
+		return fmt.Errorf("AtomicWriteJSON close: %w", closeErr)
 	}
-	if rerr := os.Rename(tmpName, path); rerr != nil {
+	if renameErr := os.Rename(tmpName, path); renameErr != nil {
 		cleanup()
-		return fmt.Errorf("AtomicWriteJSON rename: %w", rerr)
+		return fmt.Errorf("AtomicWriteJSON rename: %w", renameErr)
 	}
 	// dir-fsync — best-effort durability of the rename's directory
 	// entry. Ignored on systems without dirsync support.
-	if dirfd, derr := os.Open(dir); derr == nil {
+	if dirfd, openDirErr := os.Open(dir); openDirErr == nil {
 		_ = dirfd.Sync()
 		_ = dirfd.Close()
 	}

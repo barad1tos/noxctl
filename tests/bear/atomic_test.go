@@ -25,8 +25,8 @@ func TestAtomicWriteJSON_WritesJSONWithRequestedPerm(t *testing.T) {
 		t.Fatalf("ReadFile: %v", err)
 	}
 	var got map[string]int
-	if uerr := json.Unmarshal(data, &got); uerr != nil {
-		t.Fatalf("Unmarshal: %v (raw=%q)", uerr, string(data))
+	if unmarshalErr := json.Unmarshal(data, &got); unmarshalErr != nil {
+		t.Fatalf("Unmarshal: %v (raw=%q)", unmarshalErr, string(data))
 	}
 	if got["k"] != 1 {
 		t.Errorf("round-trip mismatch: got %v, want {k:1}", got)
@@ -87,8 +87,8 @@ func TestAtomicWriteJSON_ConcurrentWritersNoEEXIST(t *testing.T) {
 		t.Fatalf("ReadFile: %v", err)
 	}
 	var got map[string]string
-	if uerr := json.Unmarshal(raw, &got); uerr != nil {
-		t.Fatalf("Unmarshal after concurrent writes: %v (raw=%q)", uerr, string(raw))
+	if unmarshalErr := json.Unmarshal(raw, &got); unmarshalErr != nil {
+		t.Fatalf("Unmarshal after concurrent writes: %v (raw=%q)", unmarshalErr, string(raw))
 	}
 	if who := got["who"]; who != "A" && who != "B" {
 		t.Errorf("expected one of A/B; got %q", who)
@@ -116,8 +116,8 @@ func TestAtomicWriteJSON_CrashLeavesNoPartialJSON(t *testing.T) {
 		t.Fatalf("ReadFile post-crash: %v", err)
 	}
 	var got map[string]int
-	if uerr := json.Unmarshal(raw, &got); uerr != nil {
-		t.Fatalf("partial-JSON observed at target path: %v (raw=%q)", uerr, string(raw))
+	if unmarshalErr := json.Unmarshal(raw, &got); unmarshalErr != nil {
+		t.Fatalf("partial-JSON observed at target path: %v (raw=%q)", unmarshalErr, string(raw))
 	}
 	if got["v"] != 1 {
 		t.Errorf("crash invariant broken: target rolled forward to %v, want {v:1}", got)
@@ -158,9 +158,9 @@ func TestAtomicWriteJSON_MarshalErrorWrappedAndNoTmpLeftBehind(t *testing.T) {
 	if _, ok := errors.AsType[*json.UnsupportedTypeError](err); !ok {
 		t.Errorf("error chain lost json.UnsupportedTypeError: %v", err)
 	}
-	entries, derr := os.ReadDir(dir)
-	if derr != nil {
-		t.Fatalf("ReadDir: %v", derr)
+	entries, readDirErr := os.ReadDir(dir)
+	if readDirErr != nil {
+		t.Fatalf("ReadDir: %v", readDirErr)
 	}
 	if len(entries) != 0 {
 		names := make([]string, 0, len(entries))
