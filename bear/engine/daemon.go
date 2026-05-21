@@ -119,7 +119,7 @@ type DaemonOpts struct {
 	// checks. When > 0, Daemon.Run creates a time.Ticker that drives a
 	// 6th select case. When 0, polling is disabled entirely — no
 	// ticker, no goroutines, no work (Go's nil-channel idiom:
-	// `case <-pollCh:` blocks forever). The 30s default is applied at
+	// `case <-pollTick:` blocks forever). The 30s default is applied at
 	// the config layer (bear/config.daemonDefaults), NOT here, because
 	// zero must remain meaningful as a "disabled" sentinel for
 	// operators who explicitly opt out.
