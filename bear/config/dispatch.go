@@ -10,7 +10,7 @@ import (
 // buildFunc constructs a *domain.Domain from a stanza. The
 // resolveChildren callback is set only for umbrella blueprints; leaf
 // builders ignore it.
-type buildFunc func(s Stanza, resolveChildren func([]string) ([]*domain.Domain, error)) (*domain.Domain, error)
+type buildFunc func(stanza Stanza, resolveChildren func([]string) ([]*domain.Domain, error)) (*domain.Domain, error)
 
 // dispatch is the closed 6-entry catalog that maps a blueprint string
 // to the corresponding domain.New*Domain factory. Adding a seventh
@@ -36,8 +36,8 @@ var dispatch = map[string]buildFunc{
 func bucketedBuilder(blueprint string,
 	factory func(tag, indexTitle, unknownBucket string, buckets []string) *domain.Domain,
 ) buildFunc {
-	return func(s Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
-		return buildBucketed(blueprint, s, factory)
+	return func(stanza Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
+		return buildBucketed(blueprint, stanza, factory)
 	}
 }
 
@@ -106,34 +106,34 @@ var allOptKeys = []optKey{
 // stanzaHas reports whether the user populated the given optional
 // field in the stanza. Centralizing this dispatch in one switch keeps
 // the per-builder code declarative.
-func stanzaHas(s Stanza, k optKey) bool {
+func stanzaHas(stanza Stanza, k optKey) bool {
 	switch k {
 	case optBuckets:
-		return s.Buckets != nil
+		return stanza.Buckets != nil
 	case optUnknownBucket:
-		return s.UnknownBucket != nil
+		return stanza.UnknownBucket != nil
 	case optOwnGroup:
-		return s.OwnGroup != nil
+		return stanza.OwnGroup != nil
 	case optOwnAliases:
-		return s.OwnAliases != nil
+		return stanza.OwnAliases != nil
 	case optHubH2Prefix:
-		return s.HubH2Prefix != nil
+		return stanza.HubH2Prefix != nil
 	case optHubH2Legacy:
-		return s.HubH2Legacy != nil
+		return stanza.HubH2Legacy != nil
 	case optChildren:
-		return s.Children != nil
+		return stanza.Children != nil
 	case optDefaultChild:
-		return s.DefaultChild != nil
+		return stanza.DefaultChild != nil
 	case optSubtag:
-		return s.Subtag != nil
+		return stanza.Subtag != nil
 	case optLegacyAuthor:
-		return s.LegacyAuthorFallback != nil
+		return stanza.LegacyAuthorFallback != nil
 	case optStripAuthorH2:
-		return s.StripLegacyAuthorH2 != nil
+		return stanza.StripLegacyAuthorH2 != nil
 	case optMasterSection:
-		return s.MasterSections != nil
+		return stanza.MasterSections != nil
 	case optQuickPlaceH1:
-		return s.QuickPlaceholderH1 != nil
+		return stanza.QuickPlaceholderH1 != nil
 	}
 	return false
 }
@@ -143,10 +143,10 @@ func stanzaHas(s Stanza, k optKey) bool {
 // allow-list MUST be unpopulated. Returns the first missing-required
 // error (structurally incomplete > forbidden noise) or an aggregated
 // forbidden-field error listing every offender.
-func validateBlueprintFields(blueprint string, s Stanza, required []optKey, allowed []optKey) error {
+func validateBlueprintFields(blueprint string, stanza Stanza, required []optKey, allowed []optKey) error {
 	for _, r := range required {
-		if !stanzaHas(s, r) {
-			return fmt.Errorf("%s %q: %s is required", blueprint, s.Tag, r)
+		if !stanzaHas(stanza, r) {
+			return fmt.Errorf("%s %q: %s is required", blueprint, stanza.Tag, r)
 		}
 	}
 	allowSet := make(map[optKey]struct{}, len(allowed))
@@ -158,13 +158,13 @@ func validateBlueprintFields(blueprint string, s Stanza, required []optKey, allo
 		if _, ok := allowSet[k]; ok {
 			continue
 		}
-		if stanzaHas(s, k) {
+		if stanzaHas(stanza, k) {
 			bad = append(bad, k)
 		}
 	}
 	if len(bad) > 0 {
 		return fmt.Errorf("%s %q: fields not allowed for this blueprint: %v",
-			blueprint, s.Tag, bad)
+			blueprint, stanza.Tag, bad)
 	}
 	return nil
 }
@@ -174,13 +174,13 @@ func validateBlueprintFields(blueprint string, s Stanza, required []optKey, allo
 // quick_placeholder_h1 is allowed as an optional field — it flips the
 // master "new-note" link to the x-callback bootstrap URL form (see
 // domain.Domain.QuickPlaceholderH1).
-func buildFlatList(s Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
-	if err := validateBlueprintFields("flat-list", s, nil, []optKey{optQuickPlaceH1}); err != nil {
+func buildFlatList(stanza Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
+	if err := validateBlueprintFields("flat-list", stanza, nil, []optKey{optQuickPlaceH1}); err != nil {
 		return nil, err
 	}
-	d := render.NewFlatListDomain(s.Tag, s.IndexTitle)
-	if s.QuickPlaceholderH1 != nil {
-		d.QuickPlaceholderH1 = *s.QuickPlaceholderH1
+	d := render.NewFlatListDomain(stanza.Tag, stanza.IndexTitle)
+	if stanza.QuickPlaceholderH1 != nil {
+		d.QuickPlaceholderH1 = *stanza.QuickPlaceholderH1
 	}
 	return d, nil
 }
@@ -189,15 +189,15 @@ func buildFlatList(s Stanza, _ func([]string) ([]*domain.Domain, error)) (*domai
 // flat-table and grouped-vertical. safety: the factory's
 // positional args are filled BY NAME from the stanza, never by
 // arg-order coincidence.
-func buildBucketed(blueprint string, s Stanza,
+func buildBucketed(blueprint string, stanza Stanza,
 	factory func(tag, indexTitle, unknownBucket string, buckets []string) *domain.Domain,
 ) (*domain.Domain, error) {
-	if err := validateBlueprintFields(blueprint, s,
+	if err := validateBlueprintFields(blueprint, stanza,
 		[]optKey{optBuckets, optUnknownBucket},
 		[]optKey{optBuckets, optUnknownBucket}); err != nil {
 		return nil, err
 	}
-	return factory(s.Tag, s.IndexTitle, *s.UnknownBucket, *s.Buckets), nil
+	return factory(stanza.Tag, stanza.IndexTitle, *stanza.UnknownBucket, *stanza.Buckets), nil
 }
 
 // buildHubRouted: REQUIRES unknown_bucket + hub_h2_prefix. Allows
@@ -205,8 +205,8 @@ func buildBucketed(blueprint string, s Stanza,
 // When [[domain.master_section]] is present the domain swaps its
 // master from the default 3-tier layout to the generic vertical-
 // sections renderer driven by the predicates the operator declared.
-func buildHubRouted(s Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
-	if err := validateBlueprintFields("hub-routed", s,
+func buildHubRouted(stanza Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
+	if err := validateBlueprintFields("hub-routed", stanza,
 		[]optKey{optUnknownBucket, optHubH2Prefix},
 		[]optKey{
 			optUnknownBucket, optHubH2Prefix, optHubH2Legacy,
@@ -216,15 +216,15 @@ func buildHubRouted(s Stanza, _ func([]string) ([]*domain.Domain, error)) (*doma
 		}); err != nil {
 		return nil, err
 	}
-	if err := validateMasterSections(s); err != nil {
+	if err := validateMasterSections(stanza); err != nil {
 		return nil, err
 	}
 	d := render.NewHubRoutedDomain(
-		s.Tag, s.IndexTitle, *s.UnknownBucket, *s.HubH2Prefix,
+		stanza.Tag, stanza.IndexTitle, *stanza.UnknownBucket, *stanza.HubH2Prefix,
 		render.DefaultRenderMaster3Tier,
 	)
-	applyHubRoutedOptionals(d, s)
-	applyMasterSections(d, s)
+	applyHubRoutedOptionals(d, stanza)
+	applyMasterSections(d, stanza)
 	return d, nil
 }
 
@@ -247,35 +247,35 @@ func masterSectionEnumError(tag string, idx int, title, field, got, valid string
 // script or count_mode string is rejected with the accepted set in
 // the error message; sections must carry a non-empty Title because
 // empty headers would render as `(N)` which is operator-confusing.
-func validateMasterSections(s Stanza) error {
-	if s.MasterSections == nil {
+func validateMasterSections(stanza Stanza) error {
+	if stanza.MasterSections == nil {
 		return nil
 	}
-	if len(*s.MasterSections) == 0 {
+	if len(*stanza.MasterSections) == 0 {
 		return fmt.Errorf("hub-routed %q: master_section block is present but empty; "+
-			"remove the block to keep the default 3-tier master, or add at least one section", s.Tag)
+			"remove the block to keep the default 3-tier master, or add at least one section", stanza.Tag)
 	}
 	validScripts := map[string]struct{}{"latin": {}, "non-latin": {}}
 	validCounts := map[string]struct{}{"": {}, "notes": {}, "buckets": {}}
-	for i, sec := range *s.MasterSections {
-		if sec.Title == "" {
-			return fmt.Errorf("hub-routed %q: master_section[%d] is missing required `title`", s.Tag, i)
+	for i, section := range *stanza.MasterSections {
+		if section.Title == "" {
+			return fmt.Errorf("hub-routed %q: master_section[%d] is missing required `title`", stanza.Tag, i)
 		}
-		if len(sec.Buckets) > 0 && sec.Script != "" {
+		if len(section.Buckets) > 0 && section.Script != "" {
 			return fmt.Errorf(
 				"hub-routed %q: master_section[%d] %q sets both `buckets` and `script`; "+
 					"pick exactly one selection rule",
-				s.Tag, i, sec.Title)
+				stanza.Tag, i, section.Title)
 		}
-		if sec.Script != "" {
-			if _, ok := validScripts[sec.Script]; !ok {
-				return masterSectionEnumError(s.Tag, i, sec.Title, "script",
-					sec.Script, "latin|non-latin")
+		if section.Script != "" {
+			if _, ok := validScripts[section.Script]; !ok {
+				return masterSectionEnumError(stanza.Tag, i, section.Title, "script",
+					section.Script, "latin|non-latin")
 			}
 		}
-		if _, ok := validCounts[sec.CountMode]; !ok {
-			return masterSectionEnumError(s.Tag, i, sec.Title, "count_mode",
-				sec.CountMode, "notes|buckets, empty = notes")
+		if _, ok := validCounts[section.CountMode]; !ok {
+			return masterSectionEnumError(stanza.Tag, i, section.Title, "count_mode",
+				section.CountMode, "notes|buckets, empty = notes")
 		}
 	}
 	return nil
@@ -285,18 +285,18 @@ func validateMasterSections(s Stanza) error {
 // domain and swaps RenderMaster to the generic sectioned renderer.
 // No-op when MasterSections is unset — the default 3-tier master
 // stays in place.
-func applyMasterSections(d *domain.Domain, s Stanza) {
-	if s.MasterSections == nil {
+func applyMasterSections(d *domain.Domain, stanza Stanza) {
+	if stanza.MasterSections == nil {
 		return
 	}
-	sections := make([]domain.MasterSection, len(*s.MasterSections))
-	for i, sec := range *s.MasterSections {
+	sections := make([]domain.MasterSection, len(*stanza.MasterSections))
+	for i, section := range *stanza.MasterSections {
 		sections[i] = domain.MasterSection{
-			Title:            sec.Title,
-			Buckets:          sec.Buckets,
-			Script:           sec.Script,
-			CountMode:        countModeFromString(sec.CountMode),
-			ShowBulletCounts: showBulletCountsDefault(sec.ShowBulletCounts),
+			Title:            section.Title,
+			Buckets:          section.Buckets,
+			Script:           section.Script,
+			CountMode:        countModeFromString(section.CountMode),
+			ShowBulletCounts: showBulletCountsDefault(section.ShowBulletCounts),
 		}
 	}
 	d.MasterSections = sections
@@ -319,8 +319,8 @@ func countModeFromString(s string) domain.CountMode {
 // applies on the same *domain.Domain to pin the "no append on repeat"
 // idempotency contract without going through full Dispatch (which
 // constructs a fresh Domain each call and can't catch the regression).
-func ApplyMasterSectionsForTest(d *domain.Domain, s Stanza) {
-	applyMasterSections(d, s)
+func ApplyMasterSectionsForTest(d *domain.Domain, stanza Stanza) {
+	applyMasterSections(d, stanza)
 }
 
 // showBulletCountsDefault resolves the *bool pointer to a plain bool.
@@ -336,37 +336,37 @@ func showBulletCountsDefault(p *bool) bool {
 // applyHubRoutedOptionals stamps the optional pointer-typed fields on
 // the constructed Domain. Extracted to keep buildHubRouted under the
 // gocognit ≤15 budget.
-func applyHubRoutedOptionals(d *domain.Domain, s Stanza) {
-	if s.OwnGroup != nil {
-		d.OwnGroup = *s.OwnGroup
+func applyHubRoutedOptionals(d *domain.Domain, stanza Stanza) {
+	if stanza.OwnGroup != nil {
+		d.OwnGroup = *stanza.OwnGroup
 	}
-	if s.OwnAliases != nil {
-		d.OwnAliases = make(map[string]struct{}, len(*s.OwnAliases))
-		for _, alias := range *s.OwnAliases {
+	if stanza.OwnAliases != nil {
+		d.OwnAliases = make(map[string]struct{}, len(*stanza.OwnAliases))
+		for _, alias := range *stanza.OwnAliases {
 			d.OwnAliases[alias] = struct{}{}
 		}
 	}
-	if s.HubH2Legacy != nil {
-		d.HubH2Legacy = append([]string(nil), *s.HubH2Legacy...)
+	if stanza.HubH2Legacy != nil {
+		d.HubH2Legacy = append([]string(nil), *stanza.HubH2Legacy...)
 	}
-	if s.LegacyAuthorFallback != nil {
-		d.LegacyAuthorFallback = *s.LegacyAuthorFallback
+	if stanza.LegacyAuthorFallback != nil {
+		d.LegacyAuthorFallback = *stanza.LegacyAuthorFallback
 	}
-	if s.StripLegacyAuthorH2 != nil {
-		d.StripLegacyAuthorH2 = *s.StripLegacyAuthorH2
+	if stanza.StripLegacyAuthorH2 != nil {
+		d.StripLegacyAuthorH2 = *stanza.StripLegacyAuthorH2
 	}
 }
 
 // buildHubRoutedSubTag: REQUIRES buckets + unknown_bucket. Sub-tag
 // preserving hubs key off `<top> · <bucket>` titles, so hub_h2_prefix
 // is forbidden (the factory wires its own IsHubNote).
-func buildHubRoutedSubTag(s Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
-	if err := validateBlueprintFields("hub-routed-with-subtag", s,
+func buildHubRoutedSubTag(stanza Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
+	if err := validateBlueprintFields("hub-routed-with-subtag", stanza,
 		[]optKey{optBuckets, optUnknownBucket},
 		[]optKey{optBuckets, optUnknownBucket, optSubtag}); err != nil {
 		return nil, err
 	}
-	return render.NewHubRoutedSubTagDomain(s.Tag, s.IndexTitle, *s.UnknownBucket, *s.Buckets), nil
+	return render.NewHubRoutedSubTagDomain(stanza.Tag, stanza.IndexTitle, *stanza.UnknownBucket, *stanza.Buckets), nil
 }
 
 // buildUmbrella: REQUIRES children + default_child. Resolver maps each
@@ -379,26 +379,26 @@ func buildHubRoutedSubTag(s Stanza, _ func([]string) ([]*domain.Domain, error)) 
 // render.NewUmbrellaDomainStrict directly so malformed user config
 // produces a returned error instead of the panic the
 // render.NewUmbrellaDomain hardcoded-caller path would emit.
-func buildUmbrella(s Stanza, resolveChildren func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
-	if err := validateBlueprintFields("umbrella", s,
+func buildUmbrella(stanza Stanza, resolveChildren func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
+	if err := validateBlueprintFields("umbrella", stanza,
 		[]optKey{optChildren, optDefaultChild},
 		[]optKey{optChildren, optDefaultChild}); err != nil {
 		return nil, err
 	}
 	if resolveChildren == nil {
-		return nil, fmt.Errorf("umbrella %q: resolveChildren callback is nil (loader bug)", s.Tag)
+		return nil, fmt.Errorf("umbrella %q: resolveChildren callback is nil (loader bug)", stanza.Tag)
 	}
-	kids, err := resolveChildren(*s.Children)
+	kids, err := resolveChildren(*stanza.Children)
 	if err != nil {
-		return nil, fmt.Errorf("umbrella %q: %w", s.Tag, err)
+		return nil, fmt.Errorf("umbrella %q: %w", stanza.Tag, err)
 	}
 	// Call the strict (error-returning) factory directly so malformed
 	// user config produces a friendly returned error instead of a
 	// panic-recover dance. The panicking `NewUmbrellaDomain` is kept
 	// for hardcoded callers that prefer fail-fast at init.
-	d, err := render.NewUmbrellaDomainStrict(s.Tag, s.IndexTitle, *s.DefaultChild, kids)
+	d, err := render.NewUmbrellaDomainStrict(stanza.Tag, stanza.IndexTitle, *stanza.DefaultChild, kids)
 	if err != nil {
-		return nil, fmt.Errorf("umbrella %q: %w", s.Tag, err)
+		return nil, fmt.Errorf("umbrella %q: %w", stanza.Tag, err)
 	}
 	return d, nil
 }

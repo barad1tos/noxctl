@@ -39,23 +39,23 @@ func Load(path string) ([]*domain.Domain, *Catalog, error) {
 		return nil, nil, fmt.Errorf("%s: %w", path, err)
 	}
 
-	cat, undecoded, decodeErr := decodeStrict(raw, path)
+	catalog, undecoded, decodeErr := decodeStrict(raw, path)
 	if decodeErr != nil {
 		return nil, nil, decodeErr
 	}
 
 	aggregated := append([]error(nil), undecoded...)
-	if validateErr := ValidateCatalog(cat, path); validateErr != nil {
+	if validateErr := ValidateCatalog(catalog, path); validateErr != nil {
 		aggregated = append(aggregated, validateErr)
 	}
 
-	built, dispatchErrs := dispatchAllStanzas(cat, path)
+	built, dispatchErrs := dispatchAllStanzas(catalog, path)
 	aggregated = append(aggregated, dispatchErrs...)
 
 	if len(aggregated) > 0 {
-		return built, cat, errors.Join(aggregated...)
+		return built, catalog, errors.Join(aggregated...)
 	}
-	return built, cat, nil
+	return built, catalog, nil
 }
 
 // decodeStrict reads the TOML body, surfaces ParseError with explicit
@@ -64,8 +64,8 @@ func Load(path string) ([]*domain.Domain, *Catalog, error) {
 // rest of the aggregate. Return order keeps error last (revive
 // error-return convention).
 func decodeStrict(raw []byte, path string) (*Catalog, []error, error) {
-	var cat Catalog
-	meta, err := toml.Decode(string(raw), &cat)
+	var catalog Catalog
+	meta, err := toml.Decode(string(raw), &catalog)
 	if err != nil {
 		if pe, ok := errors.AsType[toml.ParseError](err); ok {
 			return nil, nil, fmt.Errorf("%s:%d:%d: %s",
@@ -81,7 +81,7 @@ func decodeStrict(raw []byte, path string) (*Catalog, []error, error) {
 	for _, key := range meta.Undecoded() {
 		undecoded = append(undecoded, fmt.Errorf("%s: unknown field %q", path, key.String()))
 	}
-	return &cat, undecoded, nil
+	return &catalog, undecoded, nil
 }
 
 // dispatchAllStanzas runs the two-pass dispatch:
@@ -92,15 +92,15 @@ func decodeStrict(raw []byte, path string) (*Catalog, []error, error) {
 // closure that looks up child Tags in the leaf map.
 //
 // Returns the slice of built domains (positionally aligned with
-// cat.Domains; failed dispatches leave nil placeholders) and the
+// catalog.Domains; failed dispatches leave nil placeholders) and the
 // list of dispatch+validate errors.
-func dispatchAllStanzas(cat *Catalog, path string) ([]*domain.Domain, []error) {
+func dispatchAllStanzas(catalog *Catalog, path string) ([]*domain.Domain, []error) {
 	var errs []error
 	leaf := map[string]*domain.Domain{}
 	var umbrellas []int
-	built := make([]*domain.Domain, len(cat.Domains))
+	built := make([]*domain.Domain, len(catalog.Domains))
 
-	for i, s := range cat.Domains {
+	for i, s := range catalog.Domains {
 		if s.Blueprint == "umbrella" {
 			umbrellas = append(umbrellas, i)
 			continue
@@ -116,7 +116,7 @@ func dispatchAllStanzas(cat *Catalog, path string) ([]*domain.Domain, []error) {
 	}
 	resolver := newChildResolver(leaf)
 	for _, i := range umbrellas {
-		built[i] = dispatchOne(cat.Domains[i], i, path, resolver, &errs)
+		built[i] = dispatchOne(catalog.Domains[i], i, path, resolver, &errs)
 	}
 	return built, errs
 }
