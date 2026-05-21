@@ -28,7 +28,7 @@ type ApplyOpts struct {
 	Domains   []*domain.Domain    // REQUIRED — engine iterates and calls RunRegen
 	Pins      *domain.PinRegistry // REQUIRED — may be empty registry; nil-safe per bear/pins.go
 	StatePath string              // REQUIRED — "./.noxctl/state.json"
-	LockPath  string              // REQUIRED — "./.noxctl/.lock" (used by )
+	LockPath  string              // REQUIRED — "./.noxctl/.lock" (used by AcquireApply)
 	Features  Features            // REQUIRED — flat pre-pass toggles
 	NoWait    bool                // optional; --no-wait fail-fast on lock contention
 	Stderr    io.Writer           // optional; default os.Stderr — used by lock-acquire wait advisory
@@ -36,7 +36,7 @@ type ApplyOpts struct {
 	// the legacy daemon's REGEN_AUDIT != "off" gate. Default false.
 	AuditEnabled bool
 	// SkipFlock — optional; when true, Apply skips both the AcquireApply
-	// flock acquire AND the.apply-pending sentinel write. Used by
+	// flock acquire AND the `.apply-pending` sentinel write. Used by
 	// engine.Daemon.cycleOnce, which already holds the daemon flock and
 	// must not nest-acquire (would deadlock on macOS BSD flock semantics
 	// — flock is not ctx-aware, so a nested LOCK_EX on an independent fd

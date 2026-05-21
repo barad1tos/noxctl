@@ -251,8 +251,8 @@ func formatPollInterval(d time.Duration) string {
 func noopTickerStop() {
 	// Intentional no-op: when AutoTagPollInterval or MtimePollInterval
 	// is zero, no ticker is ever created, so there is nothing to stop.
-	// The named function exists purely as an anchor for the empty-
-	// function linter (Sonar S1186) — it has no runtime behavior.
+	// The named function gives the empty-function linter a stable
+	// anchor — it has no runtime behavior.
 }
 
 // startTickerOrNil creates a [time.Ticker] of the given interval and

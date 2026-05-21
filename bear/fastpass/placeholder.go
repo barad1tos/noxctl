@@ -120,32 +120,13 @@ func ApplyQuicknotePlaceholderRefresh(ctx context.Context, dailyDomain *domain.D
 	return ApplyPlaceholderRefresh(ctx, map[string]*domain.Domain{dailyDomain.Tag: dailyDomain})
 }
 
-// ApplyDomainBootstrap canonicalizes any note whose `Tags` array
-// matches a managed leaf domain. Fourth fast-pass; wired into
-// `handleAutoTagTick` and `applyPrePasses`.
-//
-// Routing:
-// 1. Most-specific leaf wins — note with `#llm/agents` (possibly
-// alongside `#llm`) routes to leaf `llm/agents`.
-// 2. Bare umbrella → DefaultChild — note with ONLY `#llm` routes to
-// the umbrella's DefaultChild (e.g. `llm/agents`); the canonical
-// rewrite replaces the umbrella tag with the leaf tag in body.
-// 3. No managed tag — skip silently (not our note).
-// 4. Multi-leaf tie of unrelated families — log WARN once per
-// note-ID, skip (per user direction: do not guess).
-//
-// Idempotency: existing canonical notes detected by
-// `equalIgnoringNewNoteLinkStrict` — zero bearcli writes when
-// already canonical, ensuring `≤3-pass unchanged` convergence.
-//
-// Self-write safety: relies on the daemon's self-write gate
-// around `handleAutoTagTick` plus `effectiveSelfWriteEpsilon`
-// to suppress FSEvent feedback on our own writes.
-//
-// Returns the number of notes actually rewritten (zero when every
-
-// lines, not bare strings, so we don't accidentally match
-// "# Quicknote " or "# Quicknote-X".
+// refreshPlaceholderH1 rewrites the literal "# <placeholder>\n" H1
+// line at the start of content to "# <stamp>\n". Returns
+// (content, false) when the marker is absent — caller skips the
+// bearcli write in that case. Body below H1 is preserved
+// byte-for-byte. Trailing `\n` on the marker is intentional:
+// matched against full lines, not bare strings, so we don't
+// accidentally match "# Quicknote " or "# Quicknote-X".
 func refreshPlaceholderH1(content, placeholder, stamp string) (string, bool) {
 	marker := "# " + placeholder + "\n"
 	if !strings.HasPrefix(content, marker) {

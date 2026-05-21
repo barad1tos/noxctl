@@ -46,7 +46,7 @@ func ApplyDomainBootstrap(ctx context.Context, domainsByTag map[string]*domain.D
 		return 0, fmt.Errorf("ApplyDomainBootstrap parse: %w", err)
 	}
 	rewritten := 0
-	warned := make(map[string]struct{}) // : log-once-per-tick per note ID.
+	warned := make(map[string]struct{}) // log-once-per-tick per note ID
 	//nolint:dupl // mirrors sibling fastpass loop; shared scan pattern
 	for _, note := range notes {
 		if err = domain.CheckCtx(ctx); err != nil {
@@ -349,7 +349,3 @@ func matchDomainByTag(noteTags []string, candidates []*domain.Domain) *domain.Do
 	}
 	return nil
 }
-
-// domain.AutoTagNote is the bearcli JSON shape we need for the auto-tag pre-pass —
-// a slim subset of bear.Note plus the `tags` array that the standard domain.Note
-// type doesn't carry.

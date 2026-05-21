@@ -14,7 +14,9 @@ import (
 	"github.com/barad1tos/noxctl/bear/fastpass"
 )
 
-// tripped both gocognit and dupl thresholds.
+// prePassSpec describes one pre-pass: the enable gate, the metric
+// key in ApplyResult.PrePasses, a human-readable label for log
+// output, and the closure that runs the pass.
 type prePassSpec struct {
 	enabled bool
 	name    string // PrePasses-map key, e.g. "foreign_tag"
@@ -142,26 +144,3 @@ func runPrePass(spec prePassSpec, result *ApplyResult) {
 	}
 	result.PrePasses[spec.name] = PrePassCounts{OK: 1}
 }
-
-// applyPerDomain orchestrates the per-domain RunRegen pipeline using a
-// per-umbrella errgroup dependency graph.
-//
-// Structure:
-// - Top-level errgroup.WithContext(ctx) — each of the N umbrella
-// families (one entry per nil-keyed standalone-group plus one per
-// real umbrella) becomes one outer goroutine.
-// - Inside each family goroutine: an inner errgroup runs all leaves
-// of that family concurrently; after inner.Wait returns, the
-// umbrella domain's own RunRegen executes on the same goroutine.
-// - Independent families fan out in parallel; back-pressure on actual
-// bearcli subprocesses lives in the domain.SetBearcliConcurrency
-// semaphore, NOT at the errgroup layer.
-//
-// State serialization: state.State map writes + st.Save calls happen
-// under stateMu. The mutex is held strictly around the map mutation +
-// Save call — NEVER during RunRegen or bearcli I/O.
-//
-// Per-domain failures inside RunRegen are log-and-continue (same
-// contract as the sequential predecessor); only ctx cancellation
-// propagates as a non-nil errgroup return, which flips
-// result.Interrupted=true on Wait.
