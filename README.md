@@ -17,14 +17,17 @@ Brownfield — descended from a personal FSEvents-driven daemon (`regen-watchd`)
 
 ## Quick start
 
+> **Already have Bear tags you want managed?** Skip to [From existing vault](#from-existing-vault) for a `noxctl import`-based bootstrap, then come back here at Step 3.
+
+**Step 0 — pick your first tags.** Open Bear and look at the tag sidebar. Pick 1-3 tags you want noxctl to manage first; incremental adoption is normal and you can add more later. The smallest useful catalog is a single tag.
+
 ```bash
 # 1. Install
 go install github.com/barad1tos/noxctl/cmd/noxctl@latest
 
-# 2. Author a config (copy and edit the starter)
+# 2. Write a starter catalog (no network; no overwrite of existing files)
 mkdir -p ~/.config/noxctl
-curl -L -o ~/.config/noxctl/noxctl.toml \
-  https://raw.githubusercontent.com/barad1tos/noxctl/main/examples/minimal.toml
+noxctl init ~/.config/noxctl/noxctl.toml
 
 # 3. Confirm the schema parses without touching Bear
 noxctl validate ~/.config/noxctl/noxctl.toml
@@ -35,6 +38,8 @@ noxctl plan --config ~/.config/noxctl/noxctl.toml
 # 5. Apply once you're happy with the diff
 noxctl apply --config ~/.config/noxctl/noxctl.toml
 ```
+
+`noxctl init` writes a 3-blueprint showcase catalog ready to edit. Replace the example `[[domain]]` blocks with your own tags (Step 0). If you want the absolute minimum starter (1 domain), see [`examples/minimal.toml`](examples/minimal.toml).
 
 Optional: run `noxctl daemon --config ~/.config/noxctl/noxctl.toml` to keep the vault reconciled live as you edit notes in Bear.
 
