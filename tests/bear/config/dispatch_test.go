@@ -152,12 +152,12 @@ func TestDispatchBlueprintFieldMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("Dispatch(flat-list with buckets): want error, got nil")
 	}
-	msg := err.Error()
-	if !strings.Contains(msg, "flat-list") {
-		t.Errorf("err missing 'flat-list': %q", msg)
+	message := err.Error()
+	if !strings.Contains(message, "flat-list") {
+		t.Errorf("err missing 'flat-list': %q", message)
 	}
-	if !strings.Contains(msg, "buckets") {
-		t.Errorf("err missing 'buckets': %q", msg)
+	if !strings.Contains(message, "buckets") {
+		t.Errorf("err missing 'buckets': %q", message)
 	}
 }
 

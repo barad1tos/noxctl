@@ -100,14 +100,14 @@ func dispatchAllStanzas(catalog *Catalog, path string) ([]*domain.Domain, []erro
 	var umbrellas []int
 	built := make([]*domain.Domain, len(catalog.Domains))
 
-	for i, s := range catalog.Domains {
-		if s.Blueprint == "umbrella" {
+	for i, stanza := range catalog.Domains {
+		if stanza.Blueprint == "umbrella" {
 			umbrellas = append(umbrellas, i)
 			continue
 		}
-		built[i] = dispatchOne(s, i, path, nil, &errs)
+		built[i] = dispatchOne(stanza, i, path, nil, &errs)
 		if built[i] != nil {
-			leaf[s.Tag] = built[i]
+			leaf[stanza.Tag] = built[i]
 		}
 	}
 
@@ -124,17 +124,17 @@ func dispatchAllStanzas(catalog *Catalog, path string) ([]*domain.Domain, []erro
 // dispatchOne runs Dispatch + Domain.Validate for a single stanza,
 // appending any error encountered to errs. Returns the *domain.Domain
 // pointer so the caller can register leaf domains.
-func dispatchOne(s Stanza, i int, path string,
+func dispatchOne(stanza Stanza, i int, path string,
 	resolver func([]string) ([]*domain.Domain, error),
 	errs *[]error,
 ) *domain.Domain {
-	d, err := Dispatch(s, resolver)
+	d, err := Dispatch(stanza, resolver)
 	if err != nil {
-		*errs = append(*errs, fmt.Errorf("%s: domain[%d] tag=%q: %w", path, i, s.Tag, err))
+		*errs = append(*errs, fmt.Errorf("%s: domain[%d] tag=%q: %w", path, i, stanza.Tag, err))
 		return nil
 	}
 	if validateErr := d.Validate(); validateErr != nil {
-		*errs = append(*errs, fmt.Errorf("%s: domain[%d] tag=%q validate: %w", path, i, s.Tag, validateErr))
+		*errs = append(*errs, fmt.Errorf("%s: domain[%d] tag=%q validate: %w", path, i, stanza.Tag, validateErr))
 		return nil
 	}
 	return d
