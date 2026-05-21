@@ -160,14 +160,14 @@ func renderDriftBlock(w io.Writer, dp DomainPlan, color, verbose bool) error {
 	if err := writeGlyphLine(w, color, ansiYellow, "~", dp.Tag, status); err != nil {
 		return err
 	}
-	for _, ch := range dp.Changes {
-		if _, err := fmt.Fprintf(w, "  %s\n", ch.Summary); err != nil {
+	for _, change := range dp.Changes {
+		if _, err := fmt.Fprintf(w, "  %s\n", change.Summary); err != nil {
 			return err
 		}
 		if !verbose {
 			continue
 		}
-		for _, line := range ch.Detail {
+		for _, line := range change.Detail {
 			if _, err := fmt.Fprintf(w, "    %s\n", line); err != nil {
 				return err
 			}
