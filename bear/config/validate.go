@@ -134,9 +134,9 @@ func validatePromotionShape(p Promotion, i int, path string, knownTargets map[st
 // catch typos in `to` at load time, not at first sweep.
 func promotionTargetSet(cat *Catalog) map[string]struct{} {
 	out := make(map[string]struct{}, len(cat.Domains)+len(cat.Promotions))
-	for _, d := range cat.Domains {
-		if d.Tag != "" {
-			out[d.Tag] = struct{}{}
+	for _, s := range cat.Domains {
+		if s.Tag != "" {
+			out[s.Tag] = struct{}{}
 		}
 	}
 	for _, p := range cat.Promotions {
@@ -172,16 +172,16 @@ func validateMeta(cat *Catalog, path string) []error {
 func validateDomains(cat *Catalog, path string) []error {
 	var errs []error
 	seen := map[string]int{}
-	for i, d := range cat.Domains {
-		errs = append(errs, validateStanzaInvariants(d, i, path)...)
-		if d.Tag == "" {
+	for i, s := range cat.Domains {
+		errs = append(errs, validateStanzaInvariants(s, i, path)...)
+		if s.Tag == "" {
 			continue
 		}
-		if prev, dup := seen[d.Tag]; dup {
+		if prev, dup := seen[s.Tag]; dup {
 			errs = append(errs, fmt.Errorf("%s: %w: tag %q appears at domain[%d] and domain[%d]",
-				path, ErrDuplicateTag, d.Tag, prev, i))
+				path, ErrDuplicateTag, s.Tag, prev, i))
 		} else {
-			seen[d.Tag] = i
+			seen[s.Tag] = i
 		}
 	}
 	return errs
@@ -190,36 +190,36 @@ func validateDomains(cat *Catalog, path string) []error {
 // validateStanzaInvariants runs the per-stanza invariants that don't
 // require neighbor-context (duplicate detection lives in
 // validateDomains because it needs the full slice).
-func validateStanzaInvariants(d Stanza, i int, path string) []error {
+func validateStanzaInvariants(s Stanza, i int, path string) []error {
 	var errs []error
-	if d.Tag == "" {
+	if s.Tag == "" {
 		errs = append(errs, fmt.Errorf("%s: domain[%d]: tag is required", path, i))
 	} else {
-		if !tagFormatRE.MatchString(d.Tag) {
+		if !tagFormatRE.MatchString(s.Tag) {
 			errs = append(errs, fmt.Errorf(
 				"%s: domain[%d] tag=%q: must match [a-zA-Z0-9_/-]+ (security: tag-injection guard)",
-				path, i, d.Tag,
+				path, i, s.Tag,
 			))
 		}
-		if strings.Count(d.Tag, "/") > 1 {
+		if strings.Count(s.Tag, "/") > 1 {
 			errs = append(errs, fmt.Errorf(
 				"%s: domain[%d] tag=%q: tag tree depth limit exceeded (max 2 segments)",
-				path, i, d.Tag,
+				path, i, s.Tag,
 			))
 		}
 	}
-	if d.IndexTitle == "" {
-		errs = append(errs, fmt.Errorf("%s: domain[%d] tag=%q: index_title is required", path, i, d.Tag))
+	if s.IndexTitle == "" {
+		errs = append(errs, fmt.Errorf("%s: domain[%d] tag=%q: index_title is required", path, i, s.Tag))
 	}
-	if d.Blueprint == "" {
-		errs = append(errs, fmt.Errorf("%s: domain[%d] tag=%q: blueprint is required", path, i, d.Tag))
+	if s.Blueprint == "" {
+		errs = append(errs, fmt.Errorf("%s: domain[%d] tag=%q: blueprint is required", path, i, s.Tag))
 	}
-	if d.UnknownBucket != nil {
+	if s.UnknownBucket != nil {
 		for _, re := range bucketRejectREs {
-			if re.MatchString(*d.UnknownBucket) {
+			if re.MatchString(*s.UnknownBucket) {
 				errs = append(errs, fmt.Errorf(
 					"%s: domain[%d] tag=%q unknown_bucket=%q: contains forbidden pattern (security)",
-					path, i, d.Tag, *d.UnknownBucket,
+					path, i, s.Tag, *s.UnknownBucket,
 				))
 			}
 		}
