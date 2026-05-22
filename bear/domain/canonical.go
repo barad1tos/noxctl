@@ -63,11 +63,11 @@ func (s *atomicParseState) consumeHeader(trimmed, authorH2Marker, family string,
 // H1 and the first canonical header line. Production render paths
 // hoist this slice into the body zone via hoistPreambleToBody, so
 // preamble content always lands below `---` after canonicalization —
-// any layout where the user (or Bear's "Нова нотатка" URL template
-// cursor) put body content into the preamble zone gets normalized to
-// the canonical contract `H1 / tag-line / --- / body` on the next
-// regen tick. Dispatch order is H1 → header → preamble → leading-blank
-// → body; preamble runs only AFTER consumeHeader has had its chance to
+// any layout where the user (or Bear's new-note URL template cursor)
+// put body content into the preamble zone gets normalized to the
+// canonical contract `H1 / tag-line / --- / body` on the next regen
+// tick. Dispatch order is H1 → header → preamble → leading-blank →
+// body; preamble runs only AFTER consumeHeader has had its chance to
 // claim header-shape lines.
 //
 // Rejects lines that LOOK like canonical-line debris — `#<token> |...`
@@ -137,11 +137,13 @@ func (d *Domain) parseAtomicContent(content, author string) AtomicParts {
 // The leading `#<tag>` token comes from d.ResolveCanonicalTag(bucket) so domains
 // that preserve sub-tags can emit `#<top>/<bucket>` per atomic without
 // touching the rest of the canonicalization flow. The `preamble` argument
-// is retained for back-compatibility with callers that have NOT yet
-// hoisted preamble-zone content into the body via `hoistPreambleToBody`.
-// Production callers (`upsertAtomicBacklink`, `RenderCanonicalForBootstrap`,
-// `RenderAtomicCanonicalForTest`) all hoist first and pass nil here, so
-// new content never lands between H1 and the canonical tag-line.
+// is retained for back-compatibility with callers that have NOT yet hoisted
+// preamble-zone content via `hoistPreambleToBody`. Production callers
+// (`upsertAtomicBacklink`, `RenderCanonicalForBootstrap`,
+// `RenderAtomicCanonicalForTest`) all hoist first, which sets
+// `parts.PreambleLines = nil` — so the slice passed here is empty by the
+// time the call lands, and new content never sits between H1 and the
+// canonical tag-line.
 func (d *Domain) renderAtomicCanonical(
 	h1Line string,
 	preamble,
@@ -225,11 +227,10 @@ func isEmptyH1(line string) bool {
 // hoistPreambleToBody relocates content the parser placed between H1
 // and the canonical tag-line into the body zone (below `---`). Mirrors
 // the bootstrap behavior across the per-domain regen path so notes
-// authored via Bear's "Нова нотатка" URL template — where Bear's cursor
+// authored via Bear's new-note URL template — where Bear's cursor
 // frequently lands above the canonical line — get normalized to the
 // canonical contract `H1 / tag-line / --- / body` on the next regen
-// tick. Idempotent: runs unconditionally; no-ops when PreambleLines is
-// empty.
+// tick. Idempotent: no-ops when PreambleLines is empty.
 func hoistPreambleToBody(p *AtomicParts) {
 	if len(p.PreambleLines) == 0 {
 		return
@@ -240,7 +241,7 @@ func hoistPreambleToBody(p *AtomicParts) {
 
 // RenderAtomicCanonicalForTest exposes the in-memory rendering path of
 // upsertAtomicBacklink without the bearcli round-trip. Tests use it to
-// assert canonical body shape (H1 stamping, preamble preservation,
+// assert canonical body shape (H1 stamping, preamble hoist,
 // canonical-line composition) deterministically. The noteTitle arg is
 // kept in the signature so tests document the historical Bear-side
 // title input — the new datetime-stamp path doesn't consult it.

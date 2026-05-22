@@ -58,9 +58,10 @@ type AtomicMeta struct {
 // parseAtomicContent / renderAtomicCanonical round-trip.
 //
 // PreambleLines captures non-tag-line content that lives BETWEEN the H1
-// and the first canonical header line. Per spec component 5 those
-// lines must round-trip in-place at render time (between H1 and the
-// canonical tag-line) — not get pushed below `---` into the body zone.
+// and the first canonical header line at parse time. Production render
+// paths call hoistPreambleToBody to relocate these lines below the `---`
+// separator before emission, so the rendered shape is uniformly
+// `H1 / tag-line / --- / body` and nothing survives in the preamble zone.
 type AtomicParts struct {
 	H1Line        string
 	PreambleLines []string

@@ -76,12 +76,10 @@ func TestUpsertAtomic_StampsH1WhenAbsent(t *testing.T) {
 
 // TestUpsertAtomic_HoistsPreambleToBody locks the canonical contract:
 // non-tag-line content that landed between H1 and the tag-line (e.g.
-// because Bear's "Нова нотатка" URL-cursor dropped the user above the
+// because Bear's new-note URL cursor dropped the user above the
 // canonical line) must be HOISTED below `---` on the next regen.
 // Mirrors the bootstrap fast-pass behavior so the per-domain regen path
-// converges to the same shape: `H1 / tag-line / --- / body`. Reverses
-// the original "preserve in place" assertion (spec component 5,
-// retired 2026-05-22).
+// converges to the same shape: `H1 / tag-line / --- / body`.
 func TestUpsertAtomic_HoistsPreambleToBody(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 13, 15, 25, 0, 0, time.Local)
 	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })

@@ -57,8 +57,8 @@ func TestBearcliFixtures_UserAuthoredH1(t *testing.T) {
 // TestBearcliFixtures_PreambleBody locks the canonical hoist: non-tag-line
 // content that the parser captured between H1 and the canonical tag-line
 // is moved below `---` on render, so the tag-line sits directly under H1.
-// Reverses the original "preserve in place" assertion (spec component 5,
-// retired 2026-05-22 — see hoistPreambleToBody in bear/domain/canonical.go).
+// See hoistPreambleToBody in bear/domain/canonical.go for the relocation
+// helper.
 func TestBearcliFixtures_PreambleBody(t *testing.T) {
 	note := loadBearcliFixture(t, "preamble_body.json")
 	d := render.NewFlatListDomain("library/quotes", "✱ Quotes")

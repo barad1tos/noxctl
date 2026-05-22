@@ -1,18 +1,13 @@
 // Package bear_test — auto_tag_test.go locks the canonical-
 // bootstrap contract for ApplyDailyDefaultTag and RenderCanonicalForBootstrap.
 //
-// Before fix, fast-pass used `stampDailyTag` with an append-at-
-// end strategy that left user-typed body lines stranded as preamble
-// ABOVE the canonical tag-line after the regen cycle (parseAtomicContent
-// classified them as preamble; renderAtomicCanonical emits preamble
-// above tag-line per spec component 5). Empty notes lost their Bear-
-// auto-generated H1 timestamp because the new content carried no H1
-// line and bearcli overwrite recomputes display title from H1.
-//
-// The new contract: the fast-pass writes the canonical body in a single
-// bearcli call — H1 preserved or stamped, tag-line directly under H1,
-// body below `---` separator. The subsequent regen cycle no-ops via
-// equalIgnoringNewNoteLink.
+// The fast-pass writes the canonical body in a single bearcli call —
+// H1 preserved or stamped, tag-line directly under H1, body below
+// `---` separator. parseAtomicContent classifies free-form lines that
+// land between H1 and the tag-line as preamble; hoistPreambleToBody
+// then relocates them into the body zone so the rendered output never
+// carries content above the tag-line. The subsequent regen cycle
+// no-ops via equalIgnoringNewNoteLink.
 package bear_test
 
 import (

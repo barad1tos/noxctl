@@ -97,19 +97,20 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 		AutoTagPollInterval: dc.AutoTagPollInterval,
 	}
 
-	// Surface silently-disabled fast-passes once at startup so the
+	// Surface silently-no-op'd fast-passes once at startup so the
 	// operator notices catalog/runtime drift without grepping every
 	// poll tick. The two passes have different gates: foreign-tag
-	// escape is feature-on by default and runs unconditionally; daily
+	// escape is gated only on `Features.ForeignTagEscape`; daily
 	// default stamping requires both the feature flag AND a non-empty
 	// [meta].daily_default_tag in the catalog, and silently no-ops
 	// when the catalog omits the latter. Emit a one-shot WARN so the
 	// next operator who sees "untagged note didn't roll" finds a
 	// breadcrumb in the log.
 	if opts.Features.AutoTagDefault && opts.DailyDefaultTag == "" {
-		log.Printf("WARN: auto-tag default disabled — features.auto_tag_default=true " +
+		log.Printf("WARN: daily-default tag stamping inactive — features.auto_tag_default=true " +
 			"but [meta].daily_default_tag is unset in the catalog; untagged notes will " +
-			"NOT be stamped with a default tag until the catalog declares one")
+			"NOT be stamped with a default tag until the catalog declares one " +
+			"(example: [meta].daily_default_tag = \"quicknote/daily\")")
 	}
 
 	// Emit the startup marker `noxctl verify --check daemon-log` rewinds
