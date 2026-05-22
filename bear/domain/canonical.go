@@ -136,17 +136,12 @@ func (d *Domain) parseAtomicContent(content, author string) AtomicParts {
 //
 // The leading `#<tag>` token comes from d.ResolveCanonicalTag(bucket) so domains
 // that preserve sub-tags can emit `#<top>/<bucket>` per atomic without
-// touching the rest of the canonicalization flow. The `preamble` argument
-// is retained for back-compatibility with callers that have NOT yet hoisted
-// preamble-zone content via `hoistPreambleToBody`. Production callers
-// (`upsertAtomicBacklink`, `RenderCanonicalForBootstrap`,
-// `RenderAtomicCanonicalForTest`) all hoist first, which sets
-// `parts.PreambleLines = nil` — so the slice passed here is empty by the
-// time the call lands, and new content never sits between H1 and the
-// canonical tag-line.
+// touching the rest of the canonicalization flow. Callers must invoke
+// `hoistPreambleToBody` on the parsed `AtomicParts` before threading
+// `contentBody` here — the canonical shape is `H1 / tag-line / --- /
+// body` with no preamble zone.
 func (d *Domain) renderAtomicCanonical(
 	h1Line string,
-	preamble,
 	extraTags []string,
 	bucket,
 	backlink,
@@ -165,9 +160,6 @@ func (d *Domain) renderAtomicCanonical(
 	suffix += NewNoteURLFromDomain(d).Emit()
 	var b strings.Builder
 	b.WriteString(h1Line + "\n")
-	for _, line := range preamble {
-		b.WriteString(line + "\n")
-	}
 	_, _ = fmt.Fprintf(&b, "%s | %s%s\n---\n\n", tagLine, backlink, suffix)
 	if contentBody != "" {
 		b.WriteString(contentBody + "\n")
@@ -204,7 +196,7 @@ func (d *Domain) upsertAtomicBacklink(
 	hoistPreambleToBody(&parts)
 	contentBody := strings.Trim(strings.Join(parts.BodyLines, "\n"), "\n ")
 	desired := d.renderAtomicCanonical(
-		parts.H1Line, parts.PreambleLines, parts.ExtraTags, bucket,
+		parts.H1Line, parts.ExtraTags, bucket,
 		d.backlinkFor(bucket), d.sectionFor(bucket, parts), contentBody,
 	)
 
@@ -255,7 +247,7 @@ func RenderAtomicCanonicalForTest(t interface{ Helper() }, d *Domain, noteTitle,
 	hoistPreambleToBody(&parts)
 	contentBody := strings.Trim(strings.Join(parts.BodyLines, "\n"), "\n ")
 	return d.renderAtomicCanonical(
-		parts.H1Line, parts.PreambleLines, parts.ExtraTags, bucket,
+		parts.H1Line, parts.ExtraTags, bucket,
 		d.backlinkFor(bucket), d.sectionFor(bucket, parts), contentBody,
 	)
 }
@@ -286,7 +278,7 @@ func (d *Domain) RenderCanonicalForBootstrap(existingContent string) string {
 	hoistPreambleToBody(&parts)
 	contentBody := strings.Trim(strings.Join(parts.BodyLines, "\n"), "\n ")
 	return d.renderAtomicCanonical(
-		parts.H1Line, parts.PreambleLines, parts.ExtraTags, d.UnknownBucket,
+		parts.H1Line, parts.ExtraTags, d.UnknownBucket,
 		d.backlinkFor(d.UnknownBucket), d.sectionFor(d.UnknownBucket, parts), contentBody,
 	)
 }
