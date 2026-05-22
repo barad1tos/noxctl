@@ -134,6 +134,7 @@ func featuresFromCatalog(cat *config.Catalog) engine.Features {
 		TimePromotion:     true,
 		ForeignTagEscape:  true,
 		DuplicateRegistry: true,
+		DomainBootstrap:   true,
 	}
 	if cat == nil {
 		return f
@@ -152,6 +153,9 @@ func featuresFromCatalog(cat *config.Catalog) engine.Features {
 	}
 	if cat.Features.DuplicateRegistry != nil {
 		f.DuplicateRegistry = *cat.Features.DuplicateRegistry
+	}
+	if cat.Features.DomainBootstrap != nil {
+		f.DomainBootstrap = *cat.Features.DomainBootstrap
 	}
 	return f
 }
