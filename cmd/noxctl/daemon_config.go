@@ -59,11 +59,7 @@ func init() {
 // outcome: dump on success, exit-2 when daemon.toml is present but
 // LoadDaemon returns a parse error, propagate the error otherwise.
 func runDaemonConfigShow(cmd *cobra.Command, _ []string) error {
-	home, homeErr := os.UserHomeDir()
-	if homeErr != nil {
-		home = "."
-	}
-	path := filepath.Join(home, ".noxctl", "daemon.toml")
+	path := daemonConfigPath()
 	dc, loadErr := config.LoadDaemon(path)
 	if loadErr != nil {
 		// File present but unparseable → exit 2 per spec. Stat
@@ -80,6 +76,20 @@ func runDaemonConfigShow(cmd *cobra.Command, _ []string) error {
 	present := !errors.Is(statErr, fs.ErrNotExist)
 	writeDaemonConfigShow(cmd.OutOrStdout(), path, dc, present)
 	return nil
+}
+
+// daemonConfigPath resolves the canonical daemon-config path
+// (`$HOME/.noxctl/daemon.toml`). Falls back to a `./.noxctl/`
+// relative path when the home dir lookup fails (tests, sandboxed
+// invocations). Shared between `daemon-config show` and the actual
+// `runDaemon` startup wiring so the two CANNOT disagree about which
+// file they're reading.
+func daemonConfigPath() string {
+	home, homeErr := os.UserHomeDir()
+	if homeErr != nil {
+		home = "."
+	}
+	return filepath.Join(home, ".noxctl", "daemon.toml")
 }
 
 // writeDaemonConfigShow renders the dump. Kept under gocognit by

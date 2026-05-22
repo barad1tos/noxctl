@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 )
@@ -58,6 +59,15 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 		return loadErr
 	}
 
+	// Load daemon-toml runtime config (poll intervals, debounce, audit
+	// gate, bearcli concurrency). LoadDaemon tolerates a missing file
+	// (returns defaults) so an operator with only a catalog still gets
+	// a working daemon.
+	dc, daemonErr := config.LoadDaemon(daemonConfigPath())
+	if daemonErr != nil {
+		return fmt.Errorf(errFmtNoxctlDaemon, daemonErr)
+	}
+
 	pins, _ := domain.LoadPinRegistry(target)
 
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
@@ -69,17 +79,37 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 	}
 	opts := engine.DaemonOpts{
 		ApplyOpts: engine.ApplyOpts{
-			Domains:         domains,
-			Pins:            pins,
-			StatePath:       "./.noxctl/state.json",
-			LockPath:        "./.noxctl/.lock",
-			Features:        featuresFromCatalog(cat),
-			AuditEnabled:    false,
-			Stderr:          os.Stderr,
-			DailyDefaultTag: dailyDefaultTagFromCatalog(cat),
-			PromotionRules:  promotionRulesFromCatalog(cat),
+			Domains:            domains,
+			Pins:               pins,
+			StatePath:          dc.StatePath,
+			LockPath:           dc.LockPath,
+			Features:           featuresFromCatalog(cat),
+			AuditEnabled:       dc.AuditEnabled,
+			BearcliConcurrency: dc.BearcliConcurrency,
+			Stderr:             os.Stderr,
+			DailyDefaultTag:    dailyDefaultTagFromCatalog(cat),
+			PromotionRules:     promotionRulesFromCatalog(cat),
 		},
-		BearDBDir: bearDBDir,
+		BearDBDir:           bearDBDir,
+		DebouncePause:       dc.DebouncePause,
+		MaxBurstWindow:      dc.MaxBurstWindow,
+		MtimePollInterval:   dc.MtimePollInterval,
+		AutoTagPollInterval: dc.AutoTagPollInterval,
+	}
+
+	// Surface silently-disabled fast-passes once at startup so the
+	// operator notices catalog/runtime drift without grepping every
+	// poll tick. The two passes have different gates: foreign-tag
+	// escape is feature-on by default and runs unconditionally; daily
+	// default stamping requires both the feature flag AND a non-empty
+	// [meta].daily_default_tag in the catalog, and silently no-ops
+	// when the catalog omits the latter. Emit a one-shot WARN so the
+	// next operator who sees "untagged note didn't roll" finds a
+	// breadcrumb in the log.
+	if opts.Features.AutoTagDefault && opts.DailyDefaultTag == "" {
+		log.Printf("WARN: auto-tag default disabled — features.auto_tag_default=true " +
+			"but [meta].daily_default_tag is unset in the catalog; untagged notes will " +
+			"NOT be stamped with a default tag until the catalog declares one")
 	}
 
 	// Emit the startup marker `noxctl verify --check daemon-log` rewinds
