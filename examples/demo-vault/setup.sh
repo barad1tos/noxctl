@@ -59,10 +59,14 @@ for entry in "${BOOKS[@]}"; do
   author="${rest%%|*}"
   body="${rest#*|}"
 
-  # The H1 IS the title; Bear infers the note title from the first
-  # heading. Body carries the #nox-demo/books hashtag so Bear picks
-  # the tag up via in-body parsing.
-  content=$(printf '# %s\n\n%s\n\n— %s\n\n#nox-demo/books\n' \
+  # Body shape — tag-FIRST, body-AFTER. The H1 IS the title; Bear
+  # infers the note title from the first heading. Tag immediately
+  # under H1 keeps the demo Bear-faithful AND ensures `noxctl apply`
+  # routes the description + author byline into the post-`---`
+  # content section (where contentBody belongs per the canonical
+  # spec), not into the preamble zone above the canonical line
+  # where user-authored content above the tag would normally sit.
+  content=$(printf '# %s\n#nox-demo/books\n\n%s\n\n— %s\n' \
     "$title" "$body" "$author")
 
   # bearcli's --if-not-exists short-circuits duplicate-title creates
