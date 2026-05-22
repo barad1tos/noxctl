@@ -22,26 +22,24 @@ import (
 const daemonConfigFile = "daemon.toml"
 
 func TestExamples_AllCatalogFilesLoad(t *testing.T) {
-	matches, err := filepath.Glob("../../../examples/*.toml")
+	matches, err := collectExampleCatalogs("../../../examples")
 	if err != nil {
-		t.Fatalf("glob examples/*.toml: %v", err)
+		t.Fatalf("walk examples/: %v", err)
 	}
 	if len(matches) == 0 {
-		t.Fatalf("no examples/*.toml files found — expected at least 1 catalog example")
+		t.Fatalf("no catalog examples found under examples/ — expected at least 1")
 	}
 
 	loaded := 0
 	for _, path := range matches {
 		base := filepath.Base(path)
-		if base == daemonConfigFile {
-			continue
-		}
-		t.Run(base, func(t *testing.T) {
+		t.Run(filepath.ToSlash(strings.TrimPrefix(path, "../../../examples/")), func(t *testing.T) {
 			if _, _, loadErr := config.Load(path); loadErr != nil {
 				t.Errorf("config.Load(%s): %v", path, loadErr)
 			}
 		})
 		loaded++
+		_ = base
 	}
 
 	if loaded < 1 {
@@ -113,16 +111,13 @@ func TestExamples_MinimalIsTrulyMinimal(t *testing.T) {
 // users staring at a TOML file with no context. Cheap insurance
 // against future additions skipping the header.
 func TestExamples_DocstringHeader(t *testing.T) {
-	matches, err := filepath.Glob("../../../examples/*.toml")
+	matches, err := collectExampleCatalogs("../../../examples")
 	if err != nil {
-		t.Fatalf("glob: %v", err)
+		t.Fatalf("walk examples/: %v", err)
 	}
 	for _, path := range matches {
-		base := filepath.Base(path)
-		if base == daemonConfigFile {
-			continue
-		}
-		t.Run(base, func(t *testing.T) {
+		relPath := filepath.ToSlash(strings.TrimPrefix(path, "../../../examples/"))
+		t.Run(relPath, func(t *testing.T) {
 			data, readErr := readFirstLine(path)
 			if readErr != nil {
 				t.Fatalf("read %s: %v", path, readErr)
@@ -130,10 +125,35 @@ func TestExamples_DocstringHeader(t *testing.T) {
 			if !strings.HasPrefix(data, "# ") {
 				t.Errorf("examples/%s must open with a `# ` comment "+
 					"header explaining when to use this example; got: %q",
-					base, data)
+					relPath, data)
 			}
 		})
 	}
+}
+
+// collectExampleCatalogs walks `dir` recursively and returns every
+// `.toml` file EXCEPT daemon.toml (different schema — daemon runtime
+// config, not catalog). Used by both the load-correctness test and
+// the docstring-header test so demo-vault subdirectories get the
+// same guarantees as top-level examples.
+func collectExampleCatalogs(dir string) ([]string, error) {
+	var out []string
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if filepath.Base(path) == daemonConfigFile {
+			return nil
+		}
+		if filepath.Ext(path) == ".toml" {
+			out = append(out, path)
+		}
+		return nil
+	})
+	return out, err
 }
 
 func readFirstLine(path string) (string, error) {

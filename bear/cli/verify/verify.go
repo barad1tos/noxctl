@@ -3,15 +3,15 @@
 // Composes three vault-bound checks into a single PASS/FAIL signal that
 // gates ship/release/migration cuts:
 //
-//  1. Plan parity — `engine.Plan` against the configured vault must
-//     return zero drift. Catches catalog↔reality divergence; requires
+//  1. Plan parity  `engine.Plan` against the configured vault must
+//     return zero drift. Catches catalogreality divergence; requires
 //     the plan-vs-apply parity fix in `bear/engine/plan.go` to be a
 //     truthful signal.
-//  2. Daemon log scan — `~/.cache/regen-watchd.log` since the most
+//  2. Daemon log scan  `~/.cache/regen-watchd.log` since the most
 //     recent `regen-watchd starting` line must have zero occurrences
 //     of `LOOP detected`, `EMERGENCY DISABLE`, or `ERROR:`. Catches
 //     runtime issues the per-cycle log surfaces but plan can't see.
-//  3. Apply idempotency (opt-in via `--with-apply`) — runs `apply`
+//  3. Apply idempotency (opt-in via `--with-apply`)  runs `apply`
 //     twice; the second pass must report zero changes across every
 //     domain. Catches non-idempotent renderers that produce drift on
 //     each cycle. Destructive (writes to vault); opt-in only.
@@ -43,12 +43,12 @@ type Options struct {
 	// search order (./noxctl.toml then $NOXCTL_CONFIG).
 	ConfigPath string
 	// WithApply opts into the destructive apply-twice idempotency
-	// check. Default false — verify stays read-only.
+	// check. Default false  verify stays read-only.
 	WithApply bool
 	// ApplyOpts is the template `engine.Apply` invocation verify
 	// uses when `WithApply` is true. The caller fills Pins,
 	// StatePath, LockPath, Features (typically via the cmd-layer's
-	// `featuresFromCatalog`) — verify overrides Domains and Stderr
+	// `featuresFromCatalog`)  verify overrides Domains and Stderr
 	// at call time. Required when WithApply is true; ignored
 	// otherwise. Without these the underlying `engine.Apply` errors
 	// at flock-acquire with "AcquireApply open : no such file or
@@ -62,7 +62,7 @@ type Options struct {
 	Strict bool
 	// Output picks text|json; ValidateOutput enforces.
 	Output string
-	// Stdout / Stderr — io sinks (test injection).
+	// Stdout / Stderr  io sinks (test injection).
 	Stdout io.Writer
 	Stderr io.Writer
 }
@@ -71,16 +71,16 @@ type Options struct {
 type Status string
 
 const (
-	// StatusPass — check ran and the contract holds.
+	// StatusPass  check ran and the contract holds.
 	StatusPass Status = "pass"
-	// StatusFail — check ran and the contract is broken (e.g. drift
+	// StatusFail  check ran and the contract is broken (e.g. drift
 	// detected, log has warnings, idempotency violated).
 	StatusFail Status = "fail"
-	// StatusSkipped — check intentionally not run (e.g.
+	// StatusSkipped  check intentionally not run (e.g.
 	// apply-idempotency without --with-apply).
 	StatusSkipped Status = "skipped"
-	// StatusError — check could not run (e.g. bearcli unreachable,
-	// config file missing, daemon log absent). Distinct from FAIL —
+	// StatusError  check could not run (e.g. bearcli unreachable,
+	// config file missing, daemon log absent). Distinct from FAIL 
 	// signals "verify can't make a verdict", not "verdict is no".
 	StatusError Status = "error"
 )
@@ -101,7 +101,7 @@ type Summary struct {
 	Error   int `json:"error"`
 }
 
-// Result is the full Run output — every check plus the summary.
+// Result is the full Run output  every check plus the summary.
 type Result struct {
 	SchemaVersion int       `json:"schema_version"`
 	StartedAt     time.Time `json:"started_at"`
@@ -125,9 +125,9 @@ var ErrVerifyRuntimeError = errors.New("noxctl verify: runtime error")
 // ErrVerifyInterrupted is returned when SIGINT or SIGTERM canceled
 // the run mid-flight. Symmetric with `cli.ErrInterrupted`. The cmd
 // layer maps this to `errInterrupted`, which `main.go` dispatches to
-// `ExitInterrupted = 130` — the project-wide POSIX 128 + SIGINT
+// `ExitInterrupted = 130`  the project-wide POSIX 128 + SIGINT
 // convention. Without this, a Ctrl-C during `--with-apply` would
-// surface as a generic StatusError → exit 1, hiding the operator's
+// surface as a generic StatusError  exit 1, hiding the operator's
 // intent from any caller that branches on exit code.
 //
 // Takes priority over `ErrVerifyFailed` / `ErrVerifyRuntimeError` in
@@ -149,7 +149,7 @@ func ValidateOutput(output string) error {
 // check, renders the result, and returns one of (nil, ErrVerifyFailed,
 // ErrVerifyRuntimeError, render error).
 //
-// Initializes the bearcli semaphore at entry — `engine.Plan` and
+// Initializes the bearcli semaphore at entry  `engine.Plan` and
 // `engine.Apply` both consume the pool. Same constant as the daemon
 // and apply paths (`engine.DefaultBearcliConcurrency`).
 func Run(ctx context.Context, opts Options) error {
@@ -158,7 +158,7 @@ func Run(ctx context.Context, opts Options) error {
 	// Bridge SIGINT / SIGTERM into ctx cancellation so the apply-
 	// idempotency check's engine.Apply call can yield cleanly and
 	// finalize can translate to ErrVerifyInterrupted (exit 130 at
-	// the cmd layer). Mirrors cli.RunPlan's signal handling — verify
+	// the cmd layer). Mirrors cli.RunPlan's signal handling  verify
 	// owns the same boundary.
 	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -169,10 +169,10 @@ func Run(ctx context.Context, opts Options) error {
 		Checks:        make([]Check, 0, 3),
 	}
 
-	// Load the catalog once — every check needs it. A load error
+	// Load the catalog once  every check needs it. A load error
 	// fails the gate immediately (no point running plan without a
 	// catalog).
-	domains, _, err := config.Load(opts.ConfigPath)
+	domains, cat, err := config.Load(opts.ConfigPath)
 	if err != nil {
 		result.Checks = append(result.Checks, Check{
 			Name:    "catalog-load",
@@ -181,6 +181,12 @@ func Run(ctx context.Context, opts Options) error {
 		})
 		result.CompletedAt = time.Now().UTC()
 		return finalize(sigCtx, opts, &result)
+	}
+	// Apply catalog-declared locale before plan-parity renders any
+	// hub/master strings — otherwise verify diffs against the wrong
+	// locale and false-reports drift on en/uk-mismatched vaults.
+	if cat != nil && cat.Meta.Locale != "" {
+		domain.SetLocale(cat.Meta.Locale)
 	}
 
 	result.Checks = append(
@@ -203,7 +209,7 @@ func Run(ctx context.Context, opts Options) error {
 }
 
 // defaultIOAndPool fills nil Stdout/Stderr with the process streams
-// and seeds the bearcli pool. Idempotent — sync.Once inside
+// and seeds the bearcli pool. Idempotent  sync.Once inside
 // SetBearcliConcurrency suppresses repeat calls.
 func defaultIOAndPool(opts *Options) {
 	if opts.Stdout == nil {
@@ -219,7 +225,7 @@ func defaultIOAndPool(opts *Options) {
 // INTERRUPTED/FAIL/ERROR/nil dispatch.
 //
 // Render happens BEFORE the ctx-cancellation check so the operator
-// sees what completed before SIGINT arrived — matches cli.RunPlan's
+// sees what completed before SIGINT arrived  matches cli.RunPlan's
 // render-then-translate ordering and gives the operator
 // post-mortem visibility instead of a silent stop.
 func finalize(ctx context.Context, opts Options, result *Result) error {
@@ -239,7 +245,7 @@ func finalize(ctx context.Context, opts Options, result *Result) error {
 		return err
 	}
 	// Interrupted trumps every other verdict. The operator's
-	// Ctrl-C intent is "stop, signal exit 130" — not "I want to
+	// Ctrl-C intent is "stop, signal exit 130"  not "I want to
 	// know if drift was found before you stopped".
 	if ctx.Err() != nil {
 		return ErrVerifyInterrupted
