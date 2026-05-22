@@ -56,7 +56,13 @@ A book by Yuval Noah Harari about human history.
 - [[The Pragmatic Programmer]]
 ```
 
-*Bear-rendered screenshots: pending — see [docs/screenshots/](docs/screenshots/) once the demo vault assets land.*
+Same `#library/books` tag rendered in Bear, before and after `noxctl apply`:
+
+| Before | After |
+|---|---|
+| ![Bear filtered to #nox-demo/books before apply: five atom notes, no master](docs/screenshots/before.png) | ![Bear filtered to #nox-demo/books after apply: master ✱ Books plus five atoms, canonical tag-line chips on each](docs/screenshots/after.png) |
+
+(Demo vault is at `examples/demo-vault/` — `setup.sh` populates it under `#nox-demo/books` and the paired `noxctl.toml` manages exactly that tag.)
 
 ## Quick start
 
