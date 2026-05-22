@@ -1,0 +1,27 @@
+# noxctl.toml — hub-routed-with-subtag blueprint example
+#
+# Use hub-routed-with-subtag when:
+# - Hub-routed's data-driven bucket discovery isn't quite right —
+#   atoms HAVE a sub-tag (`#it/agents`, `#it/vendors`, …) that
+#   already carries the bucket signal.
+# - You want hub-routed's Tier-2 layout (one hub per bucket) but
+#   driven by the sub-tag instead of the canonical bucket pipe-
+#   segment.
+# - Pre-declared bucket set + sub-tag routing is cleaner than the
+#   free-form hub-routed shape.
+#
+# Atoms get a canonical tag-line `#tag/<sub> | [[Hub Title]] |
+# section`; the sub-tag IS the bucket name.
+#
+# Required: tag, index_title, blueprint, buckets, unknown_bucket.
+# Optional: subtag (override the sub-tag prefix used for routing).
+
+[meta]
+  version = "1"
+
+[[domain]]
+  tag            = "it"
+  index_title    = "✱ IT"
+  blueprint      = "hub-routed-with-subtag"
+  buckets        = ["agents", "vendors", "technologies"]
+  unknown_bucket = "other"

@@ -120,6 +120,9 @@ func buildVerifyApplyTemplate() (engine.ApplyOpts, error) {
 		return engine.ApplyOpts{}, fmt.Errorf("verify --with-apply: %s",
 			config.FormatLoadError(loadErr, configPath))
 	}
+	if cat != nil && cat.Meta.Locale != "" {
+		domain.SetLocale(cat.Meta.Locale)
+	}
 	_, pinTarget := pinPaths()
 	pins, _ := domain.LoadPinRegistry(pinTarget)
 	return engine.ApplyOpts{

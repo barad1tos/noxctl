@@ -1,0 +1,40 @@
+# noxctl.toml — hub-routed blueprint example
+#
+# Use hub-routed when:
+# - Atoms group by an author/source/category extracted from the
+#   atom body (not from a sub-tag). The CANONICAL TAG-LINE of each
+#   atom carries `#tag | [[Bucket Hub]] | section` — the second
+#   pipe-segment names the bucket.
+# - You want a Tier-2 layout: master lists hubs (one per bucket),
+#   each hub lists atoms within that bucket.
+# - Bucket discovery is data-driven (vs flat-table where buckets
+#   are operator-declared).
+#
+# What it produces:
+#   Master:
+#     ## Hubs (N)
+#     - [[Author One Hub]]
+#     - [[Author Two Hub]]
+#
+#   Per-hub note (e.g. "Author One Hub"):
+#     ## Poems (M)
+#     - [[Atom A]]
+#     - [[Atom B]]
+#
+# Required: tag, index_title, blueprint, unknown_bucket,
+# hub_h2_prefix.
+# Optional: own_group / own_aliases (alias bucket names),
+# hub_h2_legacy (accept old H2 headings), legacy_author_fallback,
+# strip_legacy_author_h2, master_section blocks.
+
+[meta]
+  version = "1"
+
+[[domain]]
+  tag            = "library/poetry"
+  index_title    = "✱ Poetry"
+  blueprint      = "hub-routed"
+  unknown_bucket = "Unknown"
+  hub_h2_prefix  = "Poems"
+  # own_group   = "My poetry"            # optional: bucket alias
+  # own_aliases = ["My poetry", "Mine"]  # optional: bucket synonyms

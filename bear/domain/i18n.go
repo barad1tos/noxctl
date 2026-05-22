@@ -87,7 +87,7 @@ func T(key string) string {
 }
 
 // SetLocale changes the active locale used by T. Tests must restore the
-// prior value via t.Cleanup (— explicit per-test reset).
+// prior value via t.Cleanup — explicit per-test reset.
 func SetLocale(locale string) {
 	catalogMu.Lock()
 	activeLocale = locale

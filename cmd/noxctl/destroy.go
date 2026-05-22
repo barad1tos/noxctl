@@ -9,6 +9,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/barad1tos/noxctl/bear/cli"
+	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/engine"
 )
 
 // destroyAutoApprove is the --auto-approve flag binding. When true,
@@ -66,10 +68,14 @@ non-interactive (CI / script) runs.`,
 // orchestration off to bear/cli/cli.RunDestroy, and maps the typed
 // sentinels back to readable stderr lines before propagating.
 func runDestroy(cmd *cobra.Command, args []string) error {
-	domains, loadErr := domainsWithPreflight()
+	domains, _, _, loadErr := domainsWithPreflight()
 	if loadErr != nil {
 		return loadErr
 	}
+	// Initialize the bearcli pool — destroy issues bearcli list +
+	// trash + overwrite calls and would otherwise fail with "pool not
+	// initialized". Mirrors the init in apply.go / daemon.go / verify.go.
+	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
 	return runWithSignalContext(cmd, func(ctx context.Context) error {
 		err := cli.RunDestroy(ctx, cli.DestroyOptions{
 			Domains:     domains,

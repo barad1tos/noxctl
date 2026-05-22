@@ -1,0 +1,103 @@
+# noxctl i18n catalog — en locale.
+#
+# Mirrors uk.toml key-for-key with English equivalents. The
+# domain-specific catalog keys (`library.poetry.*`, `it.*`, etc.)
+# are part of the maintainer's reference vault and ship in every
+# locale so a future English-language operator can opt into a
+# parallel structure without writing their own catalog.
+#
+# Lookup: `bear.T(key)`. Missing keys fall through to the
+# swappable `missingKeyHandler` (default: log.Fatalf) — adding a
+# new key in uk.toml without adding the en.toml sibling will fail
+# fast at first render.
+
+# --- Generic master/hub section labels (bear/renderers.go, bear/factory.go,
+# --- bear/subtag.go) ---
+"master.section.own-curated"      = "Curated"
+"master.section.authors"          = "Authors"
+"master.section.categories"       = "Categories"
+"master.section.divisions"        = "Sections"
+
+# --- Hub markers (bear/domain.go HubMarker — kept as Go const for now;
+# --- catalog ships the value for a future migration) ---
+"hub.curator-marker"              = "## ✱ Curator"
+
+# --- New-note link decoration (bear/new_note.go) ---
+"new-note.label"                  = "New Note"
+"atom.untitled-label"             = "Untitled"
+
+# --- Common shared values across many domains ---
+"common.unknown.other"            = "other"
+
+# --- library/poetry.go ---
+"library.poetry.index"            = "✱ Poetry"
+"library.poetry.own-group"        = "My poetry"
+"library.poetry.own-alias.short"  = "Mine"
+"library.poetry.unknown"          = "Unknown"
+"library.poetry.h2-prefix"        = "Poems"
+"library.poetry.h2-legacy"        = "Poetry"
+
+# --- library/articles.go ---
+"library.articles.index"          = "✱ Articles"
+"library.articles.own-group"      = "My articles"
+"library.articles.unknown"        = "Other"
+"library.articles.h2-prefix"      = "Articles"
+
+# --- library/lyrics.go ---
+"library.lyrics.index"            = "✱ Lyrics"
+"library.lyrics.unknown"          = "Unknown"
+"library.lyrics.h2-prefix"        = "Songs"
+
+# --- library/quotes.go ---
+"library.quotes.index"            = "✱ Quotes"
+"library.quotes.unknown"          = "No source"
+"library.quotes.h2-prefix"        = "Quotes"
+
+# --- library/aphorisms.go ---
+"library.aphorisms.index"         = "✱ Aphorisms"
+"library.aphorisms.unknown"       = "Unknown"
+"library.aphorisms.bucket.books"  = "Books"
+"library.aphorisms.bucket.movies" = "Films"
+"library.aphorisms.bucket.games"  = "Games"
+
+# --- library/prose.go ---
+"library.prose.index"             = "✱ Prose"
+"library.prose.bucket.own"        = "Mine"
+"library.prose.bucket.others"     = "Others"
+
+# --- llm/agents.go ---
+"llm.agents.index"                = "✱ LLM Agents"
+"llm.agents.h2-prefix"            = "Agents"
+"llm.agents.column.development"   = "Development"
+"llm.agents.column.infra-data"    = "Infra / Data"
+"llm.agents.column.quality"       = "Quality"
+"llm.agents.column.orchestration" = "Orchestration"
+"llm.agents.column.business"      = "Business"
+"llm.agents.column.other"         = "Other"
+
+# --- llm/{characters,rules,tips}.go ---
+"llm.characters.index"            = "✱ LLM Characters"
+"llm.rules.index"                 = "✱ LLM Rules"
+"llm.tips.index"                  = "✱ LLM Tips"
+
+# --- it/{domains,vendors,technologies}.go ---
+"it.domains.index"                = "✱ IT Domains"
+"it.technologies.index"           = "✱ IT Technologies"
+
+# --- personal/*.go ---
+"personal.claude.index"           = "✱ Claude"
+"personal.development.index"      = "✱ Development"
+"personal.english.index"          = "✱ English"
+"personal.health.index"           = "✱ Health"
+"personal.leisure.index"          = "✱ Leisure"
+"personal.humor.index"            = "✱ Humor"
+"personal.work.index"             = "✱ Work"
+"personal.instagram.index"        = "✱ Instagram"
+"personal.travel.index"           = "✱ Travel"
+
+# --- quicknote/*.go ---
+"quicknote.daily.index"           = "✱ Daily"
+"quicknote.weekly.index"          = "✱ Weekly"
+"quicknote.monthly.index"         = "✱ Monthly"
+"quicknote.yearly.index"          = "✱ Yearly"
+"quicknote.decadal.index"         = "✱ Decadal"

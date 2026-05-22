@@ -1,0 +1,25 @@
+# noxctl.toml — flat-list blueprint example
+#
+# Use flat-list when:
+# - The tag is a capture / inbox bucket where order doesn't matter.
+# - Notes carry no sub-tag categorization (no `#tag/sub` shape).
+# - You want one master note listing every atom as a wikilink bullet.
+#
+# What it produces:
+#   ## Notes
+#   - [[Atom title A]]
+#   - [[Atom title B]]
+#   - [[Atom title C]]
+#
+# Required fields: tag, index_title, blueprint.
+# Optional: quick_placeholder_h1 (rewrites the H1 of every new
+# untitled note to a domain-specific placeholder string).
+
+[meta]
+  version = "1"
+
+[[domain]]
+  tag         = "inbox"
+  index_title = "✱ Inbox"
+  blueprint   = "flat-list"
+  # quick_placeholder_h1 = "Untitled — inbox"  # optional

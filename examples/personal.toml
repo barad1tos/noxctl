@@ -1,3 +1,16 @@
+# noxctl.toml — maintainer's full 28-domain real-world reference
+#
+# The catalog Roman uses against his actual Bear vault. Covers every
+# blueprint (flat-list, flat-table, grouped-vertical, hub-routed,
+# hub-routed-with-subtag, umbrella) and demonstrates promotions,
+# umbrella+leaves relationships, and locale-specific (`uk`) hub /
+# master titles.
+#
+# This is reference material, not a starter. For getting-started
+# starters see `examples/minimal.toml` (1 domain) or
+# `examples/three-blueprints.toml` (three blueprints side-by-side).
+# For single-blueprint focus see `examples/<blueprint>.toml`.
+
 [meta]
   version = "1"
   locale = "uk"

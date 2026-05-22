@@ -1,0 +1,27 @@
+# noxctl.toml — demo vault catalog (paired with setup.sh)
+#
+# Single-domain catalog that manages the #nox-demo/books tag set up
+# by setup.sh. Used to produce the BEFORE/AFTER screenshots
+# referenced from the README's "What noxctl does to your vault"
+# section.
+#
+# DO NOT point your real noxctl daemon at this file — it ONLY
+# manages nox-demo/books and would not regen any of your other
+# domains. Use it strictly for the demo-vault flow:
+#
+#   1. examples/demo-vault/setup.sh  (creates the 5 fake atoms)
+#   2. take BEFORE screenshot in Bear
+#   3. noxctl apply --config examples/demo-vault/noxctl.toml
+#   4. take AFTER screenshot in Bear
+
+[meta]
+  version = "1"
+  locale  = "en"
+
+# flat-list because the demo atoms share no sub-tag categorization
+# — every note is a peer Books entry. Simplest blueprint, matches
+# the truly-minimal starter shape.
+[[domain]]
+  tag         = "nox-demo/books"
+  index_title = "✱ Books"
+  blueprint   = "flat-list"

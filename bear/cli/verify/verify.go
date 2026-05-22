@@ -4,7 +4,7 @@
 // gates ship/release/migration cuts:
 //
 //  1. Plan parity — `engine.Plan` against the configured vault must
-//     return zero drift. Catches catalog↔reality divergence; requires
+//     return zero drift. Catches catalog—reality divergence; requires
 //     the plan-vs-apply parity fix in `bear/engine/plan.go` to be a
 //     truthful signal.
 //  2. Daemon log scan — `~/.cache/regen-watchd.log` since the most
@@ -127,7 +127,7 @@ var ErrVerifyRuntimeError = errors.New("noxctl verify: runtime error")
 // layer maps this to `errInterrupted`, which `main.go` dispatches to
 // `ExitInterrupted = 130` — the project-wide POSIX 128 + SIGINT
 // convention. Without this, a Ctrl-C during `--with-apply` would
-// surface as a generic StatusError → exit 1, hiding the operator's
+// surface as a generic StatusError — exit 1, hiding the operator's
 // intent from any caller that branches on exit code.
 //
 // Takes priority over `ErrVerifyFailed` / `ErrVerifyRuntimeError` in
@@ -172,7 +172,7 @@ func Run(ctx context.Context, opts Options) error {
 	// Load the catalog once — every check needs it. A load error
 	// fails the gate immediately (no point running plan without a
 	// catalog).
-	domains, _, err := config.Load(opts.ConfigPath)
+	domains, cat, err := config.Load(opts.ConfigPath)
 	if err != nil {
 		result.Checks = append(result.Checks, Check{
 			Name:    "catalog-load",
@@ -181,6 +181,12 @@ func Run(ctx context.Context, opts Options) error {
 		})
 		result.CompletedAt = time.Now().UTC()
 		return finalize(sigCtx, opts, &result)
+	}
+	// Apply catalog-declared locale before plan-parity renders any
+	// hub/master strings — otherwise verify diffs against the wrong
+	// locale and false-reports drift on en/uk-mismatched vaults.
+	if cat != nil && cat.Meta.Locale != "" {
+		domain.SetLocale(cat.Meta.Locale)
 	}
 
 	result.Checks = append(

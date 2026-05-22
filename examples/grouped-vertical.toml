@@ -1,0 +1,33 @@
+# noxctl.toml — grouped-vertical blueprint example
+#
+# Use grouped-vertical when:
+# - Same input shape as flat-table (atoms share a sub-tag bucket).
+# - You want a VERTICAL layout (one H2 section per bucket, atoms
+#   listed as bullets under each), not a horizontal table.
+# - Better for buckets with many atoms — table cells in flat-table
+#   become hard to scan past ~10 rows.
+#
+# What it produces:
+#   ## Books (N)
+#   - [[Atom A]]
+#   - [[Atom B]]
+#
+#   ## Films (M)
+#   - [[Atom C]]
+#   - [[Atom D]]
+#
+#   ## Other (K)
+#   - [[Atom E]]
+#
+# Required: tag, index_title, blueprint, buckets, unknown_bucket
+# (same contract as flat-table — differs only in renderer choice).
+
+[meta]
+  version = "1"
+
+[[domain]]
+  tag            = "library/quotes"
+  index_title    = "✱ Quotes"
+  blueprint      = "grouped-vertical"
+  buckets        = ["Books", "Films", "Talks", "Articles"]
+  unknown_bucket = "Other"

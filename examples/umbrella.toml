@@ -1,0 +1,55 @@
+# noxctl.toml — umbrella blueprint example
+#
+# Use umbrella when:
+# - You want a TOP-LEVEL master that aggregates several leaf
+#   domains under it. The umbrella tag itself is "informational"
+#   (you don't tag atoms with it directly); its master lists every
+#   leaf and routes "new note" clicks to a designated default leaf.
+# - The leaf domains can be any other blueprint (flat-list, flat-
+#   table, hub-routed, etc.) — they're built first, then the
+#   umbrella references them by tag.
+#
+# What it produces (in the umbrella master):
+#   ## Children (3)
+#   - [[✱ Poetry]] (12 atoms)
+#   - [[✱ Aphorisms]] (8 atoms)
+#   - [[✱ Quotes]] (24 atoms)
+#
+# The "new note" link on the umbrella master targets the
+# `default_child` leaf — clicking it creates a new atom tagged
+# into that leaf's tag.
+#
+# Required: tag, index_title, blueprint, children, default_child.
+# `children` is a TOML array of leaf tag values that must each
+# resolve to a previously-defined [[domain]] in the catalog.
+# `default_child` MUST be one of the values in `children`.
+
+[meta]
+  version = "1"
+
+# Three leaf domains — declared first so the umbrella can reference
+# them. Order matters for the loader's two-pass resolution.
+[[domain]]
+  tag         = "library/poetry"
+  index_title = "✱ Poetry"
+  blueprint   = "flat-list"
+
+[[domain]]
+  tag         = "library/aphorisms"
+  index_title = "✱ Aphorisms"
+  blueprint   = "flat-list"
+
+[[domain]]
+  tag         = "library/quotes"
+  index_title = "✱ Quotes"
+  blueprint   = "flat-list"
+
+# The umbrella references the three leaves above. `default_child`
+# names the leaf whose tag gets stamped on a note created via the
+# umbrella's "new note" link.
+[[domain]]
+  tag           = "library"
+  index_title   = "✱ Library"
+  blueprint     = "umbrella"
+  children      = ["library/poetry", "library/aphorisms", "library/quotes"]
+  default_child = "library/poetry"
