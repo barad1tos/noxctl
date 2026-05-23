@@ -87,8 +87,9 @@ func SnapshotDomainRenderInputs(ctx context.Context, d *Domain) (RenderInputs, e
 	// facade used by engine.Plan; rebucket counts surface through the
 	// plan-diff renderer instead.
 	overrides := d.computeMasterOverrides(notes)
-	overrides = mergeOverrideLayer(overrides, d.computeHubOverrides(notes))
-	overrides = mergeOverrideLayer(overrides, d.computeTagOverrides(notes))
+	overrides = mergeOverrideLayer(overrides, d.computeHubOverrides(notes), nil)
+	tagOverrides, _ := d.computeTagOverrides(notes)
+	overrides = mergeOverrideLayer(overrides, tagOverrides, nil)
 	groups := d.groupAtomics(notes, overrides)
 	if groups == nil {
 		groups = map[string][]Note{}

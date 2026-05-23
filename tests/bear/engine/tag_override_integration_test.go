@@ -451,7 +451,7 @@ func TestTagOverrideIntegration_MembershipGuardSkipsForeignDomain(t *testing.T) 
 				Content: "# Шевченко\n#library/poetry | [[Шевченко]]\n---\n\nverse\n",
 			},
 		}
-		overrides := d.ComputeTagOverridesForTest(notes)
+		overrides, _ := d.ComputeTagOverridesForTest(notes)
 
 		// Note A SHOULD receive an override into tasks.
 		if got := overrides[atomNoteID]; got != "tasks" {

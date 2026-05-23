@@ -113,7 +113,7 @@ func runShapeOnly(t *testing.T, tc tagOverrideCase) {
 	if tc.mutateDomain != nil {
 		tc.mutateDomain(d)
 	}
-	got := d.ComputeTagOverridesForTest(noteFrom(tc))
+	got, _ := d.ComputeTagOverridesForTest(noteFrom(tc))
 	if tc.wantNilMap {
 		if got != nil {
 			t.Errorf("expected nil map, got %v", got)
@@ -151,9 +151,12 @@ func TestComputeTagOverrides(t *testing.T) {
 			Tags:    []string{"#work", "#work/tasks", "#work/development"},
 			Content: canonicalBody("інше"),
 		}}
-		got := d.ComputeTagOverridesForTest(notes)
+		got, conflicts := d.ComputeTagOverridesForTest(notes)
 		if _, present := got["note-002"]; present {
 			t.Errorf("note-002 should NOT be in override map, got %v", got)
+		}
+		if conflicts != 1 {
+			t.Errorf("conflict count = %d, want 1 (ambiguous-intent branch must increment counter)", conflicts)
 		}
 		assertWarningLog(t, buf.String())
 	})

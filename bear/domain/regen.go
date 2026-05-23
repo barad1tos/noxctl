@@ -34,17 +34,24 @@ func (d *Domain) RunRegen(ctx context.Context) {
 	// (snapshot is silent for engine.Plan).
 	overrides := d.computeMasterOverrides(notes)
 	if len(overrides) > 0 {
-		d.Logf("master regroup: %d atomic(s) moved between columns", len(overrides))
+		d.Logf("master layer claimed %d additional atomic(s)", len(overrides))
 	}
 	beforeHub := len(overrides)
-	overrides = mergeOverrideLayer(overrides, d.computeHubOverrides(notes))
+	overrides = mergeOverrideLayer(overrides, d.computeHubOverrides(notes), nil)
 	if hubAdded := len(overrides) - beforeHub; hubAdded > 0 {
-		d.Logf("hub regroup: %d atomic(s) moved between hubs", hubAdded)
+		d.Logf("hub layer claimed %d additional atomic(s)", hubAdded)
 	}
 	beforeTag := len(overrides)
-	overrides = mergeOverrideLayer(overrides, d.computeTagOverrides(notes))
+	tagOverrides, tagConflicts := d.computeTagOverrides(notes)
+	overrides = mergeOverrideLayer(overrides, tagOverrides, func(atomID, kept, suppressed string) {
+		d.Logf("WARN: tag override suppressed by higher layer: note %s wanted %s, kept %s",
+			atomID, suppressed, kept)
+	})
 	if tagAdded := len(overrides) - beforeTag; tagAdded > 0 {
-		d.Logf("tag regroup: %d atomic(s) re-bucketed via sub-tag", tagAdded)
+		d.Logf("tag layer claimed %d additional atomic(s)", tagAdded)
+	}
+	if tagConflicts > 0 {
+		d.Logf("tag conflicts: %d (no override applied)", tagConflicts)
 	}
 	groups := d.groupAtomics(notes, overrides)
 	var atomicsTouched, atomicsFailed int
