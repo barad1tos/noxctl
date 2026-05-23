@@ -125,36 +125,52 @@ func TestResolveFeatures_DomainBootstrapPrecedence(t *testing.T) {
 
 // TestFeaturesFromCatalog_AllFieldsRoundTrip catches field-swap bugs
 // in the per-pointer overlay (six near-identical `if cat.Features.X
-// != nil { f.X = *cat.Features.X }` blocks). A regression that
-// copy-pastes the wrong field name on one of the lines would compile
-// cleanly and pass the single-field DomainBootstrap test, but flip a
-// distinct mixed-pattern through this round-trip.
+// != nil { f.X = *cat.Features.X }` blocks). A copy-paste regression
+// that wires the wrong source field into one of the slots would
+// compile cleanly and pass the single-field DomainBootstrap test.
+// Two passes with inverse T/F masks cover all 15 possible field-pair
+// swaps — a swap that hides under the first mask (both slots share
+// the same value) surfaces under the second.
 func TestFeaturesFromCatalog_AllFieldsRoundTrip(t *testing.T) {
-	in := config.Features{
-		AutoTagDefault:    new(true),
-		CrossDomainMoves:  new(false),
-		TimePromotion:     new(true),
-		ForeignTagEscape:  new(false),
-		DuplicateRegistry: new(true),
-		DomainBootstrap:   new(false),
-	}
-	out := cliutil.FeaturesFromCatalog(&config.Catalog{Features: in})
-	cases := []struct {
-		name string
-		got  bool
-		want bool
+	masks := []struct {
+		name              string
+		autoTagDefault    bool
+		crossDomainMoves  bool
+		timePromotion     bool
+		foreignTagEscape  bool
+		duplicateRegistry bool
+		domainBootstrap   bool
 	}{
-		{"AutoTagDefault", out.AutoTagDefault, true},
-		{"CrossDomainMoves", out.CrossDomainMoves, false},
-		{"TimePromotion", out.TimePromotion, true},
-		{"ForeignTagEscape", out.ForeignTagEscape, false},
-		{"DuplicateRegistry", out.DuplicateRegistry, true},
-		{"DomainBootstrap", out.DomainBootstrap, false},
+		{"mask T,F,T,F,T,F", true, false, true, false, true, false},
+		{"mask F,T,F,T,F,T", false, true, false, true, false, true},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if tc.got != tc.want {
-				t.Errorf("%s: got %v, want %v", tc.name, tc.got, tc.want)
+	for _, m := range masks {
+		t.Run(m.name, func(t *testing.T) {
+			in := config.Features{
+				AutoTagDefault:    &m.autoTagDefault,
+				CrossDomainMoves:  &m.crossDomainMoves,
+				TimePromotion:     &m.timePromotion,
+				ForeignTagEscape:  &m.foreignTagEscape,
+				DuplicateRegistry: &m.duplicateRegistry,
+				DomainBootstrap:   &m.domainBootstrap,
+			}
+			out := cliutil.FeaturesFromCatalog(&config.Catalog{Features: in})
+			cases := []struct {
+				name string
+				got  bool
+				want bool
+			}{
+				{"AutoTagDefault", out.AutoTagDefault, m.autoTagDefault},
+				{"CrossDomainMoves", out.CrossDomainMoves, m.crossDomainMoves},
+				{"TimePromotion", out.TimePromotion, m.timePromotion},
+				{"ForeignTagEscape", out.ForeignTagEscape, m.foreignTagEscape},
+				{"DuplicateRegistry", out.DuplicateRegistry, m.duplicateRegistry},
+				{"DomainBootstrap", out.DomainBootstrap, m.domainBootstrap},
+			}
+			for _, tc := range cases {
+				if tc.got != tc.want {
+					t.Errorf("%s: got %v, want %v", tc.name, tc.got, tc.want)
+				}
 			}
 		})
 	}

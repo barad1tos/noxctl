@@ -25,7 +25,8 @@ var errInterrupted = errors.New("noxctl: interrupted")
 var errApplyFailures = errors.New("noxctl: one or more domains failed")
 
 // CLI-state for apply-specific flags. Declared at package scope so
-// `featuresFromCatalog` / `resolveBearDB` don't have to thread them.
+// `resolveBearDB` and other cmd-layer helpers don't have to thread
+// them through every catalog-load callsite.
 var (
 	applyNoWait      bool   // --no-wait
 	applyAutoApprove bool   // --auto-approve (reserved no-op v1)
