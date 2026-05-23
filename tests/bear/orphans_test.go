@@ -58,16 +58,16 @@ func (f *orphanFakeBearcli) Run(_ context.Context, args []string, _ string) ([]b
 			return nil, f.listErr
 		}
 		return f.listPayload, nil
-	case "tag":
-		// args = ["tag", noteID, tag]
-		if len(args) < 3 {
-			return nil, errors.New("orphanFakeBearcli: tag requires noteID + tag")
+	case "tags":
+		// args = ["tags", "add", noteID, tag]
+		if len(args) < 4 || args[1] != "add" {
+			return nil, errors.New("orphanFakeBearcli: tags requires [add noteID tag]")
 		}
 		f.mu.Lock()
-		f.callsTag = append(f.callsTag, orphanTagCall{NoteID: args[1], Tag: args[2]})
+		f.callsTag = append(f.callsTag, orphanTagCall{NoteID: args[2], Tag: args[3]})
 		f.mu.Unlock()
 		if f.tagErrByNoteID != nil {
-			if err, ok := f.tagErrByNoteID[args[1]]; ok {
+			if err, ok := f.tagErrByNoteID[args[2]]; ok {
 				return nil, err
 			}
 		}

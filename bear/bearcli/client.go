@@ -96,15 +96,15 @@ func Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
 // canonical eight are exercised but a future bearcli flag would
 // surface as a known-unknown rather than a panic.
 //
-// `trash` (TrashNote) and `tag` (AddTag — Phase 13 orphan apply) are
-// first-class kinds: prior to that wiring they collapsed into the
+// `trash` (TrashNote) and `tags` (AddTag — orphan-family apply path)
+// are first-class kinds: prior to that wiring they collapsed into the
 // "other" bucket and silently inflated the unknown-kind metric.
 func kindFromArgs(args []string) string {
 	if len(args) == 0 {
 		return "other"
 	}
 	switch args[0] {
-	case "list", "cat", "show", "overwrite", "create", "find", "trash", "tag":
+	case "list", "cat", "show", "overwrite", "create", "find", "trash", "tags":
 		return args[0]
 	}
 	return "other"
