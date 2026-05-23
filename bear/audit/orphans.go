@@ -1,0 +1,169 @@
+package audit
+
+// orphans.go owns the orphan-family corpus-level detector — a sibling
+// scanner to ScanUntracked (untracked.go). It walks bearcli-shaped
+// note records and emits one Finding per atom that carries at least
+// one stray-family tag (a `#<family>/<sub>` token whose `<family>` is
+// NOT in the managed-roots set computed by ManagedRootsFromDomains).
+//
+// Detection contract:
+//   - Fires only for tags of shape `#<family>/<sub>`. Bare top-level
+//     tags (`#randomthing`) are out of scope; LintUntracked covers
+//     those.
+//   - Family extraction uses TopLevelSegment, so depth-3 tags
+//     (`#X/Y/Z`) classify by `X`. If `X` is not managed, the atom is
+//     an orphan regardless of depth.
+//   - Atoms already carrying `#orphans` (or `#orphans/<sub>`) are
+//     skipped wholesale — that is the idempotency contract. The apply
+//     step in Phase 13-02 wires `bearcli tag <noteID> orphans` per
+//     finding, so re-running the lint sweep on an already-triaged
+//     atom must produce zero findings.
+//
+// Finding shape:
+//   - DomainTag is the empty string — orphan-family is a corpus-level
+//     concern, sibling to LintUntracked, not scoped to any single
+//     managed Domain. SortFindings orders empty DomainTag before
+//     non-empty domains so the audit report grouping handles
+//     corpus-level findings deterministically without special-casing.
+//   - One Finding per atom (per CONTEXT.md decision d.2), not one per
+//     stray tag. Detail comma-joins multiple strays so the operator
+//     sees the full triage context for an atom in one report row;
+//     the apply step adds a single `#orphans` tag regardless of how
+//     many stray-family tags the atom carries.
+//   - Fixable is true: the apply path is a single bearcli tag call
+//     with no body rewrite.
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/barad1tos/noxctl/bear/domain"
+)
+
+// orphansTag and orphansTagPrefix are the idempotency markers the
+// detector skips on. Either exact match or sub-tagged form
+// (`#orphans/<sub>`) signals the atom has already been triaged in a
+// prior sweep.
+const (
+	orphansTag       = "#orphans"
+	orphansTagPrefix = "#orphans/"
+)
+
+// AggregateOrphanFamiliesFromJSON is the test seam over
+// aggregateOrphanFamilies — accepts a bearcli-shaped JSON payload
+// (`[{id,title,tags},...]`) and the managed-roots map
+// ManagedRootsFromDomains produces, then runs the pure detector.
+// Precedent: AggregateUntrackedFromJSON (untracked.go).
+//
+// External tests at tests/bear/ build a separate test binary and
+// cannot reach in-package unexported symbols, so the seam is exposed
+// in production code rather than via an in-package _test.go file.
+// Returns nil + wrapped error on parse failure so callers can
+// distinguish "input was malformed" from "input had zero findings".
+func AggregateOrphanFamiliesFromJSON(jsonBytes []byte, managed map[string]struct{}) ([]Finding, error) {
+	var notes []domain.AutoTagNote
+	if err := json.Unmarshal(jsonBytes, &notes); err != nil {
+		return nil, fmt.Errorf("AggregateOrphanFamiliesFromJSON parse: %w", err)
+	}
+	return aggregateOrphanFamilies(notes, managed), nil
+}
+
+// aggregateOrphanFamilies is the pure-logic core: walks the supplied
+// notes, collects stray-family tags per atom via strayFamilyTags, and
+// emits one Finding per atom that has at least one stray. Returns the
+// findings sorted via SortFindings for deterministic output.
+func aggregateOrphanFamilies(notes []domain.AutoTagNote, managed map[string]struct{}) []Finding {
+	var findings []Finding
+	for _, note := range notes {
+		strays := strayFamilyTags(note, managed)
+		if len(strays) == 0 {
+			continue
+		}
+		findings = append(findings, Finding{
+			NoteID:   note.ID,
+			Title:    note.Title,
+			Category: LintOrphanFamily,
+			Detail:   formatStrayDetail(strays),
+			Fixable:  true,
+		})
+	}
+	SortFindings(findings)
+	return findings
+}
+
+// strayFamilyTags returns the stray-family tags on a note — preserving
+// the leading `#` prefix so Detail messages stay operator-friendly
+// (matches what the user sees on the Bear chip). Returns nil when the
+// note is already tagged `#orphans` (idempotency skip) or when no
+// stray-family tag is present.
+//
+// Extracted from aggregateOrphanFamilies to keep both functions under
+// gocognit ≤15 per CONTEXT.md decision (d.2). The helper owns the
+// per-tag classification; the aggregator owns the per-note iteration.
+func strayFamilyTags(note domain.AutoTagNote, managed map[string]struct{}) []string {
+	var strays []string
+	for _, tag := range note.Tags {
+		if tag == "" {
+			continue
+		}
+		if tag == orphansTag || strings.HasPrefix(tag, orphansTagPrefix) {
+			return nil // idempotency skip — already triaged
+		}
+		stripped := strings.TrimPrefix(tag, "#")
+		if !strings.Contains(stripped, "/") {
+			continue // bare top-level out of scope (LintUntracked handles)
+		}
+		if _, ok := managed[domain.TopLevelSegment(tag)]; ok {
+			continue // managed family — not orphan
+		}
+		strays = append(strays, tag)
+	}
+	return strays
+}
+
+// formatStrayDetail composes the operator-facing Detail message for an
+// orphan-family Finding. Comma-joins all stray tags and family names so
+// one report row captures full triage context. The trailing phrase
+// `tag-as-orphans candidate` is the apply-hint — Phase 13-02 will add
+// `#orphans` to the note via bearcli when --apply is set.
+func formatStrayDetail(strays []string) string {
+	families := uniqueFamilies(strays)
+	joinedStrays := strings.Join(strays, ", ")
+	if len(families) == 1 {
+		return fmt.Sprintf("%s — family %q not in catalog (tag-as-orphans candidate)",
+			joinedStrays, families[0])
+	}
+	return fmt.Sprintf("%s — families %s not in catalog (tag-as-orphans candidate)",
+		joinedStrays, quoteJoin(families))
+}
+
+// uniqueFamilies extracts the de-duplicated set of top-level family
+// segments from a stray-tag slice, preserving first-seen order so the
+// Detail message stays stable across runs (Go map iteration is not
+// stable; this helper avoids that pitfall).
+func uniqueFamilies(strays []string) []string {
+	seen := make(map[string]struct{}, len(strays))
+	out := make([]string, 0, len(strays))
+	for _, tag := range strays {
+		fam := domain.TopLevelSegment(tag)
+		if _, ok := seen[fam]; ok {
+			continue
+		}
+		seen[fam] = struct{}{}
+		out = append(out, fam)
+	}
+	return out
+}
+
+// quoteJoin renders a string slice as a comma-separated list of
+// double-quoted items (e.g. `"quicknotes", "scratch"`). Used by the
+// multi-family Detail formatter so each family name shows up verbatim
+// in the operator report.
+func quoteJoin(items []string) string {
+	parts := make([]string, len(items))
+	for i, item := range items {
+		parts[i] = fmt.Sprintf("%q", item)
+	}
+	return strings.Join(parts, ", ")
+}

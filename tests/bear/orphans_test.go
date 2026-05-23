@@ -25,6 +25,20 @@ import (
 // directly — no parallel helper infrastructure.
 type orphanFixture = noteFixture
 
+// assertDetailContains is the shared substring assertion: every case
+// that checks Detail tokens uses it so the per-case body stays under
+// the dupl token threshold (≥50 tokens). Naming the case-specific
+// context via `ctx` keeps failure messages actionable without inlining
+// the 5-line for-range-Fatalf block in each test.
+func assertDetailContains(t *testing.T, ctx, detail string, fragments []string) {
+	t.Helper()
+	for _, frag := range fragments {
+		if !strings.Contains(detail, frag) {
+			t.Fatalf("Detail must contain %q (%s); got %q", frag, ctx, detail)
+		}
+	}
+}
+
 // TestAggregateOrphanFamilies_StrayTagDetected covers truth (1) from the
 // 13-CONTEXT.md specifics block: an atom with a managed tag plus a
 // stray-family tag produces exactly one finding for that stray.
@@ -59,11 +73,9 @@ func TestAggregateOrphanFamilies_StrayTagDetected(t *testing.T) {
 	if !got.Fixable {
 		t.Fatalf("Fixable = false, want true (apply step adds #orphans via bearcli)")
 	}
-	for _, frag := range []string{"#quicknotes/daily", "quicknotes", "tag-as-orphans candidate"} {
-		if !strings.Contains(got.Detail, frag) {
-			t.Fatalf("Detail must contain %q; got %q", frag, got.Detail)
-		}
-	}
+	assertDetailContains(t, "stray-tag detection",
+		got.Detail,
+		[]string{"#quicknotes/daily", "quicknotes", "tag-as-orphans candidate"})
 }
 
 // TestAggregateOrphanFamilies_AlreadyTaggedOrphans_Skipped covers truth
@@ -154,11 +166,9 @@ func TestAggregateOrphanFamilies_DeepTag_FirstSegmentFamily(t *testing.T) {
 			got, want, findings)
 	}
 	got := findings[0]
-	for _, frag := range []string{"#scratch/area/temp", "scratch"} {
-		if !strings.Contains(got.Detail, frag) {
-			t.Fatalf("Detail must contain %q (family = first segment); got %q", frag, got.Detail)
-		}
-	}
+	assertDetailContains(t, "family = first segment",
+		got.Detail,
+		[]string{"#scratch/area/temp", "scratch"})
 }
 
 // TestAggregateOrphanFamilies_BareTopLevel_Ignored covers truth (5):
@@ -205,16 +215,13 @@ func TestAggregateOrphanFamilies_MultipleStrayTags_SingleFindingWithJoinedDetail
 			got, want, findings)
 	}
 	got := findings[0]
-	for _, frag := range []string{
-		"#quicknotes/daily", "#scratch/temp",
-		"quicknotes", "scratch",
-		"tag-as-orphans candidate",
-	} {
-		if !strings.Contains(got.Detail, frag) {
-			t.Fatalf("Detail must contain %q (comma-joined multi-stray context); got %q",
-				frag, got.Detail)
-		}
-	}
+	assertDetailContains(t, "comma-joined multi-stray context",
+		got.Detail,
+		[]string{
+			"#quicknotes/daily", "#scratch/temp",
+			"quicknotes", "scratch",
+			"tag-as-orphans candidate",
+		})
 }
 
 // TestAggregateOrphanFamilies_Reproducer_LLMTipsWithQuicknotesDaily is
@@ -243,11 +250,9 @@ func TestAggregateOrphanFamilies_Reproducer_LLMTipsWithQuicknotesDaily(t *testin
 	if got.Title != "System Prompt For Coding Agents" {
 		t.Fatalf("Title = %q, want %q", got.Title, "System Prompt For Coding Agents")
 	}
-	for _, frag := range []string{"#quicknotes/daily", "quicknotes"} {
-		if !strings.Contains(got.Detail, frag) {
-			t.Fatalf("Detail must contain %q (reproducer context); got %q", frag, got.Detail)
-		}
-	}
+	assertDetailContains(t, "reproducer context",
+		got.Detail,
+		[]string{"#quicknotes/daily", "quicknotes"})
 }
 
 // TestAggregateOrphanFamilies_ParseError covers the JSON-seam error
