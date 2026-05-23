@@ -59,9 +59,9 @@ var workDomainBuckets = []string{
 
 // buildWorkDomainForIntegration constructs the grouped-vertical work
 // domain via the production factory. Using the factory (rather than a
-// hand-rolled *Domain literal) is load-bearing: Task 1 wired Buckets
-// inside the factory body, so any future regression that drops the
-// wiring trips this test before the algorithm ever runs.
+// hand-rolled *Domain literal) is load-bearing: the factory populates
+// Domain.Buckets, so any future regression that drops the wiring trips
+// this test before the algorithm ever runs.
 //
 //cyrillic:permit
 func buildWorkDomainForIntegration() *domain.Domain {
