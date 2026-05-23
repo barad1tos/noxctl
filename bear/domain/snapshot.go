@@ -79,22 +79,16 @@ func SnapshotDomainRenderInputs(ctx context.Context, d *Domain) (RenderInputs, e
 	if err != nil {
 		return RenderInputs{}, fmt.Errorf("SnapshotDomainRenderInputs(%s): %w", d.Tag, err)
 	}
-	masterOverrides := d.computeMasterOverrides(notes)
-	hubOverrides := d.computeHubOverrides(notes)
-	// Master wins on collision — exact mirror of regen.go
-	// "master overrides win on collision". computeMasterOverrides may
-	// return nil when ParseMasterTable is unset; lazily initialize before
-	// merging so we never write into a nil map.
-	for atomID, bucket := range hubOverrides {
-		if _, alreadySet := masterOverrides[atomID]; alreadySet {
-			continue
-		}
-		if masterOverrides == nil {
-			masterOverrides = make(map[string]string)
-		}
-		masterOverrides[atomID] = bucket
-	}
-	groups := d.groupAtomics(notes, masterOverrides)
+	// Priority merge: master > hub > tag. Each layer's overrides skip atoms
+	// already claimed by a higher-priority layer. mergeOverrideLayer is the
+	// SSOT — regen.go MUST route through the same helper so plan/apply parity
+	// holds (T-12-02-01 threat). No log emission here: snapshot is the
+	// read-only facade used by engine.Plan; rebucket counts surface through the
+	// plan-diff renderer instead.
+	overrides := d.computeMasterOverrides(notes)
+	overrides = mergeOverrideLayer(overrides, d.computeHubOverrides(notes))
+	overrides = mergeOverrideLayer(overrides, d.computeTagOverrides(notes))
+	groups := d.groupAtomics(notes, overrides)
 	if groups == nil {
 		groups = map[string][]Note{}
 	}

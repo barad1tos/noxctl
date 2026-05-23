@@ -25,28 +25,25 @@ func (d *Domain) RunRegen(ctx context.Context) {
 		d.Logf("list failed: %v", err)
 		return
 	}
+	// Priority merge: master > hub > tag. Each layer's overrides skip atoms
+	// already claimed by a higher-priority layer — deliberate gestures (master
+	// cut/paste, hub bullet move) beat the single quick sidebar drag.
+	// mergeOverrideLayer is the SSOT — snapshot.go MUST route through the same
+	// helper so plan/apply parity holds (T-12-02-01 threat). Log lines are
+	// regen-only (snapshot is silent for engine.Plan).
 	overrides := d.computeMasterOverrides(notes)
 	if len(overrides) > 0 {
 		d.Logf("master regroup: %d atomic(s) moved between columns", len(overrides))
 	}
-	// Hub-side overrides: a bullet inside a Tier-2 hub claims its atomic for
-	// that hub's bucket. Master overrides win on collision because the master
-	// is the more deliberate gesture (table cut/paste vs. dragging a bullet
-	// into a sibling hub).
-	hubOverrides := d.computeHubOverrides(notes)
-	added := 0
-	for atomID, bucket := range hubOverrides {
-		if _, alreadySet := overrides[atomID]; alreadySet {
-			continue
-		}
-		if overrides == nil {
-			overrides = make(map[string]string)
-		}
-		overrides[atomID] = bucket
-		added++
+	beforeHub := len(overrides)
+	overrides = mergeOverrideLayer(overrides, d.computeHubOverrides(notes))
+	if hubAdded := len(overrides) - beforeHub; hubAdded > 0 {
+		d.Logf("hub regroup: %d atomic(s) moved between hubs", hubAdded)
 	}
-	if added > 0 {
-		d.Logf("hub regroup: %d atomic(s) moved between hubs", added)
+	beforeTag := len(overrides)
+	overrides = mergeOverrideLayer(overrides, d.computeTagOverrides(notes))
+	if tagAdded := len(overrides) - beforeTag; tagAdded > 0 {
+		d.Logf("tag regroup: %d atomic(s) re-bucketed via sub-tag", tagAdded)
 	}
 	groups := d.groupAtomics(notes, overrides)
 	var atomicsTouched, atomicsFailed int

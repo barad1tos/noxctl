@@ -104,8 +104,16 @@ func (d *Domain) DetectAuthor(body string) string {
 // groupAtomics partitions atomic notes by bucket key. Hub notes and the master
 // are skipped via Domain.skipNote. Notes without a detectable bucket fall into
 // Domain.UnknownBucket. The override map (keyed by note ID) wins over the
-// canonical-header bucket — this is how cut/paste moves in the master propagate
-// into atomic re-bucketing on the next regen.
+// canonical-header bucket — three override sources feed it in priority order:
+//
+//	master > hub > tag > canonical-header > BucketFromSubTag > UnknownBucket
+//
+// Master and hub overrides are deliberate gestures (table cut/paste, hub bullet
+// move); tag is a single quick sidebar drag. On collision the deliberate gesture
+// wins — caller merges accordingly. The two merge call sites are
+// snapshot.go::SnapshotDomainRenderInputs and regen.go::RunRegen and MUST stay
+// byte-equivalent (T-12-02-01 threat). Both share mergeOverrideLayer for that
+// invariant.
 func (d *Domain) groupAtomics(notes []Note, overrides map[string]string) map[string][]Note {
 	groups := make(map[string][]Note)
 	for _, note := range notes {
@@ -327,6 +335,29 @@ func ParseHubBulletIdentifiers(content string) []string {
 		out = append(out, extractCellNoteIDs(trimmed)...)
 	}
 	return out
+}
+
+// mergeOverrideLayer folds `from` into `into` with skip-if-already-claimed
+// semantics: any atomID already present in `into` keeps its existing bucket,
+// so the caller can chain layers in priority order (master first, hub second,
+// tag last) and the earlier layer always wins on collision. Lazy-initializes
+// `into` when nil so callers don't have to pre-allocate.
+//
+// Returns the (possibly-mutated) merged map. snapshot.go and regen.go both
+// route every override merge through this helper — the byte-equivalent
+// invariant the Phase 03/04 plan/apply parity contract depends on (see
+// T-12-02-01 in 12-02-PLAN threat model).
+func mergeOverrideLayer(into, from map[string]string) map[string]string {
+	for atomID, bucket := range from {
+		if _, claimed := into[atomID]; claimed {
+			continue
+		}
+		if into == nil {
+			into = make(map[string]string)
+		}
+		into[atomID] = bucket
+	}
+	return into
 }
 
 // computeTagOverrides reads each atomic's Bear tag-array and records a
