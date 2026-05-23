@@ -11,11 +11,81 @@
 package bear_test
 
 import (
+	"context"
+	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/audit"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
+
+// orphanFakeBearcli is a minimal bearcli.Backend fake for the corpus-
+// level orchestrator tests in this file. It returns a canned payload
+// for `list` verbs, records every `tag` call in callsTag, and lets
+// each test override the list-side response (payload or error) plus
+// the per-noteID tag-side response (error or success).
+//
+// Mirrors the autotag fake pattern at tests/bear/autotag_test.go —
+// same Backend.Run signature, same context-stamping seam via
+// domain.ContextWithBackend — so future maintainers find the fixture
+// shape via the same grep.
+type orphanFakeBearcli struct {
+	listPayload []byte
+	listErr     error
+	// tagErrByNoteID maps noteID → error to return on AddTag for that
+	// note. Missing key means success. Used to simulate partial-failure
+	// runs without a global "always fail" toggle.
+	tagErrByNoteID map[string]error
+
+	mu       sync.Mutex
+	callsTag []orphanTagCall
+}
+
+type orphanTagCall struct {
+	NoteID string
+	Tag    string
+}
+
+func (f *orphanFakeBearcli) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) == 0 {
+		return nil, errors.New("orphanFakeBearcli: empty args")
+	}
+	switch args[0] {
+	case "list":
+		if f.listErr != nil {
+			return nil, f.listErr
+		}
+		return f.listPayload, nil
+	case "tag":
+		// args = ["tag", noteID, tag]
+		if len(args) < 3 {
+			return nil, errors.New("orphanFakeBearcli: tag requires noteID + tag")
+		}
+		f.mu.Lock()
+		f.callsTag = append(f.callsTag, orphanTagCall{NoteID: args[1], Tag: args[2]})
+		f.mu.Unlock()
+		if f.tagErrByNoteID != nil {
+			if err, ok := f.tagErrByNoteID[args[1]]; ok {
+				return nil, err
+			}
+		}
+		return []byte(`{"ok":true}`), nil
+	}
+	return []byte("{}"), nil
+}
+
+// armOrphanFakeBearcli installs the supplied fake backend on a fresh
+// context (with bearcli pool armed at cap=2 so corpus calls actually
+// execute) and registers cleanup. Returns the test context — pass it
+// into the orchestrator under test.
+func armOrphanFakeBearcli(t *testing.T, fake *orphanFakeBearcli) context.Context {
+	t.Helper()
+	domain.ResetBearcliPoolForTest(2)
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	return domain.ContextWithBackend(t.Context(), fake)
+}
 
 // orphanFixture mirrors the bearcli `list --fields id,title,tags` JSON
 // shape used by ScanUntracked + the orphan-family detector. Local
@@ -267,5 +337,101 @@ func TestAggregateOrphanFamilies_ParseError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "AggregateOrphanFamiliesFromJSON") {
 		t.Fatalf("error must wrap with helper name for traceability; got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------
+// Corpus-level orchestrator tests (ScanOrphanFamilies +
+// ApplyOrphanFamilies). These exercise the production-side I/O wrappers
+// that the CLI integration tests in tests/bear/cli/lint/ depend on, but
+// at finer granularity — error paths that the integration tests cannot
+// easily exercise via the cli.RunLint surface.
+// ---------------------------------------------------------------------
+
+// TestScanOrphanFamilies_BearcliError_WrappedReturn pins the
+// "bearcli list failed" error path: the corpus scan returns nil
+// findings + a wrapped error whose message identifies the helper. No
+// silent partial-success — corpus-level scans can't degrade the way
+// per-domain Scan can, because there is no per-domain fallback to fall
+// back to.
+func TestScanOrphanFamilies_BearcliError_WrappedReturn(t *testing.T) {
+	fake := &orphanFakeBearcli{listErr: errors.New("bearcli boom")}
+	ctx := armOrphanFakeBearcli(t, fake)
+
+	findings, err := audit.ScanOrphanFamilies(ctx, nil)
+	if err == nil {
+		t.Fatalf("ScanOrphanFamilies on bearcli error must return error; got nil + %v", findings)
+	}
+	if findings != nil {
+		t.Fatalf("ScanOrphanFamilies on error must return nil findings; got %v", findings)
+	}
+	if !strings.Contains(err.Error(), "ScanOrphanFamilies list") {
+		t.Fatalf("error must wrap with helper name for traceability; got %v", err)
+	}
+}
+
+// TestScanOrphanFamilies_MalformedJSON_WrappedReturn pins the JSON
+// parse failure path: bearcli returns 200 OK with garbage bytes (e.g.
+// CLI version drift, stderr-on-stdout). Scan returns nil findings +
+// wrapped error matching the helper name.
+func TestScanOrphanFamilies_MalformedJSON_WrappedReturn(t *testing.T) {
+	fake := &orphanFakeBearcli{listPayload: []byte("not-json")}
+	ctx := armOrphanFakeBearcli(t, fake)
+
+	findings, err := audit.ScanOrphanFamilies(ctx, nil)
+	if err == nil {
+		t.Fatalf("ScanOrphanFamilies on malformed JSON must return error; got nil + %v", findings)
+	}
+	if findings != nil {
+		t.Fatalf("ScanOrphanFamilies on parse error must return nil findings; got %v", findings)
+	}
+	if !strings.Contains(err.Error(), "ScanOrphanFamilies parse") {
+		t.Fatalf("error must wrap with helper name for traceability; got %v", err)
+	}
+}
+
+// TestApplyOrphanFamilies_PartialFailure_Counts pins the log-and-
+// continue contract: one tag fails, one succeeds, the function does NOT
+// abort on first failure and returns (tagged=1, failed=1). The order
+// of findings drives which atom fails — second finding's noteID is
+// rigged to error.
+func TestApplyOrphanFamilies_PartialFailure_Counts(t *testing.T) {
+	fake := &orphanFakeBearcli{
+		tagErrByNoteID: map[string]error{
+			"note-fails": errors.New("bearcli tag boom"),
+		},
+	}
+	ctx := armOrphanFakeBearcli(t, fake)
+
+	findings := []audit.Finding{
+		{
+			NoteID:   "note-ok",
+			Title:    "First (ok)",
+			Category: audit.LintOrphanFamily,
+		},
+		{
+			NoteID:   "note-fails",
+			Title:    "Second (fails)",
+			Category: audit.LintOrphanFamily,
+		},
+	}
+	tagged, failed := audit.ApplyOrphanFamilies(ctx, findings)
+	if tagged != 1 {
+		t.Errorf("tagged = %d, want 1", tagged)
+	}
+	if failed != 1 {
+		t.Errorf("failed = %d, want 1", failed)
+	}
+	// Both atoms must have had a tag call attempted — proves no
+	// short-circuit on first failure.
+	if got := len(fake.callsTag); got != 2 {
+		t.Fatalf("AddTag attempted %d times, want 2 (no abort on first failure); calls=%v",
+			got, fake.callsTag)
+	}
+	if fake.callsTag[0].NoteID != "note-ok" || fake.callsTag[0].Tag != "orphans" {
+		t.Errorf("first AddTag = %+v, want {NoteID:note-ok, Tag:orphans}", fake.callsTag[0])
+	}
+	if fake.callsTag[1].NoteID != "note-fails" || fake.callsTag[1].Tag != "orphans" {
+		t.Errorf("second AddTag = %+v, want {NoteID:note-fails, Tag:orphans}", fake.callsTag[1])
 	}
 }
