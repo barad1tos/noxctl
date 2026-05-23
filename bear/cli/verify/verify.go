@@ -47,9 +47,9 @@ type Options struct {
 	WithApply bool
 	// ApplyOpts is the template `engine.Apply` invocation verify
 	// uses when `WithApply` is true. The caller fills Pins,
-	// StatePath, LockPath, Features (typically via the cmd-layer's
-	// `featuresFromCatalog`) — verify overrides Domains and Stderr
-	// at call time. Required when WithApply is true; ignored
+	// StatePath, LockPath, Features (typically via the catalog→Features
+	// bridge in `bear/cliutil`) — verify overrides Domains and
+	// Stderr at call time. Required when WithApply is true; ignored
 	// otherwise. Without these the underlying `engine.Apply` errors
 	// at flock-acquire with "AcquireApply open : no such file or
 	// directory" before the idempotency check can even begin.

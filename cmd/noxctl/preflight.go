@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/barad1tos/noxctl/bear/cli"
+	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
@@ -114,46 +115,13 @@ func domainsWithPreflight() ([]*domain.Domain, *config.Catalog, string, error) {
 	return domains, catalog, target, nil
 }
 
-// featuresFromCatalog copies `*config.Catalog.Features` (whose fields
-// are `*bool`, distinguishing "omitted in TOML" from "set to false")
-// into the flat `engine.Features` struct (plain bool fields, defaults
-// applied at this CLI boundary). This is the only legitimate place
-// to bridge `bear/` and `bear/config/` — `cmd/noxctl` is the boundary;
-// `bear/` and `bear/engine/` never import `bear/config/`.
-//
-// Defaults: every pre-pass ON. Operators get every fast-pass running
-// out of the box unless they explicitly opt out via the catalog.
-//
-// `config.Catalog.Features` is a VALUE TYPE (not `*Features`); fields
-// are `*bool` pointers. We start with all-true defaults, then
-// per-pointer overwrite where the user explicitly set a value.
+// featuresFromCatalog is a thin alias for cliutil.FeaturesFromCatalog
+// kept inside cmd/noxctl so existing call sites read unchanged and so
+// the function exposes the lookup path from a single file (preflight)
+// rather than scattering imports. The real implementation lives in
+// bear/cliutil/ where it can be table-tested from external tests.
 func featuresFromCatalog(cat *config.Catalog) engine.Features {
-	f := engine.Features{
-		AutoTagDefault:    true,
-		CrossDomainMoves:  true,
-		TimePromotion:     true,
-		ForeignTagEscape:  true,
-		DuplicateRegistry: true,
-	}
-	if cat == nil {
-		return f
-	}
-	if cat.Features.AutoTagDefault != nil {
-		f.AutoTagDefault = *cat.Features.AutoTagDefault
-	}
-	if cat.Features.CrossDomainMoves != nil {
-		f.CrossDomainMoves = *cat.Features.CrossDomainMoves
-	}
-	if cat.Features.TimePromotion != nil {
-		f.TimePromotion = *cat.Features.TimePromotion
-	}
-	if cat.Features.ForeignTagEscape != nil {
-		f.ForeignTagEscape = *cat.Features.ForeignTagEscape
-	}
-	if cat.Features.DuplicateRegistry != nil {
-		f.DuplicateRegistry = *cat.Features.DuplicateRegistry
-	}
-	return f
+	return cliutil.FeaturesFromCatalog(cat)
 }
 
 // dailyDefaultTagFromCatalog returns the operator-chosen "untagged-on-

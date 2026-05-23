@@ -59,11 +59,10 @@ func init() {
 // outcome: dump on success, exit-2 when daemon.toml is present but
 // LoadDaemon returns a parse error, propagate the error otherwise.
 func runDaemonConfigShow(cmd *cobra.Command, _ []string) error {
-	home, homeErr := os.UserHomeDir()
-	if homeErr != nil {
-		home = "."
+	path, pathErr := daemonConfigPath()
+	if pathErr != nil {
+		return pathErr
 	}
-	path := filepath.Join(home, ".noxctl", "daemon.toml")
 	dc, loadErr := config.LoadDaemon(path)
 	if loadErr != nil {
 		// File present but unparseable → exit 2 per spec. Stat
@@ -80,6 +79,22 @@ func runDaemonConfigShow(cmd *cobra.Command, _ []string) error {
 	present := !errors.Is(statErr, fs.ErrNotExist)
 	writeDaemonConfigShow(cmd.OutOrStdout(), path, dc, present)
 	return nil
+}
+
+// daemonConfigPath resolves the canonical daemon-config path
+// (`$HOME/.noxctl/daemon.toml`). Returns an error when the home-dir
+// lookup fails — silently falling back to `./.noxctl/daemon.toml`
+// would either pick up an unrelated file from the daemon's working
+// directory or silently mask the operator's real config, which the
+// daemon contract is meant to prevent. Shared between
+// `daemon-config show` and `runDaemon` startup so the two CANNOT
+// disagree about which file they're reading.
+func daemonConfigPath() (string, error) {
+	home, homeErr := os.UserHomeDir()
+	if homeErr != nil {
+		return "", fmt.Errorf("resolve daemon-config path: home dir lookup failed: %w", homeErr)
+	}
+	return filepath.Join(home, ".noxctl", "daemon.toml"), nil
 }
 
 // writeDaemonConfigShow renders the dump. Kept under gocognit by

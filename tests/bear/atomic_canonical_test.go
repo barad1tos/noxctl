@@ -74,12 +74,13 @@ func TestUpsertAtomic_StampsH1WhenAbsent(t *testing.T) {
 	}
 }
 
-// TestUpsertAtomic_PreservesNonTagPreamble covers spec component 5:
-// non-tag-line content above the canonical tag-line must be preserved
-// in place after canonicalization — between the H1 and the tag-line,
-// NOT pushed below `---`. Pre-fix the rebuild logic moved preamble to
-// the body zone; this regression test locks the new contract.
-func TestUpsertAtomic_PreservesNonTagPreamble(t *testing.T) {
+// TestUpsertAtomic_HoistsPreambleToBody locks the canonical contract:
+// non-tag-line content that landed between H1 and the tag-line (e.g.
+// because Bear's new-note URL cursor dropped the user above the
+// canonical line) must be HOISTED below `---` on the next regen.
+// Mirrors the bootstrap fast-pass behavior so the per-domain regen path
+// converges to the same shape: `H1 / tag-line / --- / body`.
+func TestUpsertAtomic_HoistsPreambleToBody(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 13, 15, 25, 0, 0, time.Local)
 	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
@@ -96,17 +97,28 @@ func TestUpsertAtomic_PreservesNonTagPreamble(t *testing.T) {
 	if lines[0] != "# Existing title" {
 		t.Errorf("H1 not preserved: got %q", lines[0])
 	}
-	if lines[1] != "user preamble line" {
-		t.Errorf("preamble not preserved between H1 and tag-line: got %q", lines[1])
+	if !strings.HasPrefix(lines[1], "#library/quotes ") {
+		t.Errorf("tag-line must sit directly under H1 (preamble must hoist below ---); got %q", lines[1])
 	}
-	if !strings.HasPrefix(lines[2], "#library/quotes ") {
-		t.Errorf("tag-line not at expected position: got %q", lines[2])
+	if lines[2] != "---" {
+		t.Errorf("separator not at expected position: got %q", lines[2])
 	}
-	if lines[3] != "---" {
-		t.Errorf("separator not at expected position: got %q", lines[3])
+	if !strings.Contains(out, "user preamble line") {
+		t.Errorf("preamble line lost during hoist:\n%s", out)
 	}
 	if !strings.Contains(out, "main content") {
 		t.Errorf("main content lost from canonical body")
+	}
+
+	// Idempotency: feeding pass-1 output back through the renderer
+	// must produce byte-equivalent pass-2 output. Without this lock,
+	// a future drift in `hoistPreambleToBody` (e.g. appending a
+	// trailing blank that wasn't there before) would create silent
+	// rewrite-loop churn — exactly the failure shape this assertion
+	// prevents.
+	pass2 := domain.RenderAtomicCanonicalForTest(t, d, "Note Title", "_unknown", out)
+	if pass2 != out {
+		t.Errorf("non-idempotent hoist — pass-2 output differs from pass-1:\n--- pass-1 ---\n%s\n--- pass-2 ---\n%s", out, pass2)
 	}
 }
 

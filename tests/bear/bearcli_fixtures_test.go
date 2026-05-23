@@ -54,8 +54,11 @@ func TestBearcliFixtures_UserAuthoredH1(t *testing.T) {
 	}
 }
 
-// TestBearcliFixtures_PreambleBody asserts non-tag-line preamble is
-// preserved between H1 and the canonical tag-line (spec component 5).
+// TestBearcliFixtures_PreambleBody locks the canonical hoist: non-tag-line
+// content that the parser captured between H1 and the canonical tag-line
+// is moved below `---` on render, so the tag-line sits directly under H1.
+// See hoistPreambleToBody in bear/domain/canonical.go for the relocation
+// helper.
 func TestBearcliFixtures_PreambleBody(t *testing.T) {
 	note := loadBearcliFixture(t, "preamble_body.json")
 	d := render.NewFlatListDomain("library/quotes", "✱ Quotes")
@@ -69,11 +72,14 @@ func TestBearcliFixtures_PreambleBody(t *testing.T) {
 	if lines[0] != "# Existing title" {
 		t.Errorf("H1 not preserved: %q", lines[0])
 	}
-	if lines[1] != "epigraph from another work" {
-		t.Errorf("preamble not preserved: %q", lines[1])
+	if !strings.HasPrefix(lines[1], "#library/quotes") {
+		t.Errorf("tag-line must sit directly under H1; got %q", lines[1])
 	}
-	if !strings.HasPrefix(lines[2], "#library/quotes") {
-		t.Errorf("tag-line not in expected position: %q", lines[2])
+	if lines[2] != "---" {
+		t.Errorf("separator not at expected position: %q", lines[2])
+	}
+	if !strings.Contains(out, "epigraph from another work") {
+		t.Errorf("preamble content lost during hoist:\n%s", out)
 	}
 }
 

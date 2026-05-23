@@ -1,18 +1,13 @@
 // Package bear_test — auto_tag_test.go locks the canonical-
 // bootstrap contract for ApplyDailyDefaultTag and RenderCanonicalForBootstrap.
 //
-// Before fix, fast-pass used `stampDailyTag` with an append-at-
-// end strategy that left user-typed body lines stranded as preamble
-// ABOVE the canonical tag-line after the regen cycle (parseAtomicContent
-// classified them as preamble; renderAtomicCanonical emits preamble
-// above tag-line per spec component 5). Empty notes lost their Bear-
-// auto-generated H1 timestamp because the new content carried no H1
-// line and bearcli overwrite recomputes display title from H1.
-//
-// The new contract: the fast-pass writes the canonical body in a single
-// bearcli call — H1 preserved or stamped, tag-line directly under H1,
-// body below `---` separator. The subsequent regen cycle no-ops via
-// equalIgnoringNewNoteLink.
+// The fast-pass writes the canonical body in a single bearcli call —
+// H1 preserved or stamped, tag-line directly under H1, body below
+// `---` separator. parseAtomicContent classifies free-form lines that
+// land between H1 and the tag-line as preamble; hoistPreambleToBody
+// then relocates them into the body zone so the rendered output never
+// carries content above the tag-line. The subsequent regen cycle
+// no-ops via equalIgnoringNewNoteLink.
 package bear_test
 
 import (
@@ -68,11 +63,12 @@ func TestRenderCanonicalForBootstrap_EmptyContent_ProducesCanonicalForm(t *testi
 }
 
 // TestRenderCanonicalForBootstrap_NoteWithBody_PutsBodyBelowSeparator
-// locks the fix for the user-reported "тестовий текст у шапці" bug:
-// user types body BEFORE fast-pass stamps the tag, parseAtomicContent
-// would classify the body as preamble, renderAtomicCanonical would emit
-// it ABOVE the tag-line. The bootstrap path re-classifies preamble as
-// body so user prose lands BELOW `---`.
+// locks the canonical contract for fast-pass stamping: when a user
+// types body content before the fast-pass adds the tag-line,
+// parseAtomicContent classifies that content as preamble, and
+// hoistPreambleToBody relocates it into the body zone so the
+// rendered output lands BELOW `---` rather than between H1 and
+// the tag-line.
 func TestRenderCanonicalForBootstrap_NoteWithBody_PutsBodyBelowSeparator(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 15, 21, 59, 0, 0, time.Local)
 	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })

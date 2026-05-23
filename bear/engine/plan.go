@@ -98,8 +98,8 @@ func planSinglePath(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
 // translateUntracked converts audit.UntrackedReport (residue scanner's
 // output type, declared in bear/untracked.go) into the engine-side
 // UntrackedReport (declared in bear/engine/plan_result.go). Boundary
-// translation pattern — same shape as cmd/noxctl/preflight.go's
-// featuresFromCatalog.
+// translation pattern — same shape as bear/cliutil/FeaturesFromCatalog
+// (config-to-engine bridge for the Features field).
 //
 // The two types carry IDENTICAL JSON tags by construction (
 // residue + plan_result agree on tag/note_count/tag_families/

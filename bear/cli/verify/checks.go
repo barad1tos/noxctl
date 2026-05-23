@@ -297,10 +297,11 @@ func checkApplyIdempotency(ctx context.Context, opts Options, domains []*domain.
 
 // runApplyOnce invokes `engine.Apply` using `opts.ApplyOpts` as the
 // template — Pins, StatePath, LockPath, Features are caller-supplied
-// (cmd layer derives them from the same catalog `noxctl apply` uses,
-// via `featuresFromCatalog`). Domains and Stderr are overridden here
-// so the verify package stays catalog-agnostic. Returns the result
-// for stat collection or an error on infrastructure-level failure.
+// (cmd layer derives Features from the same catalog `noxctl apply`
+// uses, via `cliutil.FeaturesFromCatalog`). Domains and Stderr are
+// overridden here so the verify package stays catalog-agnostic.
+// Returns the result for stat collection or an error on
+// infrastructure-level failure.
 func runApplyOnce(ctx context.Context, opts Options, domains []*domain.Domain) (*engine.ApplyResult, error) {
 	apply := opts.ApplyOpts
 	apply.Domains = domains

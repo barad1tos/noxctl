@@ -60,10 +60,14 @@ func (s *atomicParseState) consumeHeader(trimmed, authorH2Marker, family string,
 }
 
 // consumePreamble captures non-tag-line content that lives between the
-// H1 and the first canonical header line. Lines here are preserved
-// in-place at render time (between H1 and tag-line) per spec
-// component 5. Dispatch order is H1 → header → preamble → leading-blank
-// → body; preamble runs only AFTER consumeHeader has had its chance to
+// H1 and the first canonical header line. Production render paths
+// hoist this slice into the body zone via hoistPreambleToBody, so
+// preamble content always lands below `---` after canonicalization —
+// any layout where the user (or Bear's new-note URL template cursor)
+// put body content into the preamble zone gets normalized to the
+// canonical contract `H1 / tag-line / --- / body` on the next regen
+// tick. Dispatch order is H1 → header → preamble → leading-blank →
+// body; preamble runs only AFTER consumeHeader has had its chance to
 // claim header-shape lines.
 //
 // Rejects lines that LOOK like canonical-line debris — `#<token> |...`
@@ -124,7 +128,6 @@ func (d *Domain) parseAtomicContent(content, author string) AtomicParts {
 // renderAtomicCanonical produces the canonical atomic body shape:
 //
 //	# Title
-//	<preamble lines, if any>
 //	#<tag> [extra tags] | [[Backlink]] [| section]
 //	---
 //
@@ -132,12 +135,12 @@ func (d *Domain) parseAtomicContent(content, author string) AtomicParts {
 //
 // The leading `#<tag>` token comes from d.ResolveCanonicalTag(bucket) so domains
 // that preserve sub-tags can emit `#<top>/<bucket>` per atomic without
-// touching the rest of the canonicalization flow. `preamble` lines (non-
-// tag-line content captured between H1 and the canonical tag-line) are
-// emitted in place above the tag-line per spec component 5.
+// touching the rest of the canonicalization flow. Callers must invoke
+// `hoistPreambleToBody` on the parsed `AtomicParts` before threading
+// `contentBody` here so that no content survives between H1 and the
+// canonical tag-line.
 func (d *Domain) renderAtomicCanonical(
 	h1Line string,
-	preamble,
 	extraTags []string,
 	bucket,
 	backlink,
@@ -156,9 +159,6 @@ func (d *Domain) renderAtomicCanonical(
 	suffix += NewNoteURLFromDomain(d).Emit()
 	var b strings.Builder
 	b.WriteString(h1Line + "\n")
-	for _, line := range preamble {
-		b.WriteString(line + "\n")
-	}
 	_, _ = fmt.Fprintf(&b, "%s | %s%s\n---\n\n", tagLine, backlink, suffix)
 	if contentBody != "" {
 		b.WriteString(contentBody + "\n")
@@ -192,9 +192,10 @@ func (d *Domain) upsertAtomicBacklink(
 	if parts.H1Line == "" || isEmptyH1(parts.H1Line) {
 		parts.H1Line = "# " + NowForNewNoteLink().Format(H1DatetimeFormat)
 	}
+	hoistPreambleToBody(&parts)
 	contentBody := strings.Trim(strings.Join(parts.BodyLines, "\n"), "\n ")
 	desired := d.renderAtomicCanonical(
-		parts.H1Line, parts.PreambleLines, parts.ExtraTags, bucket,
+		parts.H1Line, parts.ExtraTags, bucket,
 		d.backlinkFor(bucket), d.sectionFor(bucket, parts), contentBody,
 	)
 
@@ -214,9 +215,24 @@ func isEmptyH1(line string) bool {
 	return strings.TrimSpace(strings.TrimPrefix(line, "#")) == ""
 }
 
+// hoistPreambleToBody relocates content the parser placed between H1
+// and the canonical tag-line into the body zone (below `---`). Mirrors
+// the bootstrap behavior across the per-domain regen path so notes
+// authored via Bear's new-note URL template — where Bear's cursor
+// frequently lands above the canonical line — get normalized to the
+// canonical contract `H1 / tag-line / --- / body` on the next regen
+// tick. Idempotent: no-ops when PreambleLines is empty.
+func hoistPreambleToBody(p *AtomicParts) {
+	if len(p.PreambleLines) == 0 {
+		return
+	}
+	p.BodyLines = append(append([]string{}, p.PreambleLines...), p.BodyLines...)
+	p.PreambleLines = nil
+}
+
 // RenderAtomicCanonicalForTest exposes the in-memory rendering path of
 // upsertAtomicBacklink without the bearcli round-trip. Tests use it to
-// assert canonical body shape (H1 stamping, preamble preservation,
+// assert canonical body shape (H1 stamping, preamble hoist,
 // canonical-line composition) deterministically. The noteTitle arg is
 // kept in the signature so tests document the historical Bear-side
 // title input — the new datetime-stamp path doesn't consult it.
@@ -227,9 +243,10 @@ func RenderAtomicCanonicalForTest(t interface{ Helper() }, d *Domain, noteTitle,
 	if parts.H1Line == "" || isEmptyH1(parts.H1Line) {
 		parts.H1Line = "# " + NowForNewNoteLink().Format(H1DatetimeFormat)
 	}
+	hoistPreambleToBody(&parts)
 	contentBody := strings.Trim(strings.Join(parts.BodyLines, "\n"), "\n ")
 	return d.renderAtomicCanonical(
-		parts.H1Line, parts.PreambleLines, parts.ExtraTags, bucket,
+		parts.H1Line, parts.ExtraTags, bucket,
 		d.backlinkFor(bucket), d.sectionFor(bucket, parts), contentBody,
 	)
 }
@@ -248,25 +265,19 @@ func RenderAtomicCanonicalForTest(t interface{ Helper() }, d *Domain, noteTitle,
 //
 // Body lines that parseAtomicContent captured as preamble (free-form
 // content that the user typed before any canonical tag-line existed)
-// are MOVED BELOW the tag-line + `---` separator. This is the key
-// difference from the legacy stampDailyTag append-at-end approach,
-// which left user-typed body stranded as preamble above the tag-line.
-// Legitimate preamble use cases (Bear's auto-inserted TOC line, poetry
-// citations) only arise after a regen cycle has already canonicalized
-// the atom; bootstrap by definition runs on pre-canonical content, so
-// re-classifying preamble as body is safe.
+// are MOVED BELOW the tag-line + `---` separator via
+// `hoistPreambleToBody`. The same hoist now runs in the per-domain
+// regen path (`upsertAtomicBacklink`), so the canonical contract is
+// uniform across both: no content survives between H1 and tag-line.
 func (d *Domain) RenderCanonicalForBootstrap(existingContent string) string {
 	parts := d.parseAtomicContent(existingContent, d.UnknownBucket)
 	if parts.H1Line == "" || isEmptyH1(parts.H1Line) {
 		parts.H1Line = "# " + NowForNewNoteLink().Format(H1DatetimeFormat)
 	}
-	if len(parts.PreambleLines) > 0 {
-		parts.BodyLines = append(append([]string{}, parts.PreambleLines...), parts.BodyLines...)
-		parts.PreambleLines = nil
-	}
+	hoistPreambleToBody(&parts)
 	contentBody := strings.Trim(strings.Join(parts.BodyLines, "\n"), "\n ")
 	return d.renderAtomicCanonical(
-		parts.H1Line, parts.PreambleLines, parts.ExtraTags, d.UnknownBucket,
+		parts.H1Line, parts.ExtraTags, d.UnknownBucket,
 		d.backlinkFor(d.UnknownBucket), d.sectionFor(d.UnknownBucket, parts), contentBody,
 	)
 }
