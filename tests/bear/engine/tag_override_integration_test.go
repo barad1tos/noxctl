@@ -251,12 +251,16 @@ func (f *fakeWorkBackend) Run(_ context.Context, args []string, stdin string) ([
 	return []byte("{}"), nil
 }
 
-// atomNoteID, masterNoteID, foreignNoteID are stable IDs reused across
-// every case so failure messages name the same atom across the file.
+// atomNoteID, masterNoteID, foreignNoteID, claudeAtomNoteID, claudeHubNoteID,
+// and claudeMasterNoteID are stable IDs reused across every case so failure
+// messages name the same atom across the file.
 const (
-	atomNoteID    = "atom-work-tasks-001"
-	masterNoteID  = "master-robota-001"
-	foreignNoteID = "atom-foreign-poetry-001"
+	atomNoteID         = "atom-work-tasks-001"
+	masterNoteID       = "master-robota-001"
+	foreignNoteID      = "atom-foreign-poetry-001"
+	claudeAtomNoteID   = "atom-claude-001"
+	claudeHubNoteID    = "hub-claude-sessions-001"
+	claudeMasterNoteID = "master-claude-001"
 )
 
 // canonicalAtomBody renders the minimal atomic body the production
@@ -600,6 +604,173 @@ func TestTagOverrideIntegration_MembershipGuardSkipsForeignDomain(t *testing.T) 
 				t.Errorf("foreign atom %s leaked into Groups[%q] = %v — membership guard failed",
 					foreignNoteID, bucket, noteIDs(atoms))
 			}
+		}
+	})
+}
+
+// claudeDomainBuckets mirrors the bucket whitelist Roman's `#claude` catalog
+// entry exposes (examples/personal.toml). Used for hub-routed-with-subtag
+// integration tests where Tier-2 hub notes (`claude · <bucket>`) and the
+// per-bucket master share the same bucket vocabulary.
+var claudeDomainBuckets = []string{
+	"sessions", "memory", "decisions",
+	"concepts", "research", "pets", "tasks",
+}
+
+// buildClaudeDomainForIntegration constructs the hub-routed-with-subtag
+// claude domain via the production factory. Factory-built (not literal)
+// for the same reason as buildWorkDomainForIntegration: any future
+// regression that drops Domain.Buckets / BucketFromHubTitle / IsHubNote
+// wiring trips this test before the merge invariant is ever checked.
+//
+//cyrillic:permit
+func buildClaudeDomainForIntegration() *domain.Domain {
+	return render.NewHubRoutedSubTagDomain("claude", "✱ Claude", "інше", claudeDomainBuckets)
+}
+
+// claudeAtomBody renders the minimal atomic body for the hub+tag test:
+// canonical tag-line keyed to the UnknownBucket ("інше") so neither the
+// canonical-header detection nor BucketFromSubTag yields a bucket — only
+// the hub override (which lists the atom under a Tier-2 hub) or the tag
+// override (drag-add sub-tag) can re-route it.
+//
+//cyrillic:permit
+func claudeAtomBody() string {
+	return "# Claude нотатка\n#claude/інше | [[claude · інше]]\n---\nbody\n"
+}
+
+// claudeHubBody renders the Tier-2 hub `claude · sessions` body listing
+// the atom as a bullet. The hub claim is the override candidate that wins
+// over the tag drag in the priority merge.
+//
+//cyrillic:permit
+func claudeHubBody() string {
+	return "# claude · sessions\n#claude/sessions | [[✱ Claude]]\n---\n- [[Claude нотатка]]\n"
+}
+
+// claudeMasterBody renders the hub-routed master listing each Tier-2 hub.
+// Kept minimal — the snapshot path only reads notes; it does not parse the
+// master for overrides (hub-routed-with-subtag wires ParseMasterTable=nil).
+//
+//cyrillic:permit
+func claudeMasterBody() string {
+	return "# ✱ Claude\n#claude\n---\n## Категорії (1)\n- [[claude · sessions]] (1)\n"
+}
+
+// TestTagOverrideIntegration_HubWinsOverTag pins the merge-priority contract
+// for the hub-routed-with-subtag pattern: when a Tier-2 hub note lists the
+// atom as a bullet (hub override candidate → sessions) AND the Bear tag
+// array carries a drag-added sub-tag (tag override candidate → memory),
+// the snapshot routes the atom into the HUB bucket. Without this lock, the
+// second mergeOverrideLayer call (hub layer folded into master overrides,
+// then tag folded on top) would be invisible in the test suite — every
+// other integration case uses NewGroupedVerticalDomain which sets
+// RenderHub=nil, so computeHubOverrides returns nil and the hub-layer
+// merge is only ever exercised with from=nil.
+//
+//cyrillic:permit
+func TestTagOverrideIntegration_HubWinsOverTag(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		resetPoolForApply(t)
+		fake := newFakeWorkBackend()
+		// Atom canonical bucket = "інше" (unknown). Hub `claude · sessions`
+		// lists it as a bullet → hub claim = sessions. Bear tag array
+		// includes a drag-added #claude/memory → tag claim = memory.
+		// Priority hub > tag must land the atom in sessions.
+		fake.StageList(t, []map[string]any{
+			{
+				"id":      claudeAtomNoteID,
+				"title":   "Claude нотатка",
+				"tags":    []string{"#claude", "#claude/memory"},
+				"content": claudeAtomBody(),
+			},
+			{
+				"id":      claudeHubNoteID,
+				"title":   "claude · sessions",
+				"tags":    []string{"#claude", "#claude/sessions"},
+				"content": claudeHubBody(),
+			},
+			{
+				"id":      claudeMasterNoteID,
+				"title":   "✱ Claude",
+				"tags":    []string{"#claude"},
+				"content": claudeMasterBody(),
+			},
+		})
+		ctx := domain.ContextWithBackend(context.Background(), fake)
+		d := buildClaudeDomainForIntegration()
+
+		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		if err != nil {
+			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
+		}
+		if got := noteIDs(inputs.Groups["sessions"]); !slices.Equal(got, []string{claudeAtomNoteID}) {
+			t.Errorf("Groups[\"sessions\"] = %v, want [%s] (hub override must outrank tag drag)",
+				got, claudeAtomNoteID)
+		}
+		if got := noteIDs(inputs.Groups["memory"]); slices.Contains(got, claudeAtomNoteID) {
+			t.Errorf("Groups[\"memory\"] contains %s — tag override leaked past hub priority",
+				claudeAtomNoteID)
+		}
+	})
+}
+
+// TestTagOverrideIntegration_MembershipGuardCatchesSurvivor exercises the
+// in-function `hasFamilyMembership` guard inside computeTagOverrides — the
+// second line of defense after the listNotes `--tag work` filter.
+//
+// Scenario: a work-family atom that lost its bare `#work` parent tag
+// (e.g. user manually detached it in Bear's sidebar) but kept its
+// `#work/tasks` leaf. The atom passes the listNotes filter because
+// bearcli's `--tag work` accepts any tag prefixed with `#work/` — the
+// fake mirrors this via filterListByTag's `wantSubPrefix` branch — so
+// the atom reaches computeTagOverrides. The in-function guard then
+// rejects it because hasFamilyMembership sees only `#work/tasks` and
+// no bare `#work`.
+//
+// Distinguishing observable: the atom's canonical header pins bucket =
+// `health`. With the guard intact, no tag override fires → atom routes
+// via canonical → Groups["health"]. Without the guard (hypothetical
+// regression), the override would re-bucket → Groups["tasks"].
+// Asserting "atom in health AND not in tasks" pins both halves.
+//
+// Sibling to TestTagOverrideIntegration_MembershipGuardSkipsForeignDomain
+// — that case exercises the upstream listNotes filter (pure foreign atom
+// gets dropped before the guard ever runs); this one bypasses the filter
+// to drive the in-function guard.
+//
+//cyrillic:permit
+func TestTagOverrideIntegration_MembershipGuardCatchesSurvivor(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		resetPoolForApply(t)
+		fake := newFakeWorkBackend()
+		// Detached atom: canonical header pins bucket=health, stray
+		// `#work/tasks` survives in tags array, but no bare `#work`
+		// parent. listNotes filter accepts (matches `#work/` prefix);
+		// in-function guard rejects (no `#work`).
+		detachedBody := "# Detached note\n#work/health | [[✱ Робота]]\n---\nbody\n"
+		fake.StageList(t, []map[string]any{
+			{
+				"id":      atomNoteID,
+				"title":   "Detached note",
+				"tags":    []string{"#work/tasks"},
+				"content": detachedBody,
+			},
+		})
+		ctx := domain.ContextWithBackend(context.Background(), fake)
+		d := buildWorkDomainForIntegration()
+
+		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		if err != nil {
+			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
+		}
+		if got := noteIDs(inputs.Groups["health"]); !slices.Equal(got, []string{atomNoteID}) {
+			t.Errorf("Groups[\"health\"] = %v, want [%s] (canonical-header bucket should hold the atom)",
+				got, atomNoteID)
+		}
+		if got := noteIDs(inputs.Groups["tasks"]); slices.Contains(got, atomNoteID) {
+			t.Errorf("Groups[\"tasks\"] contains %s — in-function hasFamilyMembership guard failed; "+
+				"tag override fired on an atom without #work parent", atomNoteID)
 		}
 	})
 }
