@@ -34,10 +34,13 @@ package audit
 //     with no body rewrite.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -166,4 +169,76 @@ func quoteJoin(items []string) string {
 		parts[i] = fmt.Sprintf("%q", item)
 	}
 	return strings.Join(parts, ", ")
+}
+
+// ScanOrphanFamilies is the corpus-level read-only scan. It issues one
+// `bearcli list --location notes` call (mirroring ScanUntracked's call
+// shape exactly), derives the managed-roots set from the supplied
+// domain catalog, and runs the pure aggregateOrphanFamilies detector
+// over the result.
+//
+// Returns (nil, wrapped error) on bearcli failure or JSON parse
+// failure — corpus-level scans cannot partially succeed the way the
+// per-domain Scan can (no per-domain fallback to fall back to). The
+// caller (cli.RunLint) is responsible for log-and-continue on error
+// so the per-domain findings still render even when the corpus scan
+// fails.
+//
+// Read-only: never writes to bearcli; never mutates inputs. The
+// mutation pass lives in ApplyOrphanFamilies.
+func ScanOrphanFamilies(ctx context.Context, domains []*domain.Domain) ([]Finding, error) {
+	managed := ManagedRootsFromDomains(domains)
+
+	out, err := bearcli.Run(ctx,
+		[]string{
+			"list", "--location", "notes",
+			bearcli.FlagFormat, bearcli.FormatJSON,
+			bearcli.FlagFields, "id,title,tags",
+		},
+		"")
+	if err != nil {
+		return nil, fmt.Errorf("ScanOrphanFamilies list: %w", err)
+	}
+
+	var notes []domain.AutoTagNote
+	if parseErr := json.Unmarshal(out, &notes); parseErr != nil {
+		return nil, fmt.Errorf("ScanOrphanFamilies parse: %w", parseErr)
+	}
+
+	return aggregateOrphanFamilies(notes, managed), nil
+}
+
+// ApplyOrphanFamilies issues one `bearcli tag <noteID> orphans` call
+// per finding (via bearcli.AddTag). Log-and-continue on per-atom
+// failure: partial tagging is strictly better than abort because
+// orphan-family triage is an operator-facing workflow — the operator
+// would rather see "tagged 47, failed 3 (see log)" than "aborted at
+// the first failure, 0 tagged".
+//
+// Honors ctx.Err at the top of each iteration so SIGINT response time
+// is bounded by at most one bearcli call (bearcli.Timeout=10s) instead
+// of the full sweep duration — matches the cancellation pattern used
+// by audit.Scan and LintApplyDomains.
+//
+// Defensive Category filter: skips findings whose Category is not
+// LintOrphanFamily. Belt-and-suspenders — the caller should pre-filter
+// by passing only ScanOrphanFamilies output, but mis-filtering at the
+// call site must NOT silently apply `#orphans` to unrelated findings.
+func ApplyOrphanFamilies(ctx context.Context, findings []Finding) (tagged, failed int) {
+	for _, f := range findings {
+		if err := domain.CheckCtx(ctx); err != nil {
+			return tagged, failed
+		}
+		if f.Category != LintOrphanFamily {
+			continue
+		}
+		if err := bearcli.AddTag(ctx, f.NoteID, "orphans"); err != nil {
+			log.Printf("audit: orphan-tag %s failed: %v", f.Title, err)
+			failed++
+			continue
+		}
+		log.Printf("audit: orphan-tagged: %s (id=%s)", f.Title, f.NoteID)
+		tagged++
+	}
+	return tagged, failed
 }
