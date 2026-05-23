@@ -45,7 +45,8 @@ type Metrics struct {
 	// callers render Average = WaitNanosSum / AcquireCount.
 	WaitNanosSum int64
 	// CallsByKind segregates AcquireCount by the bearcli sub-command
-	// argument ("list", "cat", "show", "overwrite", "create", "find").
+	// argument ("list", "cat", "show", "overwrite", "create", "find",
+	// "trash", "tag"). New verbs slot in here AND in incCallKind.
 	CallsByKind map[string]int64
 	// HashConflictsTotal counts the ErrHashConflict events observed
 	// by OverwriteWithRetry (regardless of retry outcome).
@@ -93,6 +94,8 @@ type poolMetrics struct {
 	callsOverwrite atomic.Int64
 	callsCreate    atomic.Int64
 	callsFind      atomic.Int64
+	callsTrash     atomic.Int64
+	callsTag       atomic.Int64
 	hashConflicts  atomic.Int64
 	retriesOK      atomic.Int64
 	retriesFail    atomic.Int64
@@ -209,6 +212,8 @@ func MetricsSnapshot() Metrics {
 			"overwrite": metrics.callsOverwrite.Load(),
 			"create":    metrics.callsCreate.Load(),
 			"find":      metrics.callsFind.Load(),
+			"trash":     metrics.callsTrash.Load(),
+			"tag":       metrics.callsTag.Load(),
 		},
 		HashConflictsTotal: metrics.hashConflicts.Load(),
 		RetriesSucceeded:   metrics.retriesOK.Load(),
@@ -304,5 +309,9 @@ func incCallKind(kind string) {
 		metrics.callsCreate.Add(1)
 	case "find":
 		metrics.callsFind.Add(1)
+	case "trash":
+		metrics.callsTrash.Add(1)
+	case "tag":
+		metrics.callsTag.Add(1)
 	}
 }

@@ -93,14 +93,18 @@ func Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
 // kindFromArgs classifies bearcli args by their sub-command (the
 // first element) for the per-kind metrics counter. Unknown
 // sub-commands fold into "other" — defensive, since today only the
-// canonical six are exercised but a future bearcli flag would surface
-// as a known-unknown rather than a panic.
+// canonical eight are exercised but a future bearcli flag would
+// surface as a known-unknown rather than a panic.
+//
+// `trash` (TrashNote) and `tag` (AddTag — Phase 13 orphan apply) are
+// first-class kinds: prior to that wiring they collapsed into the
+// "other" bucket and silently inflated the unknown-kind metric.
 func kindFromArgs(args []string) string {
 	if len(args) == 0 {
 		return "other"
 	}
 	switch args[0] {
-	case "list", "cat", "show", "overwrite", "create", "find":
+	case "list", "cat", "show", "overwrite", "create", "find", "trash", "tag":
 		return args[0]
 	}
 	return "other"
