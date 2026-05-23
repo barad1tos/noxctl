@@ -83,6 +83,16 @@ type Domain struct {
 	OwnAliases    map[string]struct{} // legacy markers folding into OwnGroup
 	UnknownBucket string              // fallback: "Невідомі" / "Книги"
 
+	// Buckets is the per-domain whitelist of valid sub-tag segments
+	// for sub-tag preserving blueprints (`grouped-vertical`,
+	// `hub-routed-with-subtag`). Populated by the corresponding factories
+	// in bear/render/. Used by computeTagOverrides to decide whether a
+	// sidebar-drag-added `#<family>/<sub>` is a legitimate re-bucket
+	// request or noise to ignore. Empty (nil) for every other blueprint —
+	// `CanonicalTagFor == nil` short-circuits computeTagOverrides before
+	// this field is ever read.
+	Buckets []string
+
 	// Tier-2 Hub semantics
 	HubH2Prefix string   // "Поеми"; "" disables Tier-2 entirely
 	HubH2Legacy []string // ["Поезії"] for one-off transition
