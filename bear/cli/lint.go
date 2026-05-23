@@ -14,6 +14,7 @@ import (
 
 	"github.com/barad1tos/noxctl/bear/audit"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/engine"
 )
 
 // RunLint performs the lint sweep. When apply is false (audit mode or
@@ -40,6 +41,7 @@ import (
 // stdout is parameterized so tests can capture the rendered findings;
 // production wires os.Stdout in the CLI shim.
 func RunLint(ctx context.Context, stdout io.Writer, domains []*domain.Domain, apply bool) {
+	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
 	if apply {
 		audit.LintApplyDomains(ctx, domains)
 		runApplyOrphanPass(ctx, domains)
