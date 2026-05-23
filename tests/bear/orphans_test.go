@@ -428,10 +428,16 @@ func TestApplyOrphanFamilies_PartialFailure_Counts(t *testing.T) {
 		t.Fatalf("AddTag attempted %d times, want 2 (no abort on first failure); calls=%v",
 			got, fake.callsTag)
 	}
-	if fake.callsTag[0].NoteID != "note-ok" || fake.callsTag[0].Tag != "orphans" {
-		t.Errorf("first AddTag = %+v, want {NoteID:note-ok, Tag:orphans}", fake.callsTag[0])
-	}
-	if fake.callsTag[1].NoteID != "note-fails" || fake.callsTag[1].Tag != "orphans" {
-		t.Errorf("second AddTag = %+v, want {NoteID:note-fails, Tag:orphans}", fake.callsTag[1])
+	assertTagCall(t, "first", fake.callsTag[0], "note-ok", "orphans")
+	assertTagCall(t, "second", fake.callsTag[1], "note-fails", "orphans")
+}
+
+// assertTagCall fails the test if the recorded AddTag call's
+// (NoteID, Tag) tuple does not match the expected pair. Extracted so a
+// run of per-call assertions stays under the dupl token threshold.
+func assertTagCall(t *testing.T, label string, got orphanTagCall, wantID, wantTag string) {
+	t.Helper()
+	if got.NoteID != wantID || got.Tag != wantTag {
+		t.Errorf("%s AddTag = %+v, want {NoteID:%s, Tag:%s}", label, got, wantID, wantTag)
 	}
 }
