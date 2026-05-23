@@ -344,10 +344,12 @@ func ParseHubBulletIdentifiers(content string) []string {
 // computeMasterOverrides returns nil for domains without a ParseMasterTable
 // and the hub/tag layers still need a place to deposit their overrides.
 //
-// `onSkip` (nil-safe) is invoked once per skipped atomID with (atomID,
-// keptBucket, suppressedBucket). The write-side apply path wires this to a
-// WARN log line so a curator drag that loses to a deliberate gesture is
-// visible; the read-only plan/snapshot path passes nil to stay silent.
+// `onSkip` (nil-safe) is invoked once per atom whose suppressed bucket
+// disagrees with the kept bucket — agreeing duplicates pass silently.
+// Callback receives (atomID, keptBucket, suppressedBucket). The write-side
+// apply path wires this to a WARN log line so a curator drag that loses
+// to a deliberate gesture is visible; the read-only plan/snapshot path
+// passes nil to stay silent.
 //
 // Returns the (possibly-mutated) merged map. Single source of truth for the
 // merge semantics: SnapshotDomainRenderInputs (snapshot.go) and RunRegen

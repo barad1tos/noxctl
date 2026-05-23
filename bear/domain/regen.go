@@ -13,7 +13,7 @@ import (
 )
 
 // RunRegen reconciles one Domain's Bear corpus end-to-end: list its
-// notes, compute master + hub overrides, run the atomics pass to
+// notes, compute master, hub, and tag overrides, run the atomics pass to
 // stamp canonical lines, render and upsert each hub, then render and
 // upsert the master index. Logs per-domain progress and aggregate
 // counts; per-note failures are logged and surfaced via the final

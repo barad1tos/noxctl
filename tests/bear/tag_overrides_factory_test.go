@@ -44,12 +44,12 @@ func TestFactoryPopulatesBuckets(t *testing.T) {
 	cases := []factoryBucketsCase{
 		{
 			name:    "grouped_vertical",
-			domain:  render.NewGroupedVerticalDomain("work", "* Робота", "інше", groupedBuckets),
+			domain:  render.NewGroupedVerticalDomain("work", "✱ Робота", "інше", groupedBuckets),
 			buckets: groupedBuckets,
 		},
 		{
 			name:    "hub_routed_with_subtag",
-			domain:  render.NewHubRoutedSubTagDomain("claude", "* Claude", "general", hubRoutedBuckets),
+			domain:  render.NewHubRoutedSubTagDomain("claude", "✱ Claude", "general", hubRoutedBuckets),
 			buckets: hubRoutedBuckets,
 		},
 	}
@@ -68,7 +68,7 @@ func TestFactoryPopulatesBuckets(t *testing.T) {
 	// silently shift the whitelist.
 	t.Run("grouped_vertical_defensive_copy", func(t *testing.T) {
 		src := []string{"tasks", "development"}
-		d := render.NewGroupedVerticalDomain("work", "* Робота", "інше", src)
+		d := render.NewGroupedVerticalDomain("work", "✱ Робота", "інше", src)
 		src[0] = "MUTATED"
 		if d.Buckets[0] != "tasks" {
 			t.Errorf("Buckets[0] = %q after caller mutated source; want %q (factory must defensive-copy)",

@@ -151,6 +151,9 @@ func (f *fakeWorkBackend) OverwriteCount() int {
 // dropped — same shape as the real bearcli list output for an isolated
 // family query. Returns the raw payload unchanged when no --tag arg is
 // present (defensive: should not happen in production paths).
+//
+// strict #-prefix match — production bearcli always supplies hashed tags;
+// the tolerance helper in computeTagOverrides is a downstream safety net.
 func (f *fakeWorkBackend) filterListByTag(args []string) []byte {
 	tag := ""
 	for i := 0; i+1 < len(args); i++ {

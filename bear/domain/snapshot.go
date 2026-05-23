@@ -53,7 +53,7 @@ func FetchHubContents(ctx context.Context, d *Domain) (map[string]string, error)
 // render a domain's master + hubs without writing. Returned by
 // SnapshotDomainRenderInputs as a single value to keep the engine
 // public-API surface narrow — facade pattern over bulk-exporting
-// listNotes/computeMasterOverrides/computeHubOverrides/groupAtomics.
+// listNotes/computeMasterOverrides/computeHubOverrides/computeTagOverrides/groupAtomics.
 //
 //nolint:revive // public API surface; rename is breaking change for callers
 type RenderInputs struct {
@@ -66,8 +66,8 @@ type RenderInputs struct {
 // read — calls bearcli list once, then runs the in-process
 // override+grouping pipeline. Never writes.
 //
-// The merge order matches engine.Apply's RunRegen (regen.go):
-// master overrides override hub overrides on collision. Plan engine
+// merge order matches RunRegen: master > hub > tag, first claimant wins
+// (see mergeOverrideLayer for the byte-equivalent invariant). Plan engine
 // (bear/engine/plan.go) calls this and feeds.Groups straight into
 // d.RenderMaster(d, groups) — same call shape as Apply.
 //
@@ -83,8 +83,10 @@ func SnapshotDomainRenderInputs(ctx context.Context, d *Domain) (RenderInputs, e
 	// already claimed by a higher-priority layer. mergeOverrideLayer is the
 	// single source of truth — regen.go routes through the same helper so the
 	// post-merge override map stays byte-equivalent between plan (this path)
-	// and apply (RunRegen). No log emission here: snapshot is the read-only
-	// facade used by engine.Plan; rebucket counts surface through the
+	// and apply (RunRegen). The only WARN we suppress here is the higher-layer
+	// suppression notice (via nil onSkip). Inner whitelist failures and tag
+	// conflicts still surface through d.Logf — they represent configuration
+	// drift the planner needs to see; rebucket counts surface through the
 	// plan-diff renderer instead.
 	overrides := d.computeMasterOverrides(notes)
 	overrides = mergeOverrideLayer(overrides, d.computeHubOverrides(notes), nil)

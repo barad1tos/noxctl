@@ -4,10 +4,6 @@
 // third override layer sibling to computeMasterOverrides / computeHubOverrides.
 // Tests reach the unexported method through the ComputeTagOverridesForTest
 // seam (mirrors ProcessAtomicForTest in bear/domain/upserts.go).
-//
-// Each sub-test name encodes the branch it covers (one t.Run per branch of
-// the computeTagOverrides spec); the per-row name strings in this file are
-// the single source of truth for algorithm coverage.
 package bear_test
 
 import (
@@ -77,8 +73,7 @@ func captureTagOverrideLog(t *testing.T) *bytes.Buffer {
 // tagOverrideCase declares one shape-only sub-test: each row carries only
 // the bits that vary across the algorithm-branch matrix (note ID, tag
 // array, canonical bucket in body, optional domain mutation). The shared
-// noteFrom helper rebuilds the domain.Note literal so the per-row body
-// stays small enough to keep the duplicate-block linter quiet.
+// noteFrom helper rebuilds the domain.Note literal — shared to keep `dupl` quiet.
 type tagOverrideCase struct {
 	name            string
 	mutateDomain    func(d *domain.Domain)
@@ -90,10 +85,9 @@ type tagOverrideCase struct {
 	wantNilMap      bool // distinguishes nil-return (blueprint gate) from empty map
 }
 
-// noteFrom assembles a single-note slice from row parameters. Centralizing
-// construction strips the repeated domain.Note literal from every case body
-// (each literal carries 50+ duplicate tokens, which trips the dupl linter
-// once 4+ shape-only rows share the shape).
+// noteFrom assembles a single-note slice from row parameters — shared to
+// keep `dupl` quiet by stripping the repeated domain.Note literal from
+// every case body.
 func noteFrom(tc tagOverrideCase) []domain.Note {
 	return []domain.Note{{
 		ID:      tc.noteID,
@@ -104,9 +98,8 @@ func noteFrom(tc tagOverrideCase) []domain.Note {
 }
 
 // runShapeOnly executes one row's algorithm call and asserts the override
-// map's shape. Extracted so TestComputeTagOverrides stays under the
-// gocognit ≤15 budget — the per-row branch count stays at 3 (nil check,
-// length check, value-by-key check), shared across every shape-only row.
+// map's shape — per-row checks stay at three: nil-map, count match, and
+// value-by-key match.
 func runShapeOnly(t *testing.T, tc tagOverrideCase) {
 	t.Helper()
 	d := buildWorkDomain()
@@ -137,8 +130,7 @@ func runShapeOnly(t *testing.T, tc tagOverrideCase) {
 //
 // The strict-mode warning case lives in its own t.Run because it asserts
 // log content; the other rows share runShapeOnly to keep the
-// duplicate-block linter quiet and the test function's cognitive
-// complexity below the ≤15 threshold.
+// duplicate-block linter quiet.
 //
 //cyrillic:permit
 func TestComputeTagOverrides(t *testing.T) {
