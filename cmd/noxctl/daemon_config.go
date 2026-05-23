@@ -85,8 +85,8 @@ func runDaemonConfigShow(cmd *cobra.Command, _ []string) error {
 // (`$HOME/.noxctl/daemon.toml`). Returns an error when the home-dir
 // lookup fails — silently falling back to `./.noxctl/daemon.toml`
 // would either pick up an unrelated file from the daemon's working
-// directory or silently mask the operator's real config (the exact
-// failure shape this PR is meant to prevent). Shared between
+// directory or silently mask the operator's real config, which the
+// daemon contract is meant to prevent. Shared between
 // `daemon-config show` and `runDaemon` startup so the two CANNOT
 // disagree about which file they're reading.
 func daemonConfigPath() (string, error) {

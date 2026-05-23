@@ -70,9 +70,9 @@ func TestLocaleAllowlistAcceptsExpected(t *testing.T) {
 
 // TestLocaleWireUpAffectsActiveLocale asserts that `domain.SetLocale`
 // actually changes `domain.ActiveLocale()` — the smallest possible
-// red/green regression-lock against the bug shipped before this PR
-// (where `meta.locale` was validated but `SetLocale` was never
-// called from any catalog-load callsite).
+// regression-lock against the failure shape where `meta.locale` is
+// validated but `SetLocale` is never called from any catalog-load
+// callsite.
 //
 // This test does NOT exercise the full Load → SetLocale chain
 // (that runs through cmd/noxctl/preflight and bear/cli/plan which

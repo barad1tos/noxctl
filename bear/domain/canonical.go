@@ -128,7 +128,6 @@ func (d *Domain) parseAtomicContent(content, author string) AtomicParts {
 // renderAtomicCanonical produces the canonical atomic body shape:
 //
 //	# Title
-//	<preamble lines, if any>
 //	#<tag> [extra tags] | [[Backlink]] [| section]
 //	---
 //
@@ -138,8 +137,8 @@ func (d *Domain) parseAtomicContent(content, author string) AtomicParts {
 // that preserve sub-tags can emit `#<top>/<bucket>` per atomic without
 // touching the rest of the canonicalization flow. Callers must invoke
 // `hoistPreambleToBody` on the parsed `AtomicParts` before threading
-// `contentBody` here — the canonical shape is `H1 / tag-line / --- /
-// body` with no preamble zone.
+// `contentBody` here so that no content survives between H1 and the
+// canonical tag-line.
 func (d *Domain) renderAtomicCanonical(
 	h1Line string,
 	extraTags []string,

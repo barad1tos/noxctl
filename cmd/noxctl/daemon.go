@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -147,11 +148,13 @@ func init() {
 }
 
 // warnSilentFastPassGates emits a one-shot WARN at startup for each
-// fast-pass gate that is `feature flag = true && data the pass needs
-// is empty/zero` — the silent-disable shape that motivated this whole
-// PR. Each WARN names the catalog/daemon-toml field the operator
-// would edit to either turn the feature off explicitly or supply the
-// missing data.
+// fast-pass gate that would silently no-op without telling the
+// operator why. Two shapes are covered: (a) feature flag is ON but
+// the catalog data the pass needs is empty (daily-default tag,
+// promotion rules); (b) a periodic poll interval is zero while a
+// fast-pass that depends on the ticker is enabled. Each WARN names
+// the catalog/daemon-toml field the operator would edit to fix the
+// silent disable.
 func warnSilentFastPassGates(opts engine.DaemonOpts) {
 	if opts.Features.AutoTagDefault && opts.DailyDefaultTag == "" {
 		log.Printf("WARN: daily-default tag stamping inactive — features.auto_tag_default=true " +
@@ -182,4 +185,39 @@ func warnSilentFastPassGates(opts engine.DaemonOpts) {
 			"FSEvents drops (RAM-buffered 5-10s after note save) will be missed " +
 			"until the next user-initiated event")
 	}
+	logFeaturesDisabled(opts.Features)
+}
+
+// logFeaturesDisabled emits a single INFO line listing any
+// ship-default-ON feature flags that the resolved configuration has
+// turned OFF. Covers the inverse silent-disable shape (default_should_be_on
+// && catalog_overrides_off) — without this line, an operator who set
+// `[features].domain_bootstrap = false` in the catalog gets zero
+// breadcrumb in the daemon log. Stays INFO rather than WARN because
+// turning a feature off is a legitimate operator choice that just
+// needs to be visible.
+func logFeaturesDisabled(f engine.Features) {
+	type flag struct {
+		name string
+		on   bool
+	}
+	flags := []flag{
+		{"auto_tag_default", f.AutoTagDefault},
+		{"cross_domain_moves", f.CrossDomainMoves},
+		{"time_promotion", f.TimePromotion},
+		{"foreign_tag_escape", f.ForeignTagEscape},
+		{"duplicate_registry", f.DuplicateRegistry},
+		{"domain_bootstrap", f.DomainBootstrap},
+	}
+	var off []string
+	for _, fl := range flags {
+		if !fl.on {
+			off = append(off, fl.name)
+		}
+	}
+	if len(off) == 0 {
+		return
+	}
+	log.Printf("INFO: features disabled by config: %s (default state is ON for all features; "+
+		"override resolves env > daemon.toml > catalog [features].* > default)", strings.Join(off, ", "))
 }

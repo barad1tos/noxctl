@@ -114,8 +114,8 @@ func TestUpsertAtomic_HoistsPreambleToBody(t *testing.T) {
 	// must produce byte-equivalent pass-2 output. Without this lock,
 	// a future drift in `hoistPreambleToBody` (e.g. appending a
 	// trailing blank that wasn't there before) would create silent
-	// rewrite-loop churn — the same failure shape as the 2026-05-17
-	// 19,040-rewrite incident.
+	// rewrite-loop churn — exactly the failure shape this assertion
+	// prevents.
 	pass2 := domain.RenderAtomicCanonicalForTest(t, d, "Note Title", "_unknown", out)
 	if pass2 != out {
 		t.Errorf("non-idempotent hoist — pass-2 output differs from pass-1:\n--- pass-1 ---\n%s\n--- pass-2 ---\n%s", out, pass2)
