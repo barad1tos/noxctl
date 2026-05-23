@@ -1,5 +1,4 @@
-// Package bear_test is the external test surface for the bear package
-// (see grouped_vertical_test.go for the package doc-comment rationale).
+// Package bear_test is the external test surface for the bear package.
 //
 // snapshot_test.go locks down the snapshot facade contract:
 //
@@ -70,7 +69,7 @@ func TestSnapshotDomainRenderInputs(t *testing.T) {
 		CanonicalTag: "#noxctl/snapshot-empty-fixture-do-not-use",
 		IndexTitle:   "✱ Snapshot Fixture (test-only)",
 		// ParseMeta + RenderMaster are nil; safe because zero-note
-		// tags never reach detectAuthor or RenderMaster on this path.
+		// tags never reach DetectAuthor or RenderMaster on this path.
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

@@ -221,9 +221,8 @@ func TestComputeTagOverrides(t *testing.T) {
 		},
 		{
 			// Guards against a factory regression that drops the Buckets
-			// whitelist: without entries to consult, every drag would be a
-			// silent no-op. Documents the "loader-without-consumer" failure
-			// shape recorded in feedback_cli_shim_audit.md.
+			// whitelist: with no entries to consult, every drag becomes a
+			// silent no-op.
 			name:            "EmptyBucketsWhitelist_NoOverrides",
 			mutateDomain:    func(d *domain.Domain) { d.Buckets = nil },
 			noteID:          "note-009",
