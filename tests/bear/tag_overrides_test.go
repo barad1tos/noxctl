@@ -5,13 +5,13 @@
 // Tests reach the unexported method through the ComputeTagOverridesForTest
 // seam (mirrors ProcessAtomicForTest at bear/domain/upserts.go:153).
 //
-// Algorithm coverage matrix (one t.Run per branch of the spec in
-// .planning/phases/12-tag-override-layer/12-CONTEXT.md):
+// Algorithm coverage matrix (one row per branch of the spec):
 //
 //  1. SingleNonCanonical_Fires — happy path, sidebar drag adds one whitelisted
 //     sub-tag and the canonical header disagrees → override recorded.
 //  2. MultipleNonCanonical_SkipsWithWarning — strict mode: two-plus
-//     non-canonical sub-tags emit a warning and record no override.
+//     non-canonical sub-tags emit a warning and record no override. Lives as
+//     its own t.Run because it also asserts log content.
 //  3. NonWhitelistedSubTag_Ignored — sub-tag outside `Buckets ∪ {UnknownBucket}`
 //     is filtered at step 3 of the algorithm.
 //  4. TagsMatchCanonical_NoOverride — sub-tag agrees with canonical → no work.
@@ -40,7 +40,7 @@ import (
 //
 //cyrillic:permit
 func buildWorkDomain() *domain.Domain {
-	d := &domain.Domain{
+	return &domain.Domain{
 		Tag:           "work",
 		CanonicalTag:  "#work",
 		IndexTitle:    "✱ Робота",
@@ -57,7 +57,6 @@ func buildWorkDomain() *domain.Domain {
 			return d.CanonicalTag + "/" + bucket
 		},
 	}
-	return d
 }
 
 // canonicalBody returns the minimal atomic-note body shape the algorithm's
@@ -87,32 +86,78 @@ func captureTagOverrideLog(t *testing.T) *bytes.Buffer {
 	return &buf
 }
 
+// tagOverrideCase declares one shape-only sub-test: each row carries only
+// the bits that vary across the algorithm-branch matrix (note ID, tag
+// array, canonical bucket in body, optional domain mutation). The shared
+// noteFrom helper rebuilds the domain.Note literal so the per-row body
+// stays small enough to keep the duplicate-block linter quiet.
+type tagOverrideCase struct {
+	name            string
+	mutateDomain    func(d *domain.Domain)
+	noteID          string
+	noteTitle       string
+	noteTags        []string
+	canonicalInBody string
+	wantOverrides   map[string]string
+	wantNilMap      bool // distinguishes nil-return (blueprint gate) from empty map
+}
+
+// noteFrom assembles a single-note slice from row parameters. Centralizing
+// construction strips the repeated domain.Note literal from every case body
+// (each literal carries 50+ duplicate tokens, which trips the dupl linter
+// once 4+ shape-only rows share the shape).
+func noteFrom(tc tagOverrideCase) []domain.Note {
+	return []domain.Note{{
+		ID:      tc.noteID,
+		Title:   tc.noteTitle,
+		Tags:    tc.noteTags,
+		Content: canonicalBody(tc.canonicalInBody),
+	}}
+}
+
+// runShapeOnly executes one row's algorithm call and asserts the override
+// map's shape. Extracted so TestComputeTagOverrides stays under the
+// gocognit ≤15 budget — the per-row branch count stays at 3 (nil check,
+// length check, value-by-key check), shared across every shape-only row.
+func runShapeOnly(t *testing.T, tc tagOverrideCase) {
+	t.Helper()
+	d := buildWorkDomain()
+	if tc.mutateDomain != nil {
+		tc.mutateDomain(d)
+	}
+	got := d.ComputeTagOverridesForTest(noteFrom(tc))
+	if tc.wantNilMap {
+		if got != nil {
+			t.Errorf("expected nil map, got %v", got)
+		}
+		return
+	}
+	if len(got) != len(tc.wantOverrides) {
+		t.Errorf("override count mismatch: got %d (%v), want %d (%v)",
+			len(got), got, len(tc.wantOverrides), tc.wantOverrides)
+	}
+	for id, wantBucket := range tc.wantOverrides {
+		if got[id] != wantBucket {
+			t.Errorf("note %s: got bucket %q, want %q (full map: %v)",
+				id, got[id], wantBucket, got)
+		}
+	}
+}
+
 // TestComputeTagOverrides locks the eight-case algorithm contract for the
 // third override layer. RED-phase failure mode is "undefined:
 // ComputeTagOverridesForTest"; GREEN phase requires every sub-test to pass.
+//
+// The strict-mode warning case lives in its own t.Run because it asserts
+// log content; the other seven rows share runShapeOnly to keep the
+// duplicate-block linter quiet and the test function's cognitive
+// complexity below the ≤15 threshold.
+//
+//cyrillic:permit
 func TestComputeTagOverrides(t *testing.T) {
-	t.Run("SingleNonCanonical_Fires", func(t *testing.T) {
-		d := buildWorkDomain()
-		//cyrillic:permit
-		notes := []domain.Note{{
-			ID:      "note-001",
-			Title:   "Daily task",
-			Tags:    []string{"#work", "#work/tasks"},
-			Content: canonicalBody("інше"),
-		}}
-		got := d.ComputeTagOverridesForTest(notes)
-		if want := "tasks"; got["note-001"] != want {
-			t.Errorf("note-001: got %q, want %q (full map: %v)", got["note-001"], want, got)
-		}
-		if len(got) != 1 {
-			t.Errorf("expected exactly one override, got %d (%v)", len(got), got)
-		}
-	})
-
 	t.Run("MultipleNonCanonical_SkipsWithWarning", func(t *testing.T) {
 		buf := captureTagOverrideLog(t)
 		d := buildWorkDomain()
-		//cyrillic:permit
 		notes := []domain.Note{{
 			ID:      "note-002",
 			Title:   "Ambiguous",
@@ -123,116 +168,90 @@ func TestComputeTagOverrides(t *testing.T) {
 		if _, present := got["note-002"]; present {
 			t.Errorf("note-002 should NOT be in override map, got %v", got)
 		}
-		logged := buf.String()
-		if !strings.Contains(logged, "ambiguous tag intent") {
-			t.Errorf("missing strict-mode warning marker, got log: %q", logged)
-		}
-		if !strings.Contains(logged, "note-002") {
-			t.Errorf("warning should name the offending note ID, got: %q", logged)
-		}
-		//cyrillic:permit
-		if !strings.Contains(logged, "keeping canonical=інше") {
-			t.Errorf("warning should report the canonical bucket, got: %q", logged)
-		}
-		if !strings.Contains(logged, "tasks") || !strings.Contains(logged, "development") {
-			t.Errorf("warning should list both non-canonical sub-tags, got: %q", logged)
-		}
+		assertWarningLog(t, buf.String())
 	})
 
-	t.Run("NonWhitelistedSubTag_Ignored", func(t *testing.T) {
-		d := buildWorkDomain()
-		//cyrillic:permit
-		notes := []domain.Note{{
-			ID:      "note-003",
-			Title:   "Random tag",
-			Tags:    []string{"#work", "#work/randomstuff"},
-			Content: canonicalBody("інше"),
-		}}
-		got := d.ComputeTagOverridesForTest(notes)
-		if len(got) != 0 {
-			t.Errorf("non-whitelisted sub-tag must not produce overrides, got %v", got)
-		}
-	})
+	shapeCases := []tagOverrideCase{
+		{
+			name:            "SingleNonCanonical_Fires",
+			noteID:          "note-001",
+			noteTitle:       "Daily task",
+			noteTags:        []string{"#work", "#work/tasks"},
+			canonicalInBody: "інше",
+			wantOverrides:   map[string]string{"note-001": "tasks"},
+		},
+		{
+			name:            "NonWhitelistedSubTag_Ignored",
+			noteID:          "note-003",
+			noteTitle:       "Random tag",
+			noteTags:        []string{"#work", "#work/randomstuff"},
+			canonicalInBody: "інше",
+			wantOverrides:   map[string]string{},
+		},
+		{
+			name:            "TagsMatchCanonical_NoOverride",
+			noteID:          "note-004",
+			noteTitle:       "Already canonical",
+			noteTags:        []string{"#work", "#work/tasks"},
+			canonicalInBody: "tasks",
+			wantOverrides:   map[string]string{},
+		},
+		{
+			name:            "NonSubTagBlueprint_EarlyReturn",
+			mutateDomain:    func(d *domain.Domain) { d.CanonicalTagFor = nil },
+			noteID:          "note-005",
+			noteTitle:       "Would normally fire",
+			noteTags:        []string{"#work", "#work/tasks"},
+			canonicalInBody: "інше",
+			wantNilMap:      true,
+		},
+		{
+			name:            "UnknownBucketAsSubTag_NoOverride",
+			noteID:          "note-006",
+			noteTitle:       "Unknown bucket sub-tag",
+			noteTags:        []string{"#work", "#work/інше"},
+			canonicalInBody: "інше",
+			wantOverrides:   map[string]string{},
+		},
+		{
+			name:            "NoFamilyTagsAtAll_Skip",
+			noteID:          "note-007",
+			noteTitle:       "Bare family tag only",
+			noteTags:        []string{"#work"},
+			canonicalInBody: "інше",
+			wantOverrides:   map[string]string{},
+		},
+		{
+			name:            "MissingDomainTag_Skipped",
+			noteID:          "note-008",
+			noteTitle:       "No domain tag",
+			noteTags:        []string{"#work/tasks"},
+			canonicalInBody: "інше",
+			wantOverrides:   map[string]string{},
+		},
+	}
+	for _, tc := range shapeCases {
+		t.Run(tc.name, func(t *testing.T) { runShapeOnly(t, tc) })
+	}
+}
 
-	t.Run("TagsMatchCanonical_NoOverride", func(t *testing.T) {
-		d := buildWorkDomain()
-		notes := []domain.Note{{
-			ID:      "note-004",
-			Title:   "Already canonical",
-			Tags:    []string{"#work", "#work/tasks"},
-			Content: canonicalBody("tasks"),
-		}}
-		got := d.ComputeTagOverridesForTest(notes)
-		if len(got) != 0 {
-			t.Errorf("matching canonical must not produce overrides, got %v", got)
-		}
-	})
-
-	t.Run("NonSubTagBlueprint_EarlyReturn", func(t *testing.T) {
-		d := buildWorkDomain()
-		// Disable the sub-tag preserving blueprint gate — algorithm step 1
-		// must return nil regardless of input notes.
-		d.CanonicalTagFor = nil
-		notes := []domain.Note{{
-			ID:      "note-005",
-			Title:   "Would normally fire",
-			Tags:    []string{"#work", "#work/tasks"},
-			Content: canonicalBody("інше"),
-		}}
-		got := d.ComputeTagOverridesForTest(notes)
-		if got != nil {
-			t.Errorf("non-sub-tag blueprint must return nil, got %v", got)
-		}
-	})
-
-	t.Run("UnknownBucketAsSubTag_NoOverride", func(t *testing.T) {
-		d := buildWorkDomain()
-		// `інше` IS in Buckets ∪ {UnknownBucket} (the unknown bucket itself
-		// passes whitelist step 3), but step 5 finds it agrees with canonical
-		// → no override.
-		//cyrillic:permit
-		notes := []domain.Note{{
-			ID:      "note-006",
-			Title:   "Unknown bucket sub-tag",
-			Tags:    []string{"#work", "#work/інше"},
-			Content: canonicalBody("інше"),
-		}}
-		got := d.ComputeTagOverridesForTest(notes)
-		if len(got) != 0 {
-			t.Errorf("unknown bucket matching canonical must not produce overrides, got %v", got)
-		}
-	})
-
-	t.Run("NoFamilyTagsAtAll_Skip", func(t *testing.T) {
-		d := buildWorkDomain()
-		//cyrillic:permit
-		notes := []domain.Note{{
-			ID:      "note-007",
-			Title:   "Bare family tag only",
-			Tags:    []string{"#work"},
-			Content: canonicalBody("інше"),
-		}}
-		got := d.ComputeTagOverridesForTest(notes)
-		if len(got) != 0 {
-			t.Errorf("no sub-tags must not produce overrides, got %v", got)
-		}
-	})
-
-	t.Run("MissingDomainTag_Skipped", func(t *testing.T) {
-		d := buildWorkDomain()
-		// Tags carry `#work/tasks` but NOT `#work` itself — the
-		// domain-membership guard (step 2) fires before step 3.
-		//cyrillic:permit
-		notes := []domain.Note{{
-			ID:      "note-008",
-			Title:   "No domain tag",
-			Tags:    []string{"#work/tasks"},
-			Content: canonicalBody("інше"),
-		}}
-		got := d.ComputeTagOverridesForTest(notes)
-		if len(got) != 0 {
-			t.Errorf("notes missing the domain tag must not produce overrides, got %v", got)
-		}
-	})
-
+// assertWarningLog checks every required substring of the strict-mode
+// warning. Lives outside TestComputeTagOverrides so the parent function's
+// branch count stays low; the assertions themselves are linear.
+//
+//cyrillic:permit
+func assertWarningLog(t *testing.T, logged string) {
+	t.Helper()
+	if !strings.Contains(logged, "ambiguous tag intent") {
+		t.Errorf("missing strict-mode warning marker, got log: %q", logged)
+	}
+	if !strings.Contains(logged, "note-002") {
+		t.Errorf("warning should name the offending note ID, got: %q", logged)
+	}
+	if !strings.Contains(logged, "keeping canonical=інше") {
+		t.Errorf("warning should report the canonical bucket, got: %q", logged)
+	}
+	if !strings.Contains(logged, "tasks") || !strings.Contains(logged, "development") {
+		t.Errorf("warning should list both non-canonical sub-tags, got: %q", logged)
+	}
 }
