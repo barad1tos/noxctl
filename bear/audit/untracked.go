@@ -58,7 +58,7 @@ type UntrackedReport struct {
 // Read-only: never writes to bearcli; never mutates any input. The
 // scan is info-only and never contributes to the plan exit-code.
 func ScanUntracked(ctx context.Context, domains []*domain.Domain) (UntrackedReport, error) {
-	managed := managedRoots(domains)
+	managed := ManagedRootsFromDomains(domains)
 
 	out, err := bearcli.Run(ctx,
 		[]string{
@@ -96,10 +96,16 @@ func AggregateUntrackedFromJSON(jsonBytes []byte, managed map[string]struct{}) (
 	return aggregateUntracked(notes, managed), nil
 }
 
-// managedRoots collects the unique top-level tag segments the supplied
-// domains cover. Nil-tagged or zero-value domains are skipped silently
-// (defensive against partially-constructed catalogs).
-func managedRoots(domains []*domain.Domain) map[string]struct{} {
+// ManagedRootsFromDomains is the SSOT for "which tag families are
+// catalog-managed": it collects the unique top-level tag segments the
+// supplied domains cover. Consumed by both ScanUntracked (this file)
+// and the orphan-family detector (bear/audit/orphans.go) — keeping the
+// derivation in one exported helper prevents the two corpus-level
+// scanners from drifting on what counts as a "managed family".
+//
+// Nil-tagged or zero-value domains are skipped silently (defensive
+// against partially-constructed catalogs).
+func ManagedRootsFromDomains(domains []*domain.Domain) map[string]struct{} {
 	roots := make(map[string]struct{}, len(domains))
 	for _, d := range domains {
 		if d == nil || d.Tag == "" {
