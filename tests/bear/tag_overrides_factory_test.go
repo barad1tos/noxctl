@@ -60,4 +60,19 @@ func TestFactoryPopulatesBuckets(t *testing.T) {
 			}
 		})
 	}
+
+	// Defensive-copy guard: mutating the caller's source slice after the
+	// factory returns must NOT propagate into Domain.Buckets. Without the
+	// `append([]string(nil), buckets...)` copy at the top of each factory
+	// the field would alias the caller's slice and downstream writes would
+	// silently shift the whitelist.
+	t.Run("grouped_vertical_defensive_copy", func(t *testing.T) {
+		src := []string{"tasks", "development"}
+		d := render.NewGroupedVerticalDomain("work", "* Робота", "інше", src)
+		src[0] = "MUTATED"
+		if d.Buckets[0] != "tasks" {
+			t.Errorf("Buckets[0] = %q after caller mutated source; want %q (factory must defensive-copy)",
+				d.Buckets[0], "tasks")
+		}
+	})
 }

@@ -404,7 +404,7 @@ func (d *Domain) computeTagOverrides(notes []Note) (overrides map[string]string,
 	prefix := family + "/"
 	overrides = make(map[string]string)
 	for _, note := range notes {
-		if !slices.Contains(note.Tags, d.CanonicalTag) {
+		if !hasFamilyMembership(note.Tags, family) {
 			continue
 		}
 		whitelistedSubTags := gatherWhitelistedSubTags(d, note, prefix, family)
@@ -428,6 +428,22 @@ func (d *Domain) computeTagOverrides(notes []Note) (overrides map[string]string,
 		overrides[note.ID] = bucket
 	}
 	return overrides, conflictCount
+}
+
+// hasFamilyMembership reports whether `tags` carries the daemon-managed
+// family's bare parent tag (`<family>`). The `#` prefix is optional so
+// callers that hand in trimmed tag arrays still match, mirroring the
+// lenient `strings.TrimPrefix(tag, "#")` shape used by
+// gatherWhitelistedSubTags. A note with only the leaf sub-tag and no
+// parent (`#work/tasks` without `#work`) is treated as foreign — the
+// existing MissingDomainTag_Skipped contract.
+func hasFamilyMembership(tags []string, family string) bool {
+	for _, tag := range tags {
+		if strings.TrimPrefix(tag, "#") == family {
+			return true
+		}
+	}
+	return false
 }
 
 // gatherWhitelistedSubTags returns the ordered list of sub-tag segments from

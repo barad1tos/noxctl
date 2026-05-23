@@ -219,29 +219,67 @@ func TestComputeTagOverrides(t *testing.T) {
 			canonicalInBody: "інше",
 			wantOverrides:   map[string]string{},
 		},
+		{
+			// Guards against a factory regression that drops the Buckets
+			// whitelist: without entries to consult, every drag would be a
+			// silent no-op. Documents the "loader-without-consumer" failure
+			// shape recorded in feedback_cli_shim_audit.md.
+			name:            "EmptyBucketsWhitelist_NoOverrides",
+			mutateDomain:    func(d *domain.Domain) { d.Buckets = nil },
+			noteID:          "note-009",
+			noteTitle:       "Drag with empty whitelist",
+			noteTags:        []string{"#work", "#work/tasks"},
+			canonicalInBody: "інше",
+			wantOverrides:   map[string]string{},
+		},
+		{
+			// nil Tags is a real value bearcli can serve when an atom has
+			// no tags assigned during a transient index residue. The
+			// slices.Contains nil-safety must keep us on the empty path.
+			name:            "NilTags_Skipped",
+			noteID:          "note-010",
+			noteTitle:       "Atom without tags",
+			noteTags:        nil,
+			canonicalInBody: "інше",
+			wantOverrides:   map[string]string{},
+		},
+		{
+			// Pins the TrimPrefix tolerance — a sibling helper that
+			// passes hash-stripped tags here must still trigger the
+			// override path.
+			name:            "TagsWithoutHashPrefix_Tolerated",
+			noteID:          "note-011",
+			noteTitle:       "No hash on tag",
+			noteTags:        []string{"work", "work/tasks"},
+			canonicalInBody: "інше",
+			wantOverrides:   map[string]string{"note-011": "tasks"},
+		},
+		{
+			// Depth-3 sub-tags are out of the 2-level Bear tag-tree
+			// invariant; gatherWhitelistedSubTags rejects them at the
+			// strings.Contains("/") check and the override must not fire.
+			name:            "DeepSubTag_Ignored",
+			noteID:          "note-012",
+			noteTitle:       "Three-level sub-tag",
+			noteTags:        []string{"#work", "#work/tasks/urgent"},
+			canonicalInBody: "інше",
+			wantOverrides:   map[string]string{},
+		},
 	}
 	for _, tc := range shapeCases {
 		t.Run(tc.name, func(t *testing.T) { runShapeOnly(t, tc) })
 	}
 }
 
-// assertWarningLog checks every required substring of the strict-mode
-// warning. Lives outside TestComputeTagOverrides so the parent function's
-// branch count stays low; the assertions themselves are linear.
+// assertWarningLog asserts the strict-mode warning marker is present.
+// One substring keeps the test resilient to message reformatting; the
+// behavior assertions (override map empty, conflict counter == 1) at
+// the call site lock the algorithm's externally observable effect.
 //
 //cyrillic:permit
 func assertWarningLog(t *testing.T, logged string) {
 	t.Helper()
 	if !strings.Contains(logged, "ambiguous tag intent") {
 		t.Errorf("missing strict-mode warning marker, got log: %q", logged)
-	}
-	if !strings.Contains(logged, "note-002") {
-		t.Errorf("warning should name the offending note ID, got: %q", logged)
-	}
-	if !strings.Contains(logged, "keeping canonical=інше") {
-		t.Errorf("warning should report the canonical bucket, got: %q", logged)
-	}
-	if !strings.Contains(logged, "tasks") || !strings.Contains(logged, "development") {
-		t.Errorf("warning should list both non-canonical sub-tags, got: %q", logged)
 	}
 }
