@@ -11,6 +11,7 @@ import (
 
 	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
+	"github.com/barad1tos/noxctl/bear/engine"
 )
 
 // TestFeaturesFromCatalog_DefaultsAllOnForNilCatalog locks the
@@ -123,55 +124,90 @@ func TestResolveFeatures_DomainBootstrapPrecedence(t *testing.T) {
 	}
 }
 
+// fieldOp captures the getter/setter pair for one engine.Features
+// field so the round-trip test can drive every slot through a
+// uniform interface without reflection.
+type fieldOp struct {
+	name string
+	get  func(engine.Features) bool
+	set  func(*config.Features, *bool)
+}
+
+// allFieldOps returns the closed catalog of engine.Features fields.
+// Keep the slice in the same declaration order as the struct so a
+// future field addition surfaces here when the test fails.
+//
+//nolint:dupl // table-driven row pattern — each row binds one field to its getter/setter pair
+func allFieldOps() []fieldOp {
+	return []fieldOp{
+		{
+			"AutoTagDefault", func(f engine.Features) bool { return f.AutoTagDefault },
+			func(c *config.Features, p *bool) { c.AutoTagDefault = p },
+		},
+		{
+			"CrossDomainMoves", func(f engine.Features) bool { return f.CrossDomainMoves },
+			func(c *config.Features, p *bool) { c.CrossDomainMoves = p },
+		},
+		{
+			"TimePromotion", func(f engine.Features) bool { return f.TimePromotion },
+			func(c *config.Features, p *bool) { c.TimePromotion = p },
+		},
+		{
+			"ForeignTagEscape", func(f engine.Features) bool { return f.ForeignTagEscape },
+			func(c *config.Features, p *bool) { c.ForeignTagEscape = p },
+		},
+		{
+			"DuplicateRegistry", func(f engine.Features) bool { return f.DuplicateRegistry },
+			func(c *config.Features, p *bool) { c.DuplicateRegistry = p },
+		},
+		{
+			"DomainBootstrap", func(f engine.Features) bool { return f.DomainBootstrap },
+			func(c *config.Features, p *bool) { c.DomainBootstrap = p },
+		},
+	}
+}
+
+// assertOnlyOneFieldLit drives one round-trip pass: light up exactly
+// the field at `litIdx` with `true`, leave the rest at `false`, run
+// FeaturesFromCatalog, assert every output slot mirrors the expected
+// pattern. Split out of the test so the parent stays under gocognit.
+func assertOnlyOneFieldLit(t *testing.T, fields []fieldOp, litIdx int) {
+	t.Helper()
+	tr, fa := true, false
+	var in config.Features
+	for j, fld := range fields {
+		if j == litIdx {
+			fld.set(&in, &tr)
+		} else {
+			fld.set(&in, &fa)
+		}
+	}
+	out := cliutil.FeaturesFromCatalog(&config.Catalog{Features: in})
+	for j, fld := range fields {
+		want := j == litIdx
+		if got := fld.get(out); got != want {
+			t.Errorf("only %s lit: slot %s got %v, want %v", fields[litIdx].name, fld.name, got, want)
+		}
+	}
+}
+
 // TestFeaturesFromCatalog_AllFieldsRoundTrip catches field-swap bugs
 // in the per-pointer overlay (six near-identical `if cat.Features.X
-// != nil { f.X = *cat.Features.X }` blocks). A copy-paste regression
-// that wires the wrong source field into one of the slots would
-// compile cleanly and pass the single-field DomainBootstrap test.
-// Two passes with inverse T/F masks cover all 15 possible field-pair
-// swaps — a swap that hides under the first mask (both slots share
-// the same value) surfaces under the second.
+// != nil { f.X = *cat.Features.X }` blocks). Each sub-test lights up
+// exactly one field with `true` and leaves the other five at `false`,
+// then asserts the output mirrors the input. Because exactly one slot
+// carries a distinguishing value, ANY copy-paste regression that
+// reads from the wrong source slot or writes into the wrong
+// destination slot surfaces — the "lit" position is unique across
+// the six fields, so equality with the expected pattern is a complete
+// swap-detection signal. Provably covers all 15 field-pair swap
+// combinations, single-direction wire-ups, and constant-source
+// regressions.
 func TestFeaturesFromCatalog_AllFieldsRoundTrip(t *testing.T) {
-	masks := []struct {
-		name              string
-		autoTagDefault    bool
-		crossDomainMoves  bool
-		timePromotion     bool
-		foreignTagEscape  bool
-		duplicateRegistry bool
-		domainBootstrap   bool
-	}{
-		{"mask T,F,T,F,T,F", true, false, true, false, true, false},
-		{"mask F,T,F,T,F,T", false, true, false, true, false, true},
-	}
-	for _, m := range masks {
-		t.Run(m.name, func(t *testing.T) {
-			in := config.Features{
-				AutoTagDefault:    &m.autoTagDefault,
-				CrossDomainMoves:  &m.crossDomainMoves,
-				TimePromotion:     &m.timePromotion,
-				ForeignTagEscape:  &m.foreignTagEscape,
-				DuplicateRegistry: &m.duplicateRegistry,
-				DomainBootstrap:   &m.domainBootstrap,
-			}
-			out := cliutil.FeaturesFromCatalog(&config.Catalog{Features: in})
-			cases := []struct {
-				name string
-				got  bool
-				want bool
-			}{
-				{"AutoTagDefault", out.AutoTagDefault, m.autoTagDefault},
-				{"CrossDomainMoves", out.CrossDomainMoves, m.crossDomainMoves},
-				{"TimePromotion", out.TimePromotion, m.timePromotion},
-				{"ForeignTagEscape", out.ForeignTagEscape, m.foreignTagEscape},
-				{"DuplicateRegistry", out.DuplicateRegistry, m.duplicateRegistry},
-				{"DomainBootstrap", out.DomainBootstrap, m.domainBootstrap},
-			}
-			for _, tc := range cases {
-				if tc.got != tc.want {
-					t.Errorf("%s: got %v, want %v", tc.name, tc.got, tc.want)
-				}
-			}
+	fields := allFieldOps()
+	for i, lit := range fields {
+		t.Run("only_"+lit.name+"_true", func(t *testing.T) {
+			assertOnlyOneFieldLit(t, fields, i)
 		})
 	}
 }
