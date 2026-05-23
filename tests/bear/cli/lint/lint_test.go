@@ -67,6 +67,8 @@ func (f *fakeBearcli) Run(_ context.Context, args []string, stdin string) ([]byt
 		return []byte(`{"hash":"deadbeef"}`), nil
 	case "overwrite":
 		return []byte(`{"ok":true}`), nil
+	case "tag":
+		return []byte(`{"ok":true}`), nil
 	}
 	return []byte("{}"), nil
 }
@@ -223,5 +225,125 @@ func TestRun_EmptyDomains_RendersEmptyTally(t *testing.T) {
 	}
 	if got := fake.countKind("list"); got != 0 {
 		t.Errorf("empty domain set should issue 0 list calls; got %d", got)
+	}
+}
+
+// orphanFamilyListPayload builds a single-note bearcli `list` payload
+// with the supplied id/title/tags. Used by the Phase 13 orphan-family
+// integration tests below — generic shape (no canonical-line content)
+// so both audit-mode and apply-mode tests can drive the same fixture
+// through cli.RunLint.
+//
+// Caveat: the same payload is served to BOTH the per-domain
+// audit.Scan call (`bearcli list --tag <X>`) AND the corpus
+// audit.ScanOrphanFamilies call (`bearcli list --location notes`)
+// because the fake does not discriminate on flags — only on the
+// sub-verb. That is fine for these tests: the per-domain Scan walks
+// the atom under its catalog tag and emits whatever per-atom lints
+// fire on its body; the corpus scan walks the same atom and emits the
+// orphan-family finding. Both code paths exercised in one run.
+func orphanFamilyListPayload(t *testing.T, atomID, atomTitle string, tags []string) []byte {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{{
+		"id":      atomID,
+		"title":   atomTitle,
+		"content": "",
+		"tags":    tags,
+		"created": "2026-05-23T12:00:00Z",
+	}})
+	if err != nil {
+		t.Fatalf("marshal orphan payload: %v", err)
+	}
+	return raw
+}
+
+// TestRun_AuditMode_OrphanFamilyAppearsInOutput verifies the read-only
+// composition: the corpus orphan scan runs alongside the per-domain
+// audit scan, the stray-family finding lands in the printed report,
+// and ZERO write calls (overwrite, tag) leak to bearcli — audit mode
+// is a strict read-only contract.
+func TestRun_AuditMode_OrphanFamilyAppearsInOutput(t *testing.T) {
+	armBearcliPool(t)
+	payload := orphanFamilyListPayload(t, "note-stray", "Stray Note",
+		[]string{"#test/notes", "#strayfamily/sub"})
+	fake := newFakeBearcli(payload)
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
+
+	out := buf.String()
+	if !strings.Contains(out, "Stray Note") {
+		t.Errorf("audit output missing orphan-finding Title; got %q", out)
+	}
+	if !strings.Contains(out, "strayfamily") {
+		t.Errorf("audit output missing stray-family name in Detail; got %q", out)
+	}
+	if got := fake.countKind("overwrite"); got != 0 {
+		t.Errorf("audit mode wrote %d overwrites; want 0 (read-only contract)", got)
+	}
+	if got := fake.countKind("tag"); got != 0 {
+		t.Errorf("audit mode issued %d tag calls; want 0 (read-only contract)", got)
+	}
+}
+
+// TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent pins the
+// two-phase apply chain: a stray-family atom triggers exactly one
+// `bearcli tag <id> orphans` call on the first run; a second run where
+// the atom already carries `#orphans` issues ZERO new tag calls — the
+// idempotency contract that lets the operator re-run `noxctl lint
+// --apply` safely.
+func TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent(t *testing.T) {
+	armBearcliPool(t)
+
+	// First run: atom carries the stray-family tag without #orphans.
+	payload1 := orphanFamilyListPayload(t, "note-stray", "Stray Note",
+		[]string{"#test/notes", "#strayfamily/sub"})
+	fake1 := newFakeBearcli(payload1)
+	ctx1 := domain.ContextWithBackend(t.Context(), fake1)
+
+	var buf1 bytes.Buffer
+	cli.RunLint(ctx1, &buf1, []*domain.Domain{flatListDomainForTest()}, true)
+
+	if got := fake1.countKind("tag"); got != 1 {
+		t.Fatalf("apply mode tag-call count = %d, want 1 (stray family tagged); calls=%d",
+			got, fake1.count.Load())
+	}
+	// Verify the tag-call args shape: ["tag", noteID, "orphans"].
+	fake1.mu.Lock()
+	var tagCall *fakeCall
+	for i := range fake1.calls {
+		if fake1.calls[i].Kind == "tag" {
+			tagCall = &fake1.calls[i]
+			break
+		}
+	}
+	fake1.mu.Unlock()
+	if tagCall == nil {
+		t.Fatalf("expected one recorded tag call; got none")
+	}
+	wantArgs := []string{"tag", "note-stray", "orphans"}
+	if len(tagCall.Args) != len(wantArgs) {
+		t.Fatalf("tag call args length = %d, want %d (%v)", len(tagCall.Args), len(wantArgs), tagCall.Args)
+	}
+	for i, want := range wantArgs {
+		if tagCall.Args[i] != want {
+			t.Errorf("tag call args[%d] = %q, want %q", i, tagCall.Args[i], want)
+		}
+	}
+
+	// Second run: atom now carries #orphans — aggregator returns empty,
+	// ApplyOrphanFamilies receives empty slice, zero tag calls.
+	payload2 := orphanFamilyListPayload(t, "note-stray", "Stray Note",
+		[]string{"#test/notes", "#strayfamily/sub", "#orphans"})
+	fake2 := newFakeBearcli(payload2)
+	ctx2 := domain.ContextWithBackend(t.Context(), fake2)
+
+	var buf2 bytes.Buffer
+	cli.RunLint(ctx2, &buf2, []*domain.Domain{flatListDomainForTest()}, true)
+
+	if got := fake2.countKind("tag"); got != 0 {
+		t.Errorf("idempotency violated: apply mode tag-call count on already-tagged atom = %d, want 0",
+			got)
 	}
 }
