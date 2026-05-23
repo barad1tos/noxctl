@@ -3,23 +3,11 @@
 // tag_overrides_test.go locks down the computeTagOverrides primitive — the
 // third override layer sibling to computeMasterOverrides / computeHubOverrides.
 // Tests reach the unexported method through the ComputeTagOverridesForTest
-// seam (mirrors ProcessAtomicForTest at bear/domain/upserts.go:153).
+// seam (mirrors ProcessAtomicForTest in bear/domain/upserts.go).
 //
-// Algorithm coverage matrix (one row per branch of the spec):
-//
-//  1. SingleNonCanonical_Fires — happy path, sidebar drag adds one whitelisted
-//     sub-tag and the canonical header disagrees → override recorded.
-//  2. MultipleNonCanonical_SkipsWithWarning — strict mode: two-plus
-//     non-canonical sub-tags emit a warning and record no override. Lives as
-//     its own t.Run because it also asserts log content.
-//  3. NonWhitelistedSubTag_Ignored — sub-tag outside `Buckets ∪ {UnknownBucket}`
-//     is filtered at step 3 of the algorithm.
-//  4. TagsMatchCanonical_NoOverride — sub-tag agrees with canonical → no work.
-//  5. NonSubTagBlueprint_EarlyReturn — `CanonicalTagFor == nil` short-circuits.
-//  6. UnknownBucketAsSubTag_NoOverride — unknown bucket passes whitelist but
-//     agrees with canonical → no override.
-//  7. NoFamilyTagsAtAll_Skip — only the family tag, no sub-tags → no work.
-//  8. MissingDomainTag_Skipped — domain-membership guard fires before step 3.
+// Each sub-test name encodes the branch it covers (one t.Run per branch of
+// the computeTagOverrides spec); the per-row name strings in this file are
+// the single source of truth for algorithm coverage.
 package bear_test
 
 import (
@@ -69,8 +57,8 @@ func canonicalBody(bucket string) string {
 }
 
 // captureTagOverrideLog redirects the package log to a buffer so tests
-// can assert the strict-mode warning format. Mirrors captureLog at
-// tests/bear/engine/mtime_poll_test.go:97 — same restore-on-cleanup
+// can assert the strict-mode warning format. Mirrors captureLog in
+// tests/bear/engine/mtime_poll_test.go — same restore-on-cleanup
 // discipline.
 func captureTagOverrideLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
@@ -144,12 +132,11 @@ func runShapeOnly(t *testing.T, tc tagOverrideCase) {
 	}
 }
 
-// TestComputeTagOverrides locks the eight-case algorithm contract for the
-// third override layer. RED-phase failure mode is "undefined:
-// ComputeTagOverridesForTest"; GREEN phase requires every sub-test to pass.
+// TestComputeTagOverrides locks the algorithm contract for the third
+// override layer.
 //
 // The strict-mode warning case lives in its own t.Run because it asserts
-// log content; the other seven rows share runShapeOnly to keep the
+// log content; the other rows share runShapeOnly to keep the
 // duplicate-block linter quiet and the test function's cognitive
 // complexity below the ≤15 threshold.
 //

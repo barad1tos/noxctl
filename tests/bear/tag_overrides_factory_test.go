@@ -1,13 +1,12 @@
 // Package bear_test — factory wiring lock for Domain.Buckets.
 //
-// Plan 12-02 wires the Buckets whitelist slot (added in Plan 12-01) into
-// the two sub-tag preserving factories: NewGroupedVerticalDomain and
-// NewHubRoutedSubTagDomain. Without this wiring, computeTagOverrides has
-// no whitelist to consult, and every sidebar drag would be ignored.
+// The two sub-tag preserving factories (NewGroupedVerticalDomain and
+// NewHubRoutedSubTagDomain) populate Domain.Buckets with the whitelist
+// computeTagOverrides consults. Without that wiring the override layer
+// has no whitelist and every sidebar drag is silently ignored.
 //
-// Lives in its own file (rather than alongside TestComputeTagOverrides)
-// so the bear/render import stays local to the factory assertion and
-// the algorithm-shape tests keep their narrow import surface.
+// Factory wiring is conceptually independent from algorithm shape; two
+// failure modes, two test files.
 //
 //cyrillic:permit
 package bear_test
@@ -32,10 +31,11 @@ type factoryBucketsCase struct {
 
 // TestFactoryPopulatesBuckets locks both sub-tag preserving factories to
 // copy their `buckets []string` argument into Domain.Buckets. The
-// defensive copy is performed inside the factory (lines 85/139 of
-// grouped.go / subtag.go) so the resulting field is independent from the
-// caller's slice — slice-identity is intentionally NOT asserted to avoid
-// over-constraining the implementation.
+// defensive copy is performed inside the factory bodies (at the top of
+// NewGroupedVerticalDomain / NewHubRoutedSubTagDomain) so the resulting
+// field is independent from the caller's slice — slice-identity is
+// intentionally NOT asserted to avoid over-constraining the
+// implementation.
 //
 //cyrillic:permit
 func TestFactoryPopulatesBuckets(t *testing.T) {

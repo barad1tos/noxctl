@@ -110,10 +110,9 @@ func (d *Domain) DetectAuthor(body string) string {
 //
 // Master and hub overrides are deliberate gestures (table cut/paste, hub bullet
 // move); tag is a single quick sidebar drag. On collision the deliberate gesture
-// wins — caller merges accordingly. The two merge call sites are
-// snapshot.go::SnapshotDomainRenderInputs and regen.go::RunRegen and MUST stay
-// byte-equivalent (T-12-02-01 threat). Both share mergeOverrideLayer for that
-// invariant.
+// wins. mergeOverrideLayer is the single source of truth for the merge
+// semantics; see its doc-comment for the byte-equivalent invariant shared
+// between snapshot.go::SnapshotDomainRenderInputs and regen.go::RunRegen.
 func (d *Domain) groupAtomics(notes []Note, overrides map[string]string) map[string][]Note {
 	groups := make(map[string][]Note)
 	for _, note := range notes {
@@ -135,16 +134,6 @@ func (d *Domain) groupAtomics(notes []Note, overrides map[string]string) map[str
 	return groups
 }
 
-// computeMasterOverrides reads the current master, parses its table via
-// Domain.ParseMasterTable, and returns a noteID→bucket map for atomics whose
-// table position disagrees with their canonical header. Empty map (nil-safe)
-// when ParseMasterTable is unset, the master is missing, or the user hasn't
-// moved anything since the last regen.
-//
-// Master is the source of truth for flat-table domains: a user who cuts a
-// bullet from one column and pastes it into another expects that bullet's
-// atomic to follow. The next regen sees the disagreement here and rewrites the
-// atomic's canonical header on its way through runAtomicsPass.
 // parseMasterTableForNotes locates the master in the supplied note slice
 // and returns its parsed identifier→bucket map. Empty map when the master
 // is missing or has no rows the parser recognizes.
@@ -183,6 +172,16 @@ func (d *Domain) overrideForNote(note Note, titleToBucket map[string]string) (st
 	return masterBucket, true
 }
 
+// computeMasterOverrides reads the current master, parses its table via
+// Domain.ParseMasterTable, and returns a noteID→bucket map for atomics whose
+// table position disagrees with their canonical header. Empty map (nil-safe)
+// when ParseMasterTable is unset, the master is missing, or the user hasn't
+// moved anything since the last regen.
+//
+// Master is the source of truth for flat-table domains: a user who cuts a
+// bullet from one column and pastes it into another expects that bullet's
+// atomic to follow. The next regen sees the disagreement here and rewrites the
+// atomic's canonical header on its way through runAtomicsPass.
 func (d *Domain) computeMasterOverrides(notes []Note) map[string]string {
 	if d.ParseMasterTable == nil {
 		return nil
@@ -341,12 +340,15 @@ func ParseHubBulletIdentifiers(content string) []string {
 // semantics: any atomID already present in `into` keeps its existing bucket,
 // so the caller can chain layers in priority order (master first, hub second,
 // tag last) and the earlier layer always wins on collision. Lazy-initializes
-// `into` when nil so callers don't have to pre-allocate.
+// `into` when nil so callers don't have to pre-allocate — important because
+// computeMasterOverrides returns nil for domains without a ParseMasterTable
+// and the hub/tag layers still need a place to deposit their overrides.
 //
-// Returns the (possibly-mutated) merged map. snapshot.go and regen.go both
-// route every override merge through this helper — the byte-equivalent
-// invariant the Phase 03/04 plan/apply parity contract depends on (see
-// T-12-02-01 in 12-02-PLAN threat model).
+// Returns the (possibly-mutated) merged map. Single source of truth for the
+// merge semantics: SnapshotDomainRenderInputs (snapshot.go) and RunRegen
+// (regen.go) both route every override merge through this helper so the
+// post-merge override map stays byte-equivalent between the read-only plan
+// path and the write-side apply path.
 func mergeOverrideLayer(into, from map[string]string) map[string]string {
 	for atomID, bucket := range from {
 		if _, claimed := into[atomID]; claimed {
@@ -369,8 +371,9 @@ func mergeOverrideLayer(into, from map[string]string) map[string]string {
 // The sidebar drag is a single quick gesture vs the deliberate multi-step
 // master/hub cut/paste flow. Merge priority therefore puts tag overrides
 // LAST: master > hub > tag. When master or hub already claim an atom, the
-// deliberate gesture wins — see groupAtomics for the merge site (wired by
-// Plan 12-02; this primitive returns the candidate map only).
+// deliberate gesture wins — see SnapshotDomainRenderInputs (snapshot.go)
+// and RunRegen (regen.go) for the merge sites; this primitive returns the
+// candidate map only.
 //
 // Conflict resolution is strict: a single non-canonical whitelisted sub-tag
 // fires the override (95% of real drags). Two or more non-canonical sub-tags
@@ -483,7 +486,7 @@ func nonCanonicalSubTags(canonicalBucket string, valid []string) []string {
 
 // ComputeTagOverridesForTest exposes computeTagOverrides for external tests
 // in tests/bear/. Test seam — production callers MUST use RunRegen. Same
-// precedent as ProcessAtomicForTest at bear/domain/upserts.go:153.
+// precedent as ProcessAtomicForTest in bear/domain/upserts.go.
 func (d *Domain) ComputeTagOverridesForTest(notes []Note) map[string]string {
 	return d.computeTagOverrides(notes)
 }

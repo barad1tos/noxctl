@@ -81,9 +81,10 @@ func SnapshotDomainRenderInputs(ctx context.Context, d *Domain) (RenderInputs, e
 	}
 	// Priority merge: master > hub > tag. Each layer's overrides skip atoms
 	// already claimed by a higher-priority layer. mergeOverrideLayer is the
-	// SSOT — regen.go MUST route through the same helper so plan/apply parity
-	// holds (T-12-02-01 threat). No log emission here: snapshot is the
-	// read-only facade used by engine.Plan; rebucket counts surface through the
+	// single source of truth — regen.go routes through the same helper so the
+	// post-merge override map stays byte-equivalent between plan (this path)
+	// and apply (RunRegen). No log emission here: snapshot is the read-only
+	// facade used by engine.Plan; rebucket counts surface through the
 	// plan-diff renderer instead.
 	overrides := d.computeMasterOverrides(notes)
 	overrides = mergeOverrideLayer(overrides, d.computeHubOverrides(notes))

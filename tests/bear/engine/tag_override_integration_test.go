@@ -1,25 +1,28 @@
 // Package engine_test — integration locks for the tag-override layer.
 //
-// Wave 2 of Phase 12 wires computeTagOverrides into snapshot + regen as
-// the third override source (master > hub > tag). This file pins:
+// computeTagOverrides participates as the third override source in the
+// snapshot + regen pipelines (priority: master > hub > tag). This file
+// pins the end-to-end behavior:
 //
 //  1. DragToTag_ReBuckets (snapshot path) — a note with canonical bucket
 //     A and a drag-added whitelisted sub-tag B (B != A, B in Buckets)
 //     surfaces in Groups[B] after one SnapshotDomainRenderInputs call.
 //  2. DragToTag_Idempotent (snapshot path) — two consecutive snapshots
 //     produce deep-equal Groups maps. The ≤3-pass idempotency contract
-//     from Phase 1 demands no flap, no growing override map.
+//     demands no flap, no growing override map.
 //  3. FullRunRegen_RewritesCanonical (full regen path) — RunRegen on
 //     the same scenario re-stamps the atomic canonical to the new
 //     bucket, strips the stale family sub-tag from the body, and updates
 //     the master to show the atom under the new H2 section. Second run
-//     is a strict no-op (idempotent). Closes Plan-Check W-2.
-//  4. MembershipGuardSkipsForeignDomain (SC-07 contract) — a note that
-//     carries a stray `#work/tasks` tag without the parent `#work` tag
-//     MUST NOT receive a work-domain override. Locks computeTagOverrides
-//     step-2 membership guard alongside the existing processAtomic guard
-//     at upserts.go:130-151 (covered by atomic_tag_guard_test.go). Two
-//     independent regression-locks for SC-07. Closes Plan-Check W-1.
+//     is a strict no-op (idempotent).
+//  4. MasterWinsOverTag (priority lock) — an atom whose master row claims
+//     bucket M and whose Bear tags claim bucket T routes to M; the master
+//     override pre-empts the tag override on collision.
+//  5. MembershipGuardSkipsForeignDomain — a note that carries a stray
+//     `#work/tasks` tag without the parent `#work` tag MUST NOT surface
+//     in any work-domain group. Locks computeTagOverrides' membership
+//     guard alongside the existing processAtomic guard exercised by
+//     atomic_tag_guard_test.go.
 //
 // Test seam: a purpose-built fakeWorkBackend captures overwrites by
 // noteID and serves list/cat payloads. Kept local to this file so the
@@ -46,10 +49,10 @@ import (
 
 // workDomainBuckets mirrors the priority bucket order Roman's `#work`
 // catalog entry exposes (examples/personal.toml). The whitelist MUST
-// include "tasks" (the drag target across cases 1-4) so the override
-// fires; "інше" is the UnknownBucket and intentionally NOT in the
-// whitelist — computeTagOverrides accepts the unknown-bucket value via
-// its `valid != UnknownBucket` branch.
+// include "tasks" (the drag target across the re-bucket cases) so the
+// override fires; "інше" is the UnknownBucket and intentionally NOT in
+// the whitelist — gatherWhitelistedSubTags accepts the unknown-bucket
+// value via its `sub != d.UnknownBucket` branch.
 var workDomainBuckets = []string{
 	"tasks", "development", "english", "health",
 	"humor", "leisure", "instagram", "travel",
@@ -63,7 +66,7 @@ var workDomainBuckets = []string{
 //
 //cyrillic:permit
 func buildWorkDomainForIntegration() *domain.Domain {
-	return render.NewGroupedVerticalDomain("work", "* Робота", "інше", workDomainBuckets)
+	return render.NewGroupedVerticalDomain("work", "✱ Робота", "інше", workDomainBuckets)
 }
 
 // fakeWorkCall records one bearcli invocation routed through the
@@ -203,7 +206,7 @@ const (
 //
 //cyrillic:permit
 func canonicalAtomBody(bucket string) string {
-	return "# Нова нотатка\n#work/" + bucket + " | [[* Робота]]\n---\nbody\n"
+	return "# Нова нотатка\n#work/" + bucket + " | [[✱ Робота]]\n---\nbody\n"
 }
 
 // masterContentInitial seeds the master with one atom listed under the
@@ -211,7 +214,7 @@ func canonicalAtomBody(bucket string) string {
 //
 //cyrillic:permit
 func masterContentInitial() string {
-	return "# * Робота\n#work\n---\n## інше (1)\n- [[Нова нотатка]]\n"
+	return "# ✱ Робота\n#work\n---\n## інше (1)\n- [[Нова нотатка]]\n"
 }
 
 // stageDragScenario primes the fake with one atom currently canonical
@@ -230,14 +233,14 @@ func stageDragScenario(t *testing.T, fake *fakeWorkBackend) {
 		},
 		{
 			"id":      masterNoteID,
-			"title":   "* Робота",
+			"title":   "✱ Робота",
 			"tags":    []string{"#work"},
 			"content": masterContentInitial(),
 		},
 	})
 	fake.StageNote(t, masterNoteID, map[string]any{
 		"id":      masterNoteID,
-		"title":   "* Робота",
+		"title":   "✱ Робота",
 		"content": masterContentInitial(),
 		"tags":    []string{"#work"},
 	})
@@ -289,10 +292,10 @@ func TestTagOverrideIntegration_DragToTag_ReBuckets(t *testing.T) {
 }
 
 // TestTagOverrideIntegration_DragToTag_Idempotent — Case 2 (snapshot path).
-// Locks the ≤3-pass idempotency contract from Phase 1: a second snapshot
-// with no Bear-side state change MUST produce a deep-equal Groups map.
-// Without this, a stale override layer could flap the bucket back-and-
-// forth across regen ticks.
+// Locks the ≤3-pass idempotency contract: a second snapshot with no
+// Bear-side state change MUST produce a deep-equal Groups map. Without
+// this, a stale override layer could flap the bucket back-and-forth
+// across regen ticks.
 //
 //cyrillic:permit
 func TestTagOverrideIntegration_DragToTag_Idempotent(t *testing.T) {
@@ -318,10 +321,10 @@ func TestTagOverrideIntegration_DragToTag_Idempotent(t *testing.T) {
 	})
 }
 
-// TestTagOverrideIntegration_FullRunRegen_RewritesCanonical — Case 3 (full
-// regen path, captured writes). Closes Plan-Check W-2 by driving the full
-// RunRegen and asserting on the rewritten canonical body + master content.
-// Second run must produce no NEW writes (idempotent re-run).
+// TestTagOverrideIntegration_FullRunRegen_RewritesCanonical — Case 3
+// (full regen path, captured writes). Drives the full RunRegen and
+// asserts on the rewritten canonical body + master content. Second run
+// must produce no NEW writes (idempotent re-run).
 //
 //cyrillic:permit
 func TestTagOverrideIntegration_FullRunRegen_RewritesCanonical(t *testing.T) {
@@ -351,7 +354,7 @@ func assertAtomReBucketed(t *testing.T, atomBody string) {
 	if atomBody == "" {
 		t.Fatalf("no overwrite captured for atom %s", atomNoteID)
 	}
-	if got := strings.Count(atomBody, "#work/tasks | [[* Робота]]"); got != 1 {
+	if got := strings.Count(atomBody, "#work/tasks | [[✱ Робота]]"); got != 1 {
 		t.Errorf("canonical re-stamp count = %d, want 1 (atom body should carry exactly one #work/tasks canonical line)\nbody:\n%s",
 			got, atomBody)
 	}
@@ -387,18 +390,18 @@ func assertMasterReBucketed(t *testing.T, masterBody string) {
 
 // assertSecondRunIsNoop stages the rewritten bodies as the new ground
 // truth (what bearcli would return on the next list/cat) and drives
-// RunRegen a second time. The writes map MUST stay deep-equal — the
-// ≤3-pass idempotency contract from Phase 1.
+// RunRegen a second time. The overwrite counter MUST stay flat — the
+// ≤3-pass idempotency contract.
 //
 //cyrillic:permit
 func assertSecondRunIsNoop(t *testing.T, fake *fakeWorkBackend, ctx context.Context, d *domain.Domain, atomBody, masterBody string) {
 	t.Helper()
 	fake.StageList(t, []map[string]any{
 		{"id": atomNoteID, "title": "Нова нотатка", "tags": []string{"#work", "#work/tasks"}, "content": atomBody},
-		{"id": masterNoteID, "title": "* Робота", "tags": []string{"#work"}, "content": masterBody},
+		{"id": masterNoteID, "title": "✱ Робота", "tags": []string{"#work"}, "content": masterBody},
 	})
 	fake.StageNote(t, atomNoteID, map[string]any{"id": atomNoteID, "title": "Нова нотатка", "content": atomBody, "tags": []string{"#work", "#work/tasks"}})
-	fake.StageNote(t, masterNoteID, map[string]any{"id": masterNoteID, "title": "* Робота", "content": masterBody, "tags": []string{"#work"}})
+	fake.StageNote(t, masterNoteID, map[string]any{"id": masterNoteID, "title": "✱ Робота", "content": masterBody, "tags": []string{"#work"}})
 
 	writesBefore := fake.SnapshotWrites()
 	d.RunRegen(ctx)
@@ -409,23 +412,20 @@ func assertSecondRunIsNoop(t *testing.T, fake *fakeWorkBackend, ctx context.Cont
 	}
 }
 
-// TestTagOverrideIntegration_MembershipGuardSkipsForeignDomain — Case 4
-// (SC-07 contract). A foreign atom carrying a stray `#work/tasks` tag
-// without the parent `#work` tag MUST NOT receive a work-domain
-// override. Locks the membership guard at computeTagOverrides step 2 —
-// independent of the existing processAtomic guard exercised by
-// atomic_tag_guard_test.go (SC-07 covered by two layers).
+// TestTagOverrideIntegration_MembershipGuardSkipsForeignDomain — a
+// foreign atom carrying a stray `#work/tasks` tag without the parent
+// `#work` tag MUST NOT surface in any work-domain group. Locks the
+// membership guard inside computeTagOverrides — independent of the
+// existing processAtomic guard exercised by atomic_tag_guard_test.go.
 //
-// Assertion target is the override MAP shape (via
-// ComputeTagOverridesForTest) rather than groupAtomics' Groups output —
-// the membership guard lives inside computeTagOverrides step 2, and
-// groupAtomics has an unrelated bucketing path (BucketFromSubTag) that
-// would scan the stray tag if the atom ever reached it. In production
-// listNotes filters by `--tag work` and the foreign atom never enters
-// the pipeline; this test deliberately constructs both atoms as inputs
-// to prove that even if a foreign atom DOES enter (e.g. via a bearcli
-// tag-index residue race like the 2026-05-14 ping-pong incident), the
-// override map respects the guard.
+// The assertion routes through SnapshotDomainRenderInputs so the guard
+// is observed at its production surface: foreign atoms must be absent
+// from every bucket in inputs.Groups. In production listNotes filters
+// by `--tag work` and the foreign atom never enters the pipeline; this
+// test deliberately stages both atoms to prove that even if a foreign
+// atom DOES enter (e.g. via a bearcli tag-index residue race that
+// surfaced a stray foreign atom in the work tag-tree), the override
+// pipeline respects the guard.
 //
 //cyrillic:permit
 func TestTagOverrideIntegration_MembershipGuardSkipsForeignDomain(t *testing.T) {
@@ -461,7 +461,7 @@ func TestTagOverrideIntegration_MembershipGuardSkipsForeignDomain(t *testing.T) 
 		// Note B MUST NOT receive any override from the work domain —
 		// step-2 membership guard rejects atoms lacking #work in Tags.
 		if got, present := overrides[foreignNoteID]; present {
-			t.Errorf("foreign atom %s received work-domain override %q — membership guard failed (SC-07)",
+			t.Errorf("foreign atom %s received work-domain override %q — membership guard failed",
 				foreignNoteID, got)
 		}
 	})

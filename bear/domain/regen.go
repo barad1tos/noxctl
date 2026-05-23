@@ -28,9 +28,10 @@ func (d *Domain) RunRegen(ctx context.Context) {
 	// Priority merge: master > hub > tag. Each layer's overrides skip atoms
 	// already claimed by a higher-priority layer — deliberate gestures (master
 	// cut/paste, hub bullet move) beat the single quick sidebar drag.
-	// mergeOverrideLayer is the SSOT — snapshot.go MUST route through the same
-	// helper so plan/apply parity holds (T-12-02-01 threat). Log lines are
-	// regen-only (snapshot is silent for engine.Plan).
+	// mergeOverrideLayer is the single source of truth — snapshot.go routes
+	// through the same helper so the post-merge override map stays
+	// byte-equivalent between plan and apply. Log lines are regen-only
+	// (snapshot is silent for engine.Plan).
 	overrides := d.computeMasterOverrides(notes)
 	if len(overrides) > 0 {
 		d.Logf("master regroup: %d atomic(s) moved between columns", len(overrides))
