@@ -7,11 +7,11 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
 
+	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
@@ -82,24 +82,13 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 	if bearDBErr != nil {
 		return fmt.Errorf(errFmtNoxctlDaemon, bearDBErr)
 	}
-	features := featuresFromCatalog(cat)
-	// Daemon-toml / env override of DomainBootstrap takes precedence
-	// over the catalog setting — operator kill-switch
-	// (`REGEN_DOMAIN_BOOTSTRAP=off` or `daemon.toml [daemon].domain_bootstrap`)
-	// must win even if the in-vault catalog defaults the feature on.
-	// Provenance check (Sources["DomainBootstrap"] != SourceDefault)
-	// detects explicit operator override vs uninitialized default.
-	if dc.Sources["DomainBootstrap"] != config.SourceDefault {
-		features.DomainBootstrap = dc.DomainBootstrap
-	}
-
 	opts := engine.DaemonOpts{
 		ApplyOpts: engine.ApplyOpts{
 			Domains:            domains,
 			Pins:               pins,
 			StatePath:          dc.StatePath,
 			LockPath:           dc.LockPath,
-			Features:           features,
+			Features:           cliutil.ResolveFeatures(cat, dc),
 			AuditEnabled:       dc.AuditEnabled,
 			BearcliConcurrency: dc.BearcliConcurrency,
 			Stderr:             os.Stderr,
@@ -188,36 +177,47 @@ func warnSilentFastPassGates(opts engine.DaemonOpts) {
 	logFeaturesDisabled(opts.Features)
 }
 
-// logFeaturesDisabled emits a single INFO line listing any
-// ship-default-ON feature flags that the resolved configuration has
-// turned OFF. Covers the inverse silent-disable shape (default_should_be_on
-// && catalog_overrides_off) — without this line, an operator who set
+// logFeaturesDisabled emits one INFO line per ship-default-ON feature
+// flag that the resolved configuration has turned OFF. Per-feature
+// lines (rather than a single comma-joined list) keep the output
+// grep-friendly — an operator hunting "why isn't domain-bootstrap
+// running" matches on the feature name alone.
+//
+// Covers the inverse silent-disable shape (default_should_be_on &&
+// catalog_overrides_off) — without this surface, an operator who set
 // `[features].domain_bootstrap = false` in the catalog gets zero
-// breadcrumb in the daemon log. Stays INFO rather than WARN because
-// turning a feature off is a legitimate operator choice that just
-// needs to be visible.
+// breadcrumb in the daemon log. INFO (not WARN) because turning a
+// feature off is a legitimate operator choice; it just needs to be
+// visible. The precedence string is per-feature because only
+// `domain_bootstrap` currently has env / daemon.toml override paths —
+// the other five resolve only `catalog > default`.
+//
+// Assumption: every Features field ships default-ON via AllFeaturesOn.
+// If a future Features field ships default-OFF, exclude it from this
+// table or thread a baseline so the helper doesn't lie.
 func logFeaturesDisabled(f engine.Features) {
-	type flag struct {
-		name string
-		on   bool
+	type featureFlag struct {
+		name        string
+		on          bool
+		overridable bool // true if env / daemon.toml can override
 	}
-	flags := []flag{
-		{"auto_tag_default", f.AutoTagDefault},
-		{"cross_domain_moves", f.CrossDomainMoves},
-		{"time_promotion", f.TimePromotion},
-		{"foreign_tag_escape", f.ForeignTagEscape},
-		{"duplicate_registry", f.DuplicateRegistry},
-		{"domain_bootstrap", f.DomainBootstrap},
+	flags := []featureFlag{
+		{"auto_tag_default", f.AutoTagDefault, false},
+		{"cross_domain_moves", f.CrossDomainMoves, false},
+		{"time_promotion", f.TimePromotion, false},
+		{"foreign_tag_escape", f.ForeignTagEscape, false},
+		{"duplicate_registry", f.DuplicateRegistry, false},
+		{"domain_bootstrap", f.DomainBootstrap, true},
 	}
-	var off []string
 	for _, fl := range flags {
-		if !fl.on {
-			off = append(off, fl.name)
+		if fl.on {
+			continue
 		}
+		chain := "catalog [features]." + fl.name
+		if fl.overridable {
+			chain = "env > daemon.toml > " + chain
+		}
+		log.Printf("INFO: feature %s disabled by config (default is ON; override resolves %s > default)",
+			fl.name, chain)
 	}
-	if len(off) == 0 {
-		return
-	}
-	log.Printf("INFO: features disabled by config: %s (default state is ON for all features; "+
-		"override resolves env > daemon.toml > catalog [features].* > default)", strings.Join(off, ", "))
 }
