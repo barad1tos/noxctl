@@ -67,8 +67,9 @@ ERROR (a check could not run — bearcli unreachable, log absent, etc.).`,
 // Features `noxctl apply` would use. Without this priming the
 // idempotency check errors at flock-acquire ("AcquireApply open …")
 // before the second pass runs. Catalog load happens here (cmd
-// layer) because `featuresFromCatalog` lives in cmd/noxctl/preflight.go
-// and the engine→config import direction is forbidden.
+// layer) because the catalog→Features bridge (cliutil.FeaturesFromCatalog,
+// surfaced locally as `featuresFromCatalog`) cannot run in the engine
+// boundary — the engine→config import direction is forbidden.
 func runVerify(cmd *cobra.Command, _ []string) error {
 	// Output validation happens inside `verify.Run → render`; we
 	// don't duplicate the check at the cmd layer (single owner).

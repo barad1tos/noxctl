@@ -192,9 +192,18 @@ func warnSilentFastPassGates(opts engine.DaemonOpts) {
 // `domain_bootstrap` currently has env / daemon.toml override paths —
 // the other five resolve only `catalog > default`.
 //
-// Assumption: every Features field ships default-ON via AllFeaturesOn.
+// Assumption: every Features field in the table below ships default-ON
+// (matching engine.AllFeaturesOn and the FeaturesFromCatalog defaults).
 // If a future Features field ships default-OFF, exclude it from this
 // table or thread a baseline so the helper doesn't lie.
+//
+// Maintenance hazard: the `overridable` column is hand-maintained and
+// must stay in sync with the env/file overlay logic in
+// bear/config/daemon.go. Adding a new env constant or daemon-toml
+// override for any feature here without flipping the corresponding row
+// to `overridable: true` will make this INFO message lie about the
+// resolution chain. Cross-package test coverage for this invariant is
+// open follow-up work.
 func logFeaturesDisabled(f engine.Features) {
 	type featureFlag struct {
 		name        string

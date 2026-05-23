@@ -26,10 +26,9 @@ func TestFeaturesFromCatalog_DefaultsAllOnForNilCatalog(t *testing.T) {
 }
 
 // TestFeaturesFromCatalog_DomainBootstrapOverlay locks the four
-// catalog states for DomainBootstrap. The other five flags follow the
-// same pointer-overlay pattern; pinning DomainBootstrap is sufficient
-// regression coverage because the loop structure is identical for
-// each field and any drift in the overlay shape would surface here.
+// catalog states for DomainBootstrap (nil catalog / omitted pointer /
+// explicit true / explicit false). Field-swap coverage for the other
+// five Features fields lives in TestFeaturesFromCatalog_AllFieldsRoundTrip.
 func TestFeaturesFromCatalog_DomainBootstrapOverlay(t *testing.T) {
 	cases := []struct {
 		name string
@@ -121,5 +120,92 @@ func TestResolveFeatures_DomainBootstrapPrecedence(t *testing.T) {
 				t.Errorf("ResolveFeatures DomainBootstrap=%v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestFeaturesFromCatalog_AllFieldsRoundTrip catches field-swap bugs
+// in the per-pointer overlay (six near-identical `if cat.Features.X
+// != nil { f.X = *cat.Features.X }` blocks). A regression that
+// copy-pastes the wrong field name on one of the lines would compile
+// cleanly and pass the single-field DomainBootstrap test, but flip a
+// distinct mixed-pattern through this round-trip.
+func TestFeaturesFromCatalog_AllFieldsRoundTrip(t *testing.T) {
+	in := config.Features{
+		AutoTagDefault:    new(true),
+		CrossDomainMoves:  new(false),
+		TimePromotion:     new(true),
+		ForeignTagEscape:  new(false),
+		DuplicateRegistry: new(true),
+		DomainBootstrap:   new(false),
+	}
+	out := cliutil.FeaturesFromCatalog(&config.Catalog{Features: in})
+	cases := []struct {
+		name string
+		got  bool
+		want bool
+	}{
+		{"AutoTagDefault", out.AutoTagDefault, true},
+		{"CrossDomainMoves", out.CrossDomainMoves, false},
+		{"TimePromotion", out.TimePromotion, true},
+		{"ForeignTagEscape", out.ForeignTagEscape, false},
+		{"DuplicateRegistry", out.DuplicateRegistry, true},
+		{"DomainBootstrap", out.DomainBootstrap, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.got != tc.want {
+				t.Errorf("%s: got %v, want %v", tc.name, tc.got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResolveFeatures_NilSourcesMap pins the defensive ok-guard:
+// a DaemonConfig with no Sources map (e.g. a test fixture or future
+// caller that constructs a partial DaemonConfig) MUST leave the
+// catalog value intact rather than silently overriding with dc's
+// zero-value DomainBootstrap. Without the guard, `nil_map["..."]`
+// returns `""`, which compares not-equal to SourceDefault, and the
+// override branch fires inappropriately.
+func TestResolveFeatures_NilSourcesMap(t *testing.T) {
+	cases := []struct {
+		name    string
+		sources map[string]string
+		want    bool // catalog value should win
+	}{
+		{"nil Sources", nil, true},
+		{"empty Sources", map[string]string{}, true},
+		{"Sources missing the DomainBootstrap key", map[string]string{"Unrelated": config.SourceFile}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cat := &config.Catalog{Features: config.Features{DomainBootstrap: new(true)}}
+			dc := config.DaemonConfig{
+				DomainBootstrap: false, // would clobber catalog if override fires
+				Sources:         tc.sources,
+			}
+			got := cliutil.ResolveFeatures(cat, dc).DomainBootstrap
+			if got != tc.want {
+				t.Errorf("ResolveFeatures DomainBootstrap=%v, want %v (catalog must win when Sources lacks the key)",
+					got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResolveFeatures_CatalogOmittedDaemonOverride pins the canonical
+// operator workflow: "I never touched [features] in the catalog, but
+// set domain_bootstrap = false in daemon.toml". The catalog field is
+// nil-pointer → FeaturesFromCatalog stamps the default true → daemon
+// override flips it to false.
+func TestResolveFeatures_CatalogOmittedDaemonOverride(t *testing.T) {
+	cat := &config.Catalog{Features: config.Features{DomainBootstrap: nil}}
+	dc := config.DaemonConfig{
+		DomainBootstrap: false,
+		Sources:         map[string]string{"DomainBootstrap": config.SourceFile},
+	}
+	got := cliutil.ResolveFeatures(cat, dc).DomainBootstrap
+	if got != false {
+		t.Errorf("ResolveFeatures DomainBootstrap=%v, want false (daemon-toml override of catalog-omitted field)", got)
 	}
 }

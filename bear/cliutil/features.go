@@ -48,21 +48,30 @@ func FeaturesFromCatalog(cat *config.Catalog) engine.Features {
 	return f
 }
 
-// ResolveFeatures composes the catalog feature stamp with the daemon-toml
-// override layer. Precedence chain (highest to lowest):
+// ResolveFeatures applies the operator-override step on top of the
+// catalog-derived Features stamp returned by FeaturesFromCatalog. When
+// `dc.Sources["DomainBootstrap"]` is anything other than SourceDefault
+// (operator set the value via env REGEN_DOMAIN_BOOTSTRAP or daemon.toml
+// `[daemon].domain_bootstrap` — the env-vs-file distinction is collapsed
+// by config.LoadDaemon before reaching here), `dc.DomainBootstrap` wins
+// over the catalog setting. Otherwise the catalog value stands.
 //
-//  1. env REGEN_DOMAIN_BOOTSTRAP  — captured at LoadDaemon time, surfaces as dc.Sources["DomainBootstrap"] = SourceEnv
-//  2. daemon.toml [daemon].domain_bootstrap — surfaces as SourceFile
-//  3. catalog [features].domain_bootstrap — overlaid in FeaturesFromCatalog
-//  4. ship default (true)
+// Operator kill-switch invariant: env/daemon-toml override MUST win over
+// the catalog so an operator with a broken or unloadable catalog still
+// has a path to disable the pre-pass without redeploy.
 //
-// Currently only `DomainBootstrap` has a daemon-toml/env override path —
-// the other five features resolve only `catalog > default`. Returning the
-// resolved Features struct lets the daemon entry point thread one value
-// instead of layering overrides inline.
+// Only DomainBootstrap currently has env/daemon-toml override surface —
+// the other five Features fields resolve catalog > default only. New
+// override paths added in bear/config/daemon.go MUST be mirrored here.
+//
+// The `ok` guard on the Sources lookup is deliberate: a partial
+// DaemonConfig (e.g., a test fixture constructed without the Sources
+// map) reads `""` from a nil map, which compares not-equal to
+// SourceDefault. Without the guard the override branch would silently
+// fire and clobber the catalog with `dc`'s zero-value DomainBootstrap.
 func ResolveFeatures(cat *config.Catalog, dc config.DaemonConfig) engine.Features {
 	f := FeaturesFromCatalog(cat)
-	if dc.Sources["DomainBootstrap"] != config.SourceDefault {
+	if src, ok := dc.Sources["DomainBootstrap"]; ok && src != config.SourceDefault {
 		f.DomainBootstrap = dc.DomainBootstrap
 	}
 	return f
