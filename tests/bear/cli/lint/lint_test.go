@@ -132,6 +132,18 @@ func armBearcliPool(t *testing.T) {
 	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
 }
 
+// runLintExpectOK invokes cli.RunLint and t.Fatalf's on any returned
+// error. Every happy-path test in this file uses the same three-line
+// "invoke, check err, fail loud" shape; centralizing it keeps each
+// case under the dupl token threshold and ensures a future RunLint
+// error contract change updates one call site instead of seven.
+func runLintExpectOK(t *testing.T, ctx context.Context, buf *bytes.Buffer, domains []*domain.Domain, apply bool, label string) {
+	t.Helper()
+	if err := cli.RunLint(ctx, buf, domains, apply); err != nil {
+		t.Fatalf("RunLint %s: unexpected err %v", label, err)
+	}
+}
+
 // TestRun_AuditMode_PrintsFindingsNoWrites is the canonical audit
 // scenario: a domain with a broken-H1 note gets scanned, findings
 // are rendered to the supplied writer, and the bearcli backend
@@ -142,7 +154,7 @@ func TestRun_AuditMode_PrintsFindingsNoWrites(t *testing.T) {
 	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
-	cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false, "audit-mode happy path")
 
 	out := buf.String()
 	if !strings.Contains(out, "[test/notes]") {
@@ -167,7 +179,7 @@ func TestRun_ApplyMode_InvokesAutoFix(t *testing.T) {
 	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
-	cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true, "apply-mode happy path")
 
 	// Apply path may or may not write (depends on whether the broken
 	// title is auto-fixable per AutoFixAtom). What we DO assert: the
@@ -197,7 +209,11 @@ func TestRun_CanceledContext_Aborts(t *testing.T) {
 	cancel() // canceled before Run even starts
 
 	var buf bytes.Buffer
-	cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
+	// Audit mode swallows scan failures (per-domain Scan returns
+	// what it has, orphan scan appends a synthetic finding). The
+	// canceled context surfaces through the empty list-call count
+	// below, not as a RunLint return value.
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false, "audit-mode canceled ctx")
 
 	// Honoring cancellation means the listNotes path saw ctx.Err
 	// and skipped the bearcli round-trip. Without this assertion the
@@ -218,7 +234,7 @@ func TestRun_EmptyDomains_RendersEmptyTally(t *testing.T) {
 	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
-	cli.RunLint(ctx, &buf, nil, false)
+	runLintExpectOK(t, ctx, &buf, nil, false, "empty-domains tally")
 
 	if !strings.Contains(buf.String(), "0 findings across 0 domains") {
 		t.Errorf("empty-domain tally missing; got %q", buf.String())
@@ -270,7 +286,7 @@ func TestRun_AuditMode_OrphanFamilyAppearsInOutput(t *testing.T) {
 	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
-	cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false, "audit-mode orphan finding")
 
 	out := buf.String()
 	if !strings.Contains(out, "Stray Note") {
@@ -303,7 +319,7 @@ func TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent(t *testing.T) {
 	ctx1 := domain.ContextWithBackend(t.Context(), fake1)
 
 	var buf1 bytes.Buffer
-	cli.RunLint(ctx1, &buf1, []*domain.Domain{flatListDomainForTest()}, true)
+	runLintExpectOK(t, ctx1, &buf1, []*domain.Domain{flatListDomainForTest()}, true, "apply-mode first run")
 
 	if got := fake1.countKind("tags"); got != 1 {
 		t.Fatalf("apply mode tags-call count = %d, want 1 (stray family tagged); calls=%d",
@@ -340,7 +356,7 @@ func TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent(t *testing.T) {
 	ctx2 := domain.ContextWithBackend(t.Context(), fake2)
 
 	var buf2 bytes.Buffer
-	cli.RunLint(ctx2, &buf2, []*domain.Domain{flatListDomainForTest()}, true)
+	runLintExpectOK(t, ctx2, &buf2, []*domain.Domain{flatListDomainForTest()}, true, "apply-mode second run idempotent")
 
 	if got := fake2.countKind("tags"); got != 0 {
 		t.Errorf("idempotency violated: apply mode tags-call count on already-tagged atom = %d, want 0",

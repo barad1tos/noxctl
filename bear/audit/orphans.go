@@ -218,27 +218,31 @@ func ScanOrphanFamilies(ctx context.Context, domains []*domain.Domain) ([]Findin
 // Honors ctx.Err at the top of each iteration so SIGINT response time
 // is bounded by at most one bearcli call (bearcli.Timeout=10s) instead
 // of the full sweep duration — matches the cancellation pattern used
-// by audit.Scan and LintApplyDomains.
+// by audit.Scan and LintApplyDomains. The third return surfaces
+// ctx.Err on cancellation so the caller can distinguish "ran clean"
+// from "Ctrl-C mid-loop" — per-atom failures still come back via the
+// failed counter without populating err.
 //
 // Defensive Category filter: skips findings whose Category is not
 // LintOrphanFamily. Belt-and-suspenders — the caller should pre-filter
 // by passing only ScanOrphanFamilies output, but mis-filtering at the
 // call site must NOT silently apply `#orphans` to unrelated findings.
-func ApplyOrphanFamilies(ctx context.Context, findings []Finding) (tagged, failed int) {
+func ApplyOrphanFamilies(ctx context.Context, findings []Finding) (tagged, failed int, err error) {
 	for _, f := range findings {
-		if err := domain.CheckCtx(ctx); err != nil {
-			return tagged, failed
+		if ctxErr := domain.CheckCtx(ctx); ctxErr != nil {
+			return tagged, failed, fmt.Errorf("ApplyOrphanFamilies canceled after %d/%d: %w",
+				tagged+failed, len(findings), ctxErr)
 		}
 		if f.Category != LintOrphanFamily {
 			continue
 		}
-		if err := bearcli.AddTag(ctx, f.NoteID, "orphans"); err != nil {
-			log.Printf("audit: orphan-tag %s failed: %v", f.Title, err)
+		if tagErr := bearcli.AddTag(ctx, f.NoteID, "orphans"); tagErr != nil {
+			log.Printf("audit: orphan-tag %s (id=%s) failed: %v", f.Title, f.NoteID, tagErr)
 			failed++
 			continue
 		}
 		log.Printf("audit: orphan-tagged: %s (id=%s)", f.Title, f.NoteID)
 		tagged++
 	}
-	return tagged, failed
+	return tagged, failed, nil
 }

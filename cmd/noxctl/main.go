@@ -4,6 +4,8 @@ package main
 import (
 	"errors"
 	"os"
+
+	"github.com/barad1tos/noxctl/bear/cli"
 )
 
 func main() {
@@ -22,6 +24,12 @@ func main() {
 		}
 		if errors.Is(err, errDriftDetected) {
 			os.Exit(ExitDiffPresent) // 2 — Terraform -detailed-exitcode
+		}
+		// Lint reported per-atom failures the operator must address.
+		// Mirrors the drift exit-code contract: exit-2 means "the gate
+		// answered NO," not "the gate could not run."
+		if errors.Is(err, cli.ErrLintFailed) {
+			os.Exit(ExitDiffPresent) // 2
 		}
 		// `noxctl verify` reuses the Terraform exit-2 contract for
 		// "gate said no" (drift / warnings / non-idempotent) and the

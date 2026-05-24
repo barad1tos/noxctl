@@ -412,7 +412,10 @@ func TestApplyOrphanFamilies_PartialFailure_Counts(t *testing.T) {
 			Category: audit.LintOrphanFamily,
 		},
 	}
-	tagged, failed := audit.ApplyOrphanFamilies(ctx, findings)
+	tagged, failed, err := audit.ApplyOrphanFamilies(ctx, findings)
+	if err != nil {
+		t.Errorf("err = %v, want nil (partial failure must not surface as ctx error)", err)
+	}
 	if tagged != 1 {
 		t.Errorf("tagged = %d, want 1", tagged)
 	}

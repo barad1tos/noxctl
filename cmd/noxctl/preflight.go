@@ -77,8 +77,7 @@ func runLintSweep(cmd *cobra.Command, apply bool) error {
 		return loadErr
 	}
 	return runWithSignalContext(cmd, func(ctx context.Context) error {
-		cli.RunLint(ctx, os.Stdout, domains, apply)
-		return nil
+		return cli.RunLint(ctx, os.Stdout, domains, apply)
 	})
 }
 
