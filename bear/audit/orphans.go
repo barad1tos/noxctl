@@ -36,6 +36,7 @@ package audit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -110,7 +111,7 @@ func strayFamilyTags(note domain.AutoTagNote, managed map[string]struct{}) []str
 		if tag == "" {
 			continue
 		}
-		if tag == orphansTag || strings.HasPrefix(tag, orphansTagPrefix) {
+		if isOrphansTag(tag) {
 			return nil // idempotency skip — already triaged
 		}
 		stripped := strings.TrimPrefix(tag, "#")
@@ -123,6 +124,17 @@ func strayFamilyTags(note domain.AutoTagNote, managed map[string]struct{}) []str
 		strays = append(strays, tag)
 	}
 	return strays
+}
+
+// isOrphansTag reports whether tag is the idempotency marker, ignoring
+// case and surrounding whitespace. Bear preserves operator-typed case
+// on tag chips, so `#Orphans` or `#orphans ` would slip past a byte-
+// exact compare and cause the apply pass to re-tag an already-triaged
+// atom. Normalizing here keeps both write-side (apply) and read-side
+// (scan) consistent.
+func isOrphansTag(tag string) bool {
+	normalized := strings.TrimSpace(strings.ToLower(tag))
+	return normalized == orphansTag || strings.HasPrefix(normalized, orphansTagPrefix)
 }
 
 // formatStrayDetail composes the operator-facing Detail message for an
@@ -220,8 +232,12 @@ func ScanOrphanFamilies(ctx context.Context, domains []*domain.Domain) ([]Findin
 // of the full sweep duration — matches the cancellation pattern used
 // by audit.Scan and LintApplyDomains. The third return surfaces
 // ctx.Err on cancellation so the caller can distinguish "ran clean"
-// from "Ctrl-C mid-loop" — per-atom failures still come back via the
-// failed counter without populating err.
+// from "Ctrl-C mid-loop". Per-atom tagging failures still come back
+// via the failed counter without populating err, EXCEPT when
+// 100% of the first batchAbortThreshold attempts have failed —
+// then the loop aborts with ErrApplyAllFailed so a bearcli verb-
+// rename or permissions regression cannot silently turn a sweep
+// into a no-op.
 //
 // Defensive Category filter: skips findings whose Category is not
 // LintOrphanFamily. Belt-and-suspenders — the caller should pre-filter
@@ -239,10 +255,37 @@ func ApplyOrphanFamilies(ctx context.Context, findings []Finding) (tagged, faile
 		if tagErr := bearcli.AddTag(ctx, f.NoteID, "orphans"); tagErr != nil {
 			log.Printf("audit: orphan-tag %s (id=%s) failed: %v", f.Title, f.NoteID, tagErr)
 			failed++
+			if shouldAbortOnTotalFailure(tagged, failed) {
+				return tagged, failed, fmt.Errorf(
+					"%w: %d/%d initial attempts failed; bearcli verb drift or permissions issue",
+					ErrApplyAllFailed, failed, batchAbortThreshold,
+				)
+			}
 			continue
 		}
 		log.Printf("audit: orphan-tagged: %s (id=%s)", f.Title, f.NoteID)
 		tagged++
 	}
 	return tagged, failed, nil
+}
+
+// batchAbortThreshold is the count of consecutive starting failures
+// that ApplyOrphanFamilies will tolerate before aborting. Set low
+// enough to fail fast on a global bearcli regression, high enough to
+// absorb the occasional single-atom transient (e.g. a note the user
+// just trashed mid-sweep).
+const batchAbortThreshold = 3
+
+// ErrApplyAllFailed wraps the abort condition for the SF10 defense:
+// when bearcli AddTag fails on every one of the first
+// batchAbortThreshold findings without a single success, the loop
+// stops and returns this sentinel so the caller can surface a
+// "bearcli verb drifted" diagnostic instead of "tagged=0 failed=N"
+// silently green-lit.
+var ErrApplyAllFailed = errors.New("ApplyOrphanFamilies: total failure batch")
+
+// shouldAbortOnTotalFailure reports whether the abort condition is met:
+// no success yet AND at least batchAbortThreshold failures observed.
+func shouldAbortOnTotalFailure(tagged, failed int) bool {
+	return tagged == 0 && failed >= batchAbortThreshold
 }

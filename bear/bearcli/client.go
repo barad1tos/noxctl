@@ -98,14 +98,23 @@ func Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
 //
 // `trash` (TrashNote) and `tags` (AddTag — orphan-family apply path)
 // are first-class kinds: prior to that wiring they collapsed into the
-// "other" bucket and silently inflated the unknown-kind metric.
+// "other" bucket and silently inflated the unknown-kind metric. The
+// `tags` family further splits by second arg so a future `tags list`
+// caller cannot pollute the write-side `tags-add` counter — today only
+// `tags add` is wired, and the narrower kind keeps the metric honest
+// for future expansion.
 func kindFromArgs(args []string) string {
 	if len(args) == 0 {
 		return "other"
 	}
 	switch args[0] {
-	case "list", "cat", "show", "overwrite", "create", "find", "trash", "tags":
+	case "list", "cat", "show", "overwrite", "create", "find", "trash":
 		return args[0]
+	case "tags":
+		if len(args) >= 2 && args[1] == "add" {
+			return "tags-add"
+		}
+		return "tags"
 	}
 	return "other"
 }
