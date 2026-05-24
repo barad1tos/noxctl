@@ -14,10 +14,12 @@ package audit
 //     (`#X/Y/Z`) classify by `X`. If `X` is not managed, the atom is
 //     an orphan regardless of depth.
 //   - Atoms already carrying `#orphans` (or `#orphans/<sub>`) are
-//     skipped wholesale — that is the idempotency contract. The apply
-//     step issues `bearcli tags add <noteID> orphans` per finding, so
-//     re-running the lint sweep on an already-triaged atom must
-//     produce zero findings.
+//     skipped wholesale — that is the idempotency contract. Match is
+//     case-insensitive and trims whitespace (see isOrphansTag), so
+//     operator-typed `#Orphans` or `#orphans ` still triggers the
+//     skip. The apply step issues `bearcli tags add <noteID> orphans`
+//     per finding, so re-running the lint sweep on an already-triaged
+//     atom must produce zero findings.
 //
 // Finding shape:
 //   - DomainTag is the empty string — orphan-family is a corpus-level
@@ -232,10 +234,11 @@ func ScanOrphanFamilies(ctx context.Context, domains []*domain.Domain) ([]Findin
 // ctx.Err on cancellation so the caller can distinguish "ran clean"
 // from "Ctrl-C mid-loop". Per-atom tagging failures still come back
 // via the failed counter without populating err, EXCEPT when
-// 100% of the first batchAbortThreshold attempts have failed —
-// then the loop aborts with ErrApplyAllFailed so a bearcli verb-
+// failures reach batchAbortThreshold without any prior success —
+// the loop then aborts with ErrApplyAllFailed so a bearcli verb-
 // rename or permissions regression cannot silently turn a sweep
-// into a no-op.
+// into a no-op. A single success at any point disarms the guard
+// for the remainder of the sweep.
 //
 // Defensive Category filter: skips findings whose Category is not
 // LintOrphanFamily. Belt-and-suspenders — the caller should pre-filter
@@ -274,12 +277,12 @@ func ApplyOrphanFamilies(ctx context.Context, findings []Finding) (tagged, faile
 // just trashed mid-sweep).
 const batchAbortThreshold = 3
 
-// ErrApplyAllFailed wraps the abort condition for the SF10 defense:
-// when bearcli AddTag fails on every one of the first
-// batchAbortThreshold findings without a single success, the loop
-// stops and returns this sentinel so the caller can surface a
-// "bearcli verb drifted" diagnostic instead of "tagged=0 failed=N"
-// silently green-lit.
+// ErrApplyAllFailed is returned by ApplyOrphanFamilies when bearcli
+// AddTag fails on every attempt without a single success, reaching
+// batchAbortThreshold consecutive failures. The sentinel lets callers
+// distinguish a true regression (bearcli verb rename, permissions
+// drift) from a sweep that produced mixed results; without it a
+// 100%-failure run would surface as "tagged=0 failed=N" with exit 0.
 var ErrApplyAllFailed = errors.New("ApplyOrphanFamilies: total failure batch")
 
 // shouldAbortOnTotalFailure reports whether the abort condition is met:

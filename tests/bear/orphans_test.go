@@ -534,10 +534,11 @@ func TestAggregateOrphanFamilies_MixedManagedAndStrays_OnlyStraysInDetail(t *tes
 	}
 }
 
-// TestAggregateOrphanFamilies_OrphansTagCaseInsensitive pins the SF7
-// idempotency guard: `#Orphans`, `#ORPHANS`, and `#orphans ` (with
-// trailing space) all count as already-triaged. A byte-exact compare
-// would skip these and double-tag on the next sweep.
+// TestAggregateOrphanFamilies_OrphansTagCaseInsensitive pins the
+// case-insensitive idempotency guard: `#Orphans`, `#ORPHANS`, and
+// `#orphans ` (with trailing space) all count as already-triaged.
+// A byte-exact compare would skip these and double-tag on the next
+// sweep.
 func TestAggregateOrphanFamilies_OrphansTagCaseInsensitive(t *testing.T) {
 	for _, alias := range []string{"#Orphans", "#ORPHANS", "#orphans ", "#Orphans/sub"} {
 		notes := []orphanFixture{{
@@ -558,11 +559,12 @@ func TestAggregateOrphanFamilies_OrphansTagCaseInsensitive(t *testing.T) {
 	}
 }
 
-// TestApplyOrphanFamilies_ContextCanceledMidLoop_StopsCleanly pins the
-// SF2 cancel contract: a ctx canceled between iterations causes
-// ApplyOrphanFamilies to return early with a wrapped ctx.Err so the
-// caller can distinguish "ran clean" from "Ctrl-C mid-loop". The
-// counters reflect the work actually completed before cancellation.
+// TestApplyOrphanFamilies_ContextCanceledMidLoop_StopsCleanly pins
+// the ctx cancellation contract: a ctx canceled between iterations
+// causes ApplyOrphanFamilies to return early with a wrapped ctx.Err
+// so the caller can distinguish "ran clean" from "Ctrl-C mid-loop".
+// The counters reflect the work actually completed before
+// cancellation.
 func TestApplyOrphanFamilies_ContextCanceledMidLoop_StopsCleanly(t *testing.T) {
 	fake := &orphanFakeBearcli{}
 	parent := armOrphanFakeBearcli(t, fake)
@@ -618,11 +620,11 @@ func TestApplyOrphanFamilies_SkipsNonOrphanFinding(t *testing.T) {
 }
 
 // TestApplyOrphanFamilies_TotalFailureBatch_AbortsWithSentinel pins
-// the SF10 abort defense: when bearcli AddTag fails on every one of
-// the first batchAbortThreshold findings (3, no successes), the loop
-// aborts and returns ErrApplyAllFailed so a bearcli verb-rename or
-// permissions regression surfaces as a hard error instead of
-// "tagged=0 failed=N" silent no-op.
+// the total-failure abort defense: when bearcli AddTag fails on
+// every one of the first batchAbortThreshold findings (3 failures,
+// zero successes), the loop aborts and returns ErrApplyAllFailed so
+// a bearcli verb-rename or permissions regression surfaces as a
+// hard error instead of a "tagged=0 failed=N" silent no-op.
 func TestApplyOrphanFamilies_TotalFailureBatch_AbortsWithSentinel(t *testing.T) {
 	fake := &orphanFakeBearcli{
 		tagErrByNoteID: map[string]error{

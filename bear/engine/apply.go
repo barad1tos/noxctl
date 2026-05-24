@@ -83,9 +83,8 @@ type ApplyOpts struct {
 // DefaultBearcliConcurrency is the ship-default capacity for
 // `domain.SetBearcliConcurrency` across every entry point — apply,
 // daemon, plan. Exported so the read-only `noxctl plan` path can
-// install the same ceiling without redeclaring the constant
-// (Sourcery PR-5: silently drifting defaults are a maintenance
-// trap).
+// install the same ceiling without redeclaring the constant —
+// silently drifting defaults are a maintenance trap.
 const DefaultBearcliConcurrency = 8
 
 // Apply runs the orchestrator one-shot: acquires flock,

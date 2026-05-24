@@ -365,13 +365,13 @@ func TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent(t *testing.T) {
 	}
 }
 
-// TestRun_ApplyMode_PoolInitializedFromCold pins the SF8 wire-up: the
-// production path (RunLint) MUST arm the bearcli concurrency pool
-// itself — earlier tests pre-armed via armBearcliPool, so dropping
-// line 44 from RunLint would not have failed any test. This case
-// resets the pool to a sentinel capacity (2) WITHOUT calling
-// armBearcliPool, then asserts that after RunLint the pool capacity
-// reflects the production default (engine.DefaultBearcliConcurrency).
+// TestRun_ApplyMode_PoolInitializedFromCold pins the production path
+// (RunLint) MUST arm the bearcli concurrency pool itself — earlier
+// tests pre-armed via armBearcliPool, so dropping the SetConcurrency
+// call from RunLint would not have failed any test. This case resets
+// the pool to a sentinel capacity (2) WITHOUT calling armBearcliPool,
+// then asserts that after RunLint the pool capacity reflects the
+// production default (engine.DefaultBearcliConcurrency).
 // If the production SetBearcliConcurrency wiring drops, capacity stays
 // at 2 and the assertion catches it.
 func TestRun_ApplyMode_PoolInitializedFromCold(t *testing.T) {
@@ -427,10 +427,10 @@ func (f *scanFailFakeBearcli) Run(ctx context.Context, args []string, stdin stri
 	return f.fakeBearcli.Run(ctx, args, stdin)
 }
 
-// TestRun_ApplyMode_ScanFailure_ReturnsError pins the SF1 error
-// propagation: when the corpus orphan scan fails, RunLint must
-// surface the wrapped error so the cmd shim exits non-zero. Earlier
-// the failure logged to stderr and the process exited 0.
+// TestRun_ApplyMode_ScanFailure_ReturnsError pins the error
+// propagation contract: when the corpus orphan scan fails, RunLint
+// must surface the wrapped error so the cmd shim exits non-zero.
+// Earlier the failure logged to stderr and the process exited 0.
 func TestRun_ApplyMode_ScanFailure_ReturnsError(t *testing.T) {
 	armBearcliPool(t)
 	corpusErr := errors.New("bearcli list --location notes boom")
@@ -450,12 +450,55 @@ func TestRun_ApplyMode_ScanFailure_ReturnsError(t *testing.T) {
 	}
 }
 
+// TestRun_AuditMode_ScanFailure_ReturnsErrorAndSyntheticFinding pins
+// the audit-mode mirror of TestRun_ApplyMode_ScanFailure_ReturnsError:
+// a failing corpus scan must produce BOTH a non-nil error return
+// (so CI gates greping `$?` catch the regression) AND a synthetic
+// Finding in the rendered report (so report consumers see the gap
+// inline). Multi-line stderr in the error is flattened to a single
+// line so PrintFindings' single-`%s` Detail slot doesn't break.
+func TestRun_AuditMode_ScanFailure_ReturnsErrorAndSyntheticFinding(t *testing.T) {
+	armBearcliPool(t)
+	corpusErr := errors.New("bearcli list --location notes boom\nwith trailing detail\nacross 3 lines")
+	fake := &scanFailFakeBearcli{
+		fakeBearcli: newFakeBearcli(brokenH1ListPayload(t)),
+		corpusErr:   corpusErr,
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
+	if err == nil {
+		t.Fatalf("RunLint audit-mode with failing corpus scan: err = nil, want wrapped scan error")
+	}
+	if !strings.Contains(err.Error(), "orphan scan") {
+		t.Errorf("err = %v, want message mentioning 'orphan scan'", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "(orphan scan failed)") {
+		t.Errorf("audit output missing synthetic '(orphan scan failed)' Finding; got %q", out)
+	}
+	// The synthetic Finding's Detail line must be a single line; raw
+	// multi-line stderr would put `\n` mid-Detail and break the
+	// 4-space-indented `Title — Detail` column.
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.Contains(line, "(orphan scan failed)") {
+			if strings.Contains(line, "with trailing detail") &&
+				strings.Contains(line, "across 3 lines") {
+				return // single-line, contains all the flattened content
+			}
+		}
+	}
+	t.Errorf("synthetic Finding Detail not flattened onto single line; got %q", out)
+}
+
 // mutatingFakeBearcli wraps fakeBearcli and rewrites listPayload after
 // every `tags add` call so a subsequent list returns the mutated
 // state. Lets TestRun_ApplyMode_TrueE2EIdempotency exercise the full
-// idempotency contract against ONE fake instance (rather than two
-// fakes with hand-mutated payloads), which is what TC8 of the review
-// asked for.
+// idempotency contract against ONE fake instance — a second apply
+// against the same fake observes the freshly-added #orphans tag and
+// becomes a no-op, the way a real re-run would.
 type mutatingFakeBearcli struct {
 	*fakeBearcli
 	notes []map[string]any

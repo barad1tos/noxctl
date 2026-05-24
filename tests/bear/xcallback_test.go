@@ -69,9 +69,9 @@ func TestNewNoteURL_Equals_StructuralDriftDetected(t *testing.T) {
 }
 
 // quicknoteDailyBootstrapURL returns a fully-populated FormBootstrap
-// NewNoteURL pinned to quicknote/daily. Used as the baseline fixture for
-// the Inner-leg equality tests (R5 gap-closure) — each test mutates a
-// single field on the copy to provoke drift.
+// NewNoteURL pinned to quicknote/daily. Used as the baseline fixture
+// for the Inner-leg equality tests — each test mutates a single field
+// on the copy to provoke drift.
 func quicknoteDailyBootstrapURL() domain.NewNoteURL {
 	return domain.NewNoteURL{
 		Tag: "quicknote/daily", CanonicalTag: "#quicknote/daily",
@@ -81,11 +81,11 @@ func quicknoteDailyBootstrapURL() domain.NewNoteURL {
 	}
 }
 
-// TestNewNoteURL_Equals_InnerPresenceMismatch closes the R5 gap: the
-// recursive Inner-equality branch in NewNoteURL.Equals (xcallback.go:220)
-// must reject (Inner != nil) vs (Inner == nil) pairs in either direction.
-// Previously uncovered because the existing struct-drift test exercises
-// flat (Inner == nil) values only.
+// TestNewNoteURL_Equals_InnerPresenceMismatch pins the recursive
+// Inner-equality branch in NewNoteURL.Equals: it must reject
+// (Inner != nil) vs (Inner == nil) pairs in either direction. The
+// flat (Inner == nil) struct-drift case is covered separately;
+// this test fires only when one side has nested form data.
 func TestNewNoteURL_Equals_InnerPresenceMismatch(t *testing.T) {
 	a := quicknoteDailyBootstrapURL()
 	b := a

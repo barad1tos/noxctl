@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 
 	"github.com/barad1tos/noxctl/bear/audit"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -39,18 +40,22 @@ var ErrLintFailed = errors.New("noxctl lint: reported failures")
 // runs against the post-fix atom state.
 //
 // On orphan-scan failure, audit-mode appends a synthetic finding to
-// the report so the operator sees the gap inline and still receives
-// the per-domain findings. In apply-mode, orphan-scan failure aborts
-// the orphan pass (per-domain fixes have already landed; logging +
-// returning the wrapped error lets the operator re-run the lint
-// sweep with the failure context).
+// the report so the operator sees the gap inline AND returns the
+// wrapped scan error so CI gates greping exit codes still catch the
+// regression. In apply-mode, orphan-scan failure aborts the orphan
+// pass (per-domain fixes have already landed; logging + returning
+// the wrapped error lets the operator re-run the lint sweep with the
+// failure context).
 //
 // ctx cancellation aborts the sweep at the next bearcli call. All
 // four orchestrators are log-and-continue on per-atom failures, so a
 // partial sweep always renders whatever findings completed before the
 // cancellation. The returned error is non-nil when apply-mode hit
-// per-atom failures (ErrLintFailed) or when the orphan scan could
-// not complete (wrapped scan error); audit mode returns nil.
+// per-atom failures (ErrLintFailed), or when the orphan scan could
+// not complete in either mode (wrapped scan error). Audit mode
+// returns nil when the scan ran clean — even if per-domain findings
+// were emitted, those are operator-actionable but not a sweep
+// failure.
 //
 // stdout is parameterized so tests can capture the rendered findings;
 // production wires os.Stdout in the CLI shim.
@@ -61,9 +66,9 @@ func RunLint(ctx context.Context, stdout io.Writer, domains []*domain.Domain, ap
 		return runApplyOrphanPass(ctx, domains)
 	}
 	findings := audit.Scan(ctx, domains)
-	findings = appendOrphanFindings(ctx, findings, domains)
+	findings, scanErr := appendOrphanFindings(ctx, findings, domains)
 	audit.PrintFindings(stdout, findings, len(domains))
-	return nil
+	return scanErr
 }
 
 // runApplyOrphanPass invokes the corpus orphan scan + tag-add chain.
@@ -110,16 +115,23 @@ func runApplyOrphanPass(ctx context.Context, domains []*domain.Domain) error {
 // of the missing scan output so the audit report itself signals the
 // gap — operators redirecting `noxctl audit > report.txt` would
 // otherwise see a normal-looking output with a silently empty orphan
-// section.
+// section. The scan error is also returned so the cmd shim can
+// surface it through a non-zero exit code; CI gates that grep `$?`
+// rather than parse the report still catch the regression.
 //
 // Empty-domain catalogs and canceled contexts skip the scan for the
-// same short-circuit reasons as runApplyOrphanPass.
-func appendOrphanFindings(ctx context.Context, findings []audit.Finding, domains []*domain.Domain) []audit.Finding {
+// same short-circuit reasons as runApplyOrphanPass; both return
+// (findings, nil) since neither is a scan failure.
+func appendOrphanFindings(
+	ctx context.Context,
+	findings []audit.Finding,
+	domains []*domain.Domain,
+) ([]audit.Finding, error) {
 	if len(domains) == 0 {
-		return findings
+		return findings, nil
 	}
 	if err := domain.CheckCtx(ctx); err != nil {
-		return findings
+		return findings, nil
 	}
 	orphanFindings, orphanErr := audit.ScanOrphanFamilies(ctx, domains)
 	if orphanErr != nil {
@@ -127,13 +139,23 @@ func appendOrphanFindings(ctx context.Context, findings []audit.Finding, domains
 		findings = append(findings, audit.Finding{
 			Category: audit.LintOrphanFamily,
 			Title:    "(orphan scan failed)",
-			Detail:   orphanErr.Error(),
+			Detail:   flattenForReport(orphanErr.Error()),
 			Fixable:  false,
 		})
 		audit.SortFindings(findings)
-		return findings
+		return findings, fmt.Errorf("lint audit orphan scan: %w", orphanErr)
 	}
 	findings = append(findings, orphanFindings...)
 	audit.SortFindings(findings)
-	return findings
+	return findings, nil
+}
+
+// flattenForReport collapses newlines and tabs in a free-form error
+// string into single spaces so the value renders on one line inside
+// PrintFindings, which uses `Detail` in a single `%s` slot. Bearcli
+// stack traces or multi-paragraph diagnostics would otherwise wrap
+// across the column structure and break grep-style report parsers.
+func flattenForReport(s string) string {
+	r := strings.NewReplacer("\n", " ", "\r", " ", "\t", " ")
+	return strings.TrimSpace(r.Replace(s))
 }
