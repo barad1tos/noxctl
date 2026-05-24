@@ -338,6 +338,16 @@ func TestRunDestroy_ReportsFailures_WhenTrashFails(t *testing.T) {
 	if !strings.Contains(out.String(), "1 failures") {
 		t.Errorf("summary must report the failure count; got:\n%s", out.String())
 	}
+	// The log-and-continue contract: the master trash failed, but the atom
+	// strip must still run — the operator's survivable data path. Without
+	// this, a regression that aborts the whole sweep on the first trash
+	// failure would still satisfy the failure-count assertion above.
+	if !strings.Contains(out.String(), "stripped 1") {
+		t.Errorf("atom strip must still run after a trash failure; summary:\n%s", out.String())
+	}
+	if fake.overwrites != 1 {
+		t.Errorf("atom strip overwrite count = %d, want 1 (strip continues despite trash failure)", fake.overwrites)
+	}
 	if len(fake.trashed) != 0 {
 		t.Errorf("trash failed, so nothing should be recorded as trashed; got %v", fake.trashed)
 	}
