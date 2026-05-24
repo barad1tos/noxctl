@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -88,16 +89,16 @@ func (f *fakeBearcli) countKind(kind string) int {
 
 // brokenH1ListPayload returns the JSON shape `bearcli list --tag X`
 // emits for one note with a broken-H1 title — the canonical lint
-// finding the audit pass surfaces. The Tags field carries the
-// domain's CanonicalTag so the lint pass scopes the finding to the
-// right domain.
-func brokenH1ListPayload(t *testing.T, tag string) []byte {
+// finding the audit pass surfaces. Tagged under the flat-list domain
+// (test/notes) so the lint pass scopes the finding to the same
+// fixture domain every other test uses.
+func brokenH1ListPayload(t *testing.T) []byte {
 	t.Helper()
 	raw, err := json.Marshal([]map[string]any{{
 		"id":      "note-1",
 		"title":   "| broken header",
 		"content": "Body without canonical tag-line.\n",
-		"tags":    []string{tag},
+		"tags":    []string{"test/notes"},
 		"created": "2026-05-19T12:00:00Z",
 	}})
 	if err != nil {
@@ -150,7 +151,7 @@ func runLintExpectOK(t *testing.T, ctx context.Context, buf *bytes.Buffer, domai
 // records zero overwrite calls — the read-only contract.
 func TestRun_AuditMode_PrintsFindingsNoWrites(t *testing.T) {
 	armBearcliPool(t)
-	fake := newFakeBearcli(brokenH1ListPayload(t, "test/notes"))
+	fake := newFakeBearcli(brokenH1ListPayload(t))
 	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
@@ -175,7 +176,7 @@ func TestRun_AuditMode_PrintsFindingsNoWrites(t *testing.T) {
 // orchestrator logs per-domain via the Domain.Logf hook instead.
 func TestRun_ApplyMode_InvokesAutoFix(t *testing.T) {
 	armBearcliPool(t)
-	fake := newFakeBearcli(brokenH1ListPayload(t, "test/notes"))
+	fake := newFakeBearcli(brokenH1ListPayload(t))
 	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
@@ -204,7 +205,7 @@ func TestRun_ApplyMode_InvokesAutoFix(t *testing.T) {
 // circuits each domain's listNotes call.
 func TestRun_CanceledContext_Aborts(t *testing.T) {
 	armBearcliPool(t)
-	fake := newFakeBearcli(brokenH1ListPayload(t, "test/notes"))
+	fake := newFakeBearcli(brokenH1ListPayload(t))
 	ctx, cancel := context.WithCancel(domain.ContextWithBackend(t.Context(), fake))
 	cancel() // canceled before Run even starts
 
@@ -258,11 +259,11 @@ func TestRun_EmptyDomains_RendersEmptyTally(t *testing.T) {
 // the atom under its catalog tag and emits whatever per-atom lints
 // fire on its body; the corpus scan walks the same atom and emits the
 // orphan-family finding. Both code paths exercised in one run.
-func orphanFamilyListPayload(t *testing.T, atomID, atomTitle string, tags []string) []byte {
+func orphanFamilyListPayload(t *testing.T, tags []string) []byte {
 	t.Helper()
 	raw, err := json.Marshal([]map[string]any{{
-		"id":      atomID,
-		"title":   atomTitle,
+		"id":      "note-stray",
+		"title":   "Stray Note",
 		"content": "",
 		"tags":    tags,
 		"created": "2026-05-23T12:00:00Z",
@@ -280,7 +281,7 @@ func orphanFamilyListPayload(t *testing.T, atomID, atomTitle string, tags []stri
 // is a strict read-only contract.
 func TestRun_AuditMode_OrphanFamilyAppearsInOutput(t *testing.T) {
 	armBearcliPool(t)
-	payload := orphanFamilyListPayload(t, "note-stray", "Stray Note",
+	payload := orphanFamilyListPayload(t,
 		[]string{"#test/notes", "#strayfamily/sub"})
 	fake := newFakeBearcli(payload)
 	ctx := domain.ContextWithBackend(t.Context(), fake)
@@ -313,7 +314,7 @@ func TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent(t *testing.T) {
 	armBearcliPool(t)
 
 	// First run: atom carries the stray-family tag without #orphans.
-	payload1 := orphanFamilyListPayload(t, "note-stray", "Stray Note",
+	payload1 := orphanFamilyListPayload(t,
 		[]string{"#test/notes", "#strayfamily/sub"})
 	fake1 := newFakeBearcli(payload1)
 	ctx1 := domain.ContextWithBackend(t.Context(), fake1)
@@ -350,7 +351,7 @@ func TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent(t *testing.T) {
 
 	// Second run: atom now carries #orphans — aggregator returns empty,
 	// ApplyOrphanFamilies receives empty slice, zero tags calls.
-	payload2 := orphanFamilyListPayload(t, "note-stray", "Stray Note",
+	payload2 := orphanFamilyListPayload(t,
 		[]string{"#test/notes", "#strayfamily/sub", "#orphans"})
 	fake2 := newFakeBearcli(payload2)
 	ctx2 := domain.ContextWithBackend(t.Context(), fake2)
@@ -361,5 +362,200 @@ func TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent(t *testing.T) {
 	if got := fake2.countKind("tags"); got != 0 {
 		t.Errorf("idempotency violated: apply mode tags-call count on already-tagged atom = %d, want 0",
 			got)
+	}
+}
+
+// TestRun_ApplyMode_PoolInitializedFromCold pins the SF8 wire-up: the
+// production path (RunLint) MUST arm the bearcli concurrency pool
+// itself — earlier tests pre-armed via armBearcliPool, so dropping
+// line 44 from RunLint would not have failed any test. This case
+// resets the pool to a sentinel capacity (2) WITHOUT calling
+// armBearcliPool, then asserts that after RunLint the pool capacity
+// reflects the production default (engine.DefaultBearcliConcurrency).
+// If the production SetBearcliConcurrency wiring drops, capacity stays
+// at 2 and the assertion catches it.
+func TestRun_ApplyMode_PoolInitializedFromCold(t *testing.T) {
+	domain.ResetBearcliPoolForTest(2)
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+
+	fake := newFakeBearcli([]byte(`[]`))
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+	var buf bytes.Buffer
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true, "cold-pool path")
+
+	metrics := domain.BearcliMetricsSnapshot()
+	if metrics.Capacity < 4 {
+		t.Errorf("pool capacity after RunLint = %d, want >= 4 (production default); "+
+			"SetBearcliConcurrency wiring dropped", metrics.Capacity)
+	}
+}
+
+// TestRun_ApplyMode_EmptyDomains_NoBearcliCalls pins the short-circuit
+// guard in runApplyOrphanPass: an empty domain catalog must skip the
+// corpus orphan scan entirely. Without the guard, RunLint would issue
+// a `list --location notes` round-trip just to discover there is
+// nothing to tag.
+func TestRun_ApplyMode_EmptyDomains_NoBearcliCalls(t *testing.T) {
+	armBearcliPool(t)
+	fake := newFakeBearcli([]byte(`[]`))
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	runLintExpectOK(t, ctx, &buf, nil, true, "apply-mode empty domains")
+
+	if got := fake.count.Load(); got != 0 {
+		t.Errorf("apply mode with no domains issued %d bearcli calls; want 0", got)
+	}
+}
+
+// scanFailFakeBearcli serves a normal per-domain list and errors on
+// the corpus orphan scan (the `list --location notes` call). Lets
+// the apply-mode error-propagation test exercise the scan-failure
+// branch end-to-end without a separate seam in the production code.
+type scanFailFakeBearcli struct {
+	*fakeBearcli
+	corpusErr error
+}
+
+// Run wraps fakeBearcli.Run, intercepting the corpus list call by
+// `--location notes` and returning corpusErr. Per-domain list calls
+// (which carry `--tag X`) fall through to the embedded fake.
+func (f *scanFailFakeBearcli) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	if len(args) >= 3 && args[0] == "list" && args[1] == "--location" && args[2] == "notes" {
+		return nil, f.corpusErr
+	}
+	return f.fakeBearcli.Run(ctx, args, stdin)
+}
+
+// TestRun_ApplyMode_ScanFailure_ReturnsError pins the SF1 error
+// propagation: when the corpus orphan scan fails, RunLint must
+// surface the wrapped error so the cmd shim exits non-zero. Earlier
+// the failure logged to stderr and the process exited 0.
+func TestRun_ApplyMode_ScanFailure_ReturnsError(t *testing.T) {
+	armBearcliPool(t)
+	corpusErr := errors.New("bearcli list --location notes boom")
+	fake := &scanFailFakeBearcli{
+		fakeBearcli: newFakeBearcli(brokenH1ListPayload(t)),
+		corpusErr:   corpusErr,
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+	if err == nil {
+		t.Fatalf("RunLint apply-mode with failing corpus scan: err = nil, want wrapped scan error")
+	}
+	if !strings.Contains(err.Error(), "orphan scan") {
+		t.Errorf("err = %v, want message mentioning 'orphan scan'", err)
+	}
+}
+
+// mutatingFakeBearcli wraps fakeBearcli and rewrites listPayload after
+// every `tags add` call so a subsequent list returns the mutated
+// state. Lets TestRun_ApplyMode_TrueE2EIdempotency exercise the full
+// idempotency contract against ONE fake instance (rather than two
+// fakes with hand-mutated payloads), which is what TC8 of the review
+// asked for.
+type mutatingFakeBearcli struct {
+	*fakeBearcli
+	notes []map[string]any
+}
+
+// newMutatingFakeBearcli wires the notes slice to the embedded fake's
+// listPayload by marshaling once at construction. AppendTag mutates
+// the slice and re-marshals so the next list call returns the new
+// shape.
+func newMutatingFakeBearcli(t *testing.T, notes []map[string]any) *mutatingFakeBearcli {
+	t.Helper()
+	payload, err := json.Marshal(notes)
+	if err != nil {
+		t.Fatalf("newMutatingFakeBearcli: marshal: %v", err)
+	}
+	return &mutatingFakeBearcli{
+		fakeBearcli: newFakeBearcli(payload),
+		notes:       notes,
+	}
+}
+
+// Run delegates to the embedded fake, then re-marshals notes after
+// every `tags add` so a subsequent list call returns the mutated
+// payload. Errors propagate verbatim from the embedded fake.
+func (f *mutatingFakeBearcli) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	out, err := f.fakeBearcli.Run(ctx, args, stdin)
+	if err != nil {
+		return out, err
+	}
+	if len(args) >= 4 && args[0] == "tags" && args[1] == "add" {
+		noteID, newTag := args[2], "#"+args[3]
+		for _, n := range f.notes {
+			if id, _ := n["id"].(string); id != noteID {
+				continue
+			}
+			tags, _ := n["tags"].([]string)
+			n["tags"] = append(tags, newTag)
+		}
+		updated, marshalErr := json.Marshal(f.notes)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		f.mu.Lock()
+		f.listPayload = updated
+		f.mu.Unlock()
+	}
+	return out, nil
+}
+
+// TestRun_ApplyMode_TrueE2EIdempotency drives the full apply →
+// re-apply cycle against ONE fake instance whose listPayload mutates
+// after the first `tags add` call. Pins the operator-facing contract:
+// running `noxctl lint --apply` twice in a row tags the atom once,
+// then becomes a no-op on the second run because the corpus scan
+// observes the freshly-added `#orphans` tag and skips the atom.
+func TestRun_ApplyMode_TrueE2EIdempotency(t *testing.T) {
+	armBearcliPool(t)
+	notes := []map[string]any{{
+		"id":      "note-stray",
+		"title":   "Stray Note",
+		"content": "",
+		"tags":    []string{"#test/notes", "#strayfamily/sub"},
+		"created": "2026-05-23T12:00:00Z",
+	}}
+	fake := newMutatingFakeBearcli(t, notes)
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf1 bytes.Buffer
+	runLintExpectOK(t, ctx, &buf1, []*domain.Domain{flatListDomainForTest()}, true, "true-E2E first run")
+	if got := fake.countKind("tags"); got != 1 {
+		t.Fatalf("first run tags-call count = %d, want 1", got)
+	}
+
+	var buf2 bytes.Buffer
+	runLintExpectOK(t, ctx, &buf2, []*domain.Domain{flatListDomainForTest()}, true, "true-E2E second run")
+	if got := fake.countKind("tags"); got != 1 {
+		t.Errorf("second run tags-call count = %d, want still 1 (idempotency must skip already-tagged atom)", got)
+	}
+}
+
+// TestRun_AuditMode_OrphanFamilyLabelInOutput tightens the substring
+// assertion in TestRun_AuditMode_OrphanFamilyAppearsInOutput: the
+// `orphan-family:` category header must appear in the rendered report
+// so a consumer grepping for the section header gets a deterministic
+// landmark. A bare `"Stray Note"` substring would pass even if
+// PrintFindings dropped the category header — this test guards the
+// rendering shape itself.
+func TestRun_AuditMode_OrphanFamilyLabelInOutput(t *testing.T) {
+	armBearcliPool(t)
+	payload := orphanFamilyListPayload(t,
+		[]string{"#test/notes", "#strayfamily/sub"})
+	fake := newFakeBearcli(payload)
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false,
+		"orphan-family label rendering")
+
+	out := buf.String()
+	if !strings.Contains(out, "orphan-family:") {
+		t.Errorf("audit output missing 'orphan-family:' category header; got %q", out)
 	}
 }

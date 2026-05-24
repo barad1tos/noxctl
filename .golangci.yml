@@ -157,6 +157,14 @@ linters:
       - path: '_test\.go$'
         linters:
           - lll
+ # Test files exempt from dupl: table-driven cases, fixture
+ # constructors, and assertion blocks legitimately repeat similar
+ # struct literals across scenarios. Extracting a helper for every
+ # ≥50-token repetition hides the test intent behind indirection.
+ # Production code stays bound to the threshold; tests do not.
+      - path: '_test\.go$'
+        linters:
+          - dupl
 
 formatters:
   enable:

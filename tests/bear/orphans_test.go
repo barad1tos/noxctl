@@ -400,18 +400,10 @@ func TestApplyOrphanFamilies_PartialFailure_Counts(t *testing.T) {
 	}
 	ctx := armOrphanFakeBearcli(t, fake)
 
-	findings := []audit.Finding{
-		{
-			NoteID:   "note-ok",
-			Title:    "First (ok)",
-			Category: audit.LintOrphanFamily,
-		},
-		{
-			NoteID:   "note-fails",
-			Title:    "Second (fails)",
-			Category: audit.LintOrphanFamily,
-		},
-	}
+	findings := orphanFindings(
+		orphanFindingSpec{NoteID: "note-ok", Title: "First (ok)"},
+		orphanFindingSpec{NoteID: "note-fails", Title: "Second (fails)"},
+	)
 	tagged, failed, err := audit.ApplyOrphanFamilies(ctx, findings)
 	if err != nil {
 		t.Errorf("err = %v, want nil (partial failure must not surface as ctx error)", err)
@@ -439,5 +431,247 @@ func assertTagCall(t *testing.T, label string, got orphanTagCall, wantID, wantTa
 	t.Helper()
 	if got.NoteID != wantID || got.Tag != wantTag {
 		t.Errorf("%s AddTag = %+v, want {NoteID:%s, Tag:%s}", label, got, wantID, wantTag)
+	}
+}
+
+// orphanFindingSpec is the minimal triple ApplyOrphanFamilies needs.
+// Used by orphanFindings to keep test fixture construction declarative
+// without each call site repeating the audit.Finding struct literal —
+// the repetition tripped the dupl threshold across this file's three
+// apply-mode cases (partial-failure, ctx-cancel, defensive-filter).
+type orphanFindingSpec struct {
+	NoteID   string
+	Title    string
+	Category audit.LintCategory
+}
+
+// orphanFindings builds a []audit.Finding from a slice of specs,
+// defaulting Category to LintOrphanFamily when the spec leaves it
+// blank — the common case. Callers exercising the defensive Category
+// filter pass an explicit Category like audit.LintBrokenH1.
+func orphanFindings(specs ...orphanFindingSpec) []audit.Finding {
+	out := make([]audit.Finding, len(specs))
+	for i, spec := range specs {
+		category := spec.Category
+		if category == "" {
+			category = audit.LintOrphanFamily
+		}
+		out[i] = audit.Finding{
+			NoteID:   spec.NoteID,
+			Title:    spec.Title,
+			Category: category,
+		}
+	}
+	return out
+}
+
+// TestAggregateOrphanFamilies_NilTags_NoFinding covers the empty-input
+// defense: a note with a nil Tags slice produces zero findings rather
+// than panicking on the range. Bear's JSON shape always sends `tags`,
+// but tests/external consumers may construct notes by hand.
+func TestAggregateOrphanFamilies_NilTags_NoFinding(t *testing.T) {
+	notes := []orphanFixture{{ID: "note-nil", Title: "Nil tags", Tags: nil}}
+	findings, err := audit.AggregateOrphanFamiliesFromJSON(
+		mustMarshalNotes(t, notes), managedSet("llm"),
+	)
+	if err != nil {
+		t.Fatalf("AggregateOrphanFamiliesFromJSON: %v", err)
+	}
+	if got := len(findings); got != 0 {
+		t.Fatalf("findings len = %d, want 0 (nil Tags is no-finding); got %v", got, findings)
+	}
+}
+
+// TestAggregateOrphanFamilies_EmptyTagsSlice_NoFinding mirrors the
+// nil case for the explicit empty-slice variant — both are valid
+// inputs and must produce zero findings without panic.
+func TestAggregateOrphanFamilies_EmptyTagsSlice_NoFinding(t *testing.T) {
+	notes := []orphanFixture{{ID: "note-empty", Title: "Empty tags", Tags: []string{}}}
+	findings, err := audit.AggregateOrphanFamiliesFromJSON(
+		mustMarshalNotes(t, notes), managedSet("llm"),
+	)
+	if err != nil {
+		t.Fatalf("AggregateOrphanFamiliesFromJSON: %v", err)
+	}
+	if got := len(findings); got != 0 {
+		t.Fatalf("findings len = %d, want 0 (empty Tags is no-finding); got %v", got, findings)
+	}
+}
+
+// TestAggregateOrphanFamilies_MixedManagedAndStrays_OnlyStraysInDetail
+// pins the per-tag classification contract: an atom carrying a mix of
+// managed and stray-family tags surfaces ONE finding whose Detail
+// joins only the stray tags (not the managed ones). Otherwise the
+// operator would see noise about already-handled families in the
+// triage report.
+func TestAggregateOrphanFamilies_MixedManagedAndStrays_OnlyStraysInDetail(t *testing.T) {
+	notes := []orphanFixture{{
+		ID:    "note-mixed",
+		Title: "Mixed",
+		Tags: []string{
+			"#llm/tips", "#work/tasks",
+			"#scratch/temp", "#quicknotes/daily",
+		},
+	}}
+	findings, err := audit.AggregateOrphanFamiliesFromJSON(
+		mustMarshalNotes(t, notes), managedSet("llm", "work"),
+	)
+	if err != nil {
+		t.Fatalf("AggregateOrphanFamiliesFromJSON: %v", err)
+	}
+	if got, want := len(findings), 1; got != want {
+		t.Fatalf("findings len = %d, want %d (one per atom); got %v", got, want, findings)
+	}
+	got := findings[0]
+	assertDetailContains(t, "stray-only Detail",
+		got.Detail,
+		[]string{"#scratch/temp", "#quicknotes/daily", "scratch", "quicknotes"})
+	if strings.Contains(got.Detail, "#llm/tips") || strings.Contains(got.Detail, "#work/tasks") {
+		t.Errorf("Detail must NOT mention managed tags; got %q", got.Detail)
+	}
+}
+
+// TestAggregateOrphanFamilies_OrphansTagCaseInsensitive pins the SF7
+// idempotency guard: `#Orphans`, `#ORPHANS`, and `#orphans ` (with
+// trailing space) all count as already-triaged. A byte-exact compare
+// would skip these and double-tag on the next sweep.
+func TestAggregateOrphanFamilies_OrphansTagCaseInsensitive(t *testing.T) {
+	for _, alias := range []string{"#Orphans", "#ORPHANS", "#orphans ", "#Orphans/sub"} {
+		notes := []orphanFixture{{
+			ID:    "note-cased-" + alias,
+			Title: "Cased orphan: " + alias,
+			Tags:  []string{"#quicknotes/daily", alias},
+		}}
+		findings, err := audit.AggregateOrphanFamiliesFromJSON(
+			mustMarshalNotes(t, notes), managedSet("llm"),
+		)
+		if err != nil {
+			t.Fatalf("alias=%q AggregateOrphanFamiliesFromJSON: %v", alias, err)
+		}
+		if got := len(findings); got != 0 {
+			t.Errorf("alias=%q findings len = %d, want 0 (case-insensitive idempotency skip)",
+				alias, got)
+		}
+	}
+}
+
+// TestApplyOrphanFamilies_ContextCanceledMidLoop_StopsCleanly pins the
+// SF2 cancel contract: a ctx canceled between iterations causes
+// ApplyOrphanFamilies to return early with a wrapped ctx.Err so the
+// caller can distinguish "ran clean" from "Ctrl-C mid-loop". The
+// counters reflect the work actually completed before cancellation.
+func TestApplyOrphanFamilies_ContextCanceledMidLoop_StopsCleanly(t *testing.T) {
+	fake := &orphanFakeBearcli{}
+	parent := armOrphanFakeBearcli(t, fake)
+	ctx, cancel := context.WithCancel(parent)
+	cancel() // canceled before the loop even starts — defensive lower bound
+
+	findings := orphanFindings(
+		orphanFindingSpec{NoteID: "note-1", Title: "First"},
+		orphanFindingSpec{NoteID: "note-2", Title: "Second"},
+	)
+	tagged, failed, err := audit.ApplyOrphanFamilies(ctx, findings)
+	if err == nil {
+		t.Fatalf("err = nil, want wrapped ctx.Err on canceled context")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want errors.Is(err, context.Canceled)", err)
+	}
+	if tagged != 0 || failed != 0 {
+		t.Errorf("counters = (%d, %d), want (0, 0) — loop must exit before first iteration",
+			tagged, failed)
+	}
+	if got := len(fake.callsTag); got != 0 {
+		t.Errorf("AddTag call count = %d, want 0 (canceled-ctx must short-circuit)", got)
+	}
+}
+
+// TestApplyOrphanFamilies_SkipsNonOrphanFinding pins the defensive
+// Category filter: a finding whose Category is NOT LintOrphanFamily
+// must NOT trigger an AddTag call, even when mixed with a real orphan
+// finding. Belt-and-suspenders against caller mis-filtering.
+func TestApplyOrphanFamilies_SkipsNonOrphanFinding(t *testing.T) {
+	fake := &orphanFakeBearcli{}
+	ctx := armOrphanFakeBearcli(t, fake)
+
+	findings := orphanFindings(
+		orphanFindingSpec{NoteID: "note-broken-h1", Title: "Broken H1", Category: audit.LintBrokenH1},
+		orphanFindingSpec{NoteID: "note-orphan", Title: "Real orphan"},
+	)
+	tagged, failed, err := audit.ApplyOrphanFamilies(ctx, findings)
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if tagged != 1 || failed != 0 {
+		t.Errorf("counters = (%d, %d), want (1, 0)", tagged, failed)
+	}
+	if got := len(fake.callsTag); got != 1 {
+		t.Fatalf("AddTag call count = %d, want 1 (only orphan finding should fire)", got)
+	}
+	if fake.callsTag[0].NoteID != "note-orphan" {
+		t.Errorf("AddTag called with NoteID = %q, want %q",
+			fake.callsTag[0].NoteID, "note-orphan")
+	}
+}
+
+// TestApplyOrphanFamilies_TotalFailureBatch_AbortsWithSentinel pins
+// the SF10 abort defense: when bearcli AddTag fails on every one of
+// the first batchAbortThreshold findings (3, no successes), the loop
+// aborts and returns ErrApplyAllFailed so a bearcli verb-rename or
+// permissions regression surfaces as a hard error instead of
+// "tagged=0 failed=N" silent no-op.
+func TestApplyOrphanFamilies_TotalFailureBatch_AbortsWithSentinel(t *testing.T) {
+	fake := &orphanFakeBearcli{
+		tagErrByNoteID: map[string]error{
+			"note-1": errors.New("bearcli verb drift"),
+			"note-2": errors.New("bearcli verb drift"),
+			"note-3": errors.New("bearcli verb drift"),
+			"note-4": errors.New("bearcli verb drift"),
+		},
+	}
+	ctx := armOrphanFakeBearcli(t, fake)
+
+	findings := orphanFindings(
+		orphanFindingSpec{NoteID: "note-1", Title: "1"},
+		orphanFindingSpec{NoteID: "note-2", Title: "2"},
+		orphanFindingSpec{NoteID: "note-3", Title: "3"},
+		orphanFindingSpec{NoteID: "note-4", Title: "4"},
+	)
+	tagged, failed, err := audit.ApplyOrphanFamilies(ctx, findings)
+	if err == nil {
+		t.Fatalf("err = nil, want ErrApplyAllFailed when first 3 attempts all fail")
+	}
+	if !errors.Is(err, audit.ErrApplyAllFailed) {
+		t.Errorf("err = %v, want errors.Is(err, ErrApplyAllFailed)", err)
+	}
+	if tagged != 0 || failed != 3 {
+		t.Errorf("counters = (%d, %d), want (0, 3) — aborts at threshold not after full sweep",
+			tagged, failed)
+	}
+	if got := len(fake.callsTag); got != 3 {
+		t.Errorf("AddTag call count = %d, want 3 (must abort before fourth attempt)", got)
+	}
+}
+
+// TestManagedRootsFromDomains_SkipsNilAndEmpty pins the SSOT helper's
+// defensive behavior: nil-pointer entries and zero-Tag entries in the
+// supplied slice are silently skipped so a partially-constructed
+// catalog cannot panic the corpus scanners.
+func TestManagedRootsFromDomains_SkipsNilAndEmpty(t *testing.T) {
+	domains := []*domain.Domain{
+		nil,
+		{Tag: ""},
+		{Tag: "library/poetry"},
+		{Tag: "library/articles"},
+		{Tag: "llm/tips"},
+	}
+	roots := audit.ManagedRootsFromDomains(domains)
+	if got, want := len(roots), 2; got != want {
+		t.Fatalf("roots count = %d, want %d (library + llm); got %v", got, want, roots)
+	}
+	for _, fam := range []string{"library", "llm"} {
+		if _, ok := roots[fam]; !ok {
+			t.Errorf("roots missing family %q; got %v", fam, roots)
+		}
 	}
 }
