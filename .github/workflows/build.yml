@@ -149,7 +149,7 @@ jobs:
           cache: true
       - name: Run tests with race detector + coverage
         run: |
-          go test -count=1 -race -coverprofile=coverage.out -covermode=atomic ./...
+          go test -count=1 -race -coverpkg=./... -coverprofile=coverage.out -covermode=atomic ./...
       - name: Upload coverage to Codecov
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v5
