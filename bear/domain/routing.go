@@ -391,8 +391,10 @@ func mergeOverrideLayer(into, from map[string]string, onSkip func(atomID, kept, 
 //
 // No-op (returns (nil, 0)) for non-sub-tag preserving blueprints: only
 // domains that wire CanonicalTagFor (grouped-vertical, hub-routed-with-subtag)
-// participate. Returns (empty map, 0) when the blueprint gate passes but no
-// notes need re-bucketing — mirrors computeMasterOverrides shape.
+// participate. Also returns (nil, 0) when the blueprint gate passes but no
+// note needs re-bucketing — the map is lazy-initialized at the first write
+// so zero-override sweeps stay allocation-free; both mergeOverrideLayer
+// and groupAtomics handle the nil map verbatim.
 //
 // conflictCount reports how many notes hit the ambiguous-intent branch
 // (≥2 distinct non-canonical sub-tags). Caller surfaces the rollup as a
@@ -403,7 +405,6 @@ func (d *Domain) computeTagOverrides(notes []Note) (overrides map[string]string,
 	}
 	family := strings.SplitN(d.Tag, "/", 2)[0]
 	prefix := family + "/"
-	overrides = make(map[string]string)
 	for _, note := range notes {
 		if !hasFamilyMembership(note.Tags, family) {
 			continue
@@ -425,6 +426,9 @@ func (d *Domain) computeTagOverrides(notes []Note) (overrides map[string]string,
 		}
 		if bucket == "" {
 			continue
+		}
+		if overrides == nil {
+			overrides = make(map[string]string)
 		}
 		overrides[note.ID] = bucket
 	}
@@ -452,6 +456,13 @@ func hasFamilyMembership(tags []string, family string) bool {
 // segment (depth=2 invariant — Bear tag-tree never goes deeper), and (c)
 // appear in `d.Buckets ∪ {d.UnknownBucket}`. Order follows tags iteration so
 // callers see a deterministic sequence in tests and log lines.
+//
+// Whitelist match is byte-exact (case-sensitive) by design: Bear's sidebar
+// tag tree treats `#work/Tasks` and `#work/tasks` as two distinct nodes,
+// so the daemon mirrors that exact-match semantics. If an operator's TOML
+// whitelist (`Buckets = ["tasks"]`) disagrees with the Bear-typed chip
+// case (`#work/Tasks`), the chip is rejected and a WARN line surfaces the
+// case mismatch — same as any other non-whitelist sub-tag.
 //
 // Logs a WARN line for every `#<family>/<sub>` whose `<sub>` is rejected by
 // the whitelist gate — the operator's drag silently disappearing was the
@@ -486,29 +497,16 @@ func gatherWhitelistedSubTags(d *Domain, note Note, prefix, family string) []str
 //     caller logs and skips.
 //
 // Splitting this out keeps computeTagOverrides' cognitive complexity below
-// the ≤15 threshold without losing the algorithm's readable shape.
+// the ≤15 threshold without losing the algorithm's readable shape. Shares
+// the dedupNonCanonical pass with nonCanonicalSubTags so a single source
+// of truth governs which sub-tags are considered "competing claims."
 func decideOverride(canonicalBucket string, whitelistedSubTags []string) (bucket string, conflict bool) {
-	var firstNonCanonical string
-	seen := make(map[string]struct{}, len(whitelistedSubTags))
-	distinct := 0
-	for _, sub := range whitelistedSubTags {
-		if sub == canonicalBucket {
-			continue
-		}
-		if _, dup := seen[sub]; dup {
-			continue
-		}
-		seen[sub] = struct{}{}
-		if distinct == 0 {
-			firstNonCanonical = sub
-		}
-		distinct++
-	}
-	switch distinct {
+	distinct := dedupNonCanonical(canonicalBucket, whitelistedSubTags)
+	switch len(distinct) {
 	case 0:
 		return "", false
 	case 1:
-		return firstNonCanonical, false
+		return distinct[0], false
 	default:
 		return "", true
 	}
@@ -516,12 +514,20 @@ func decideOverride(canonicalBucket string, whitelistedSubTags []string) (bucket
 
 // nonCanonicalSubTags returns the distinct subset of `whitelistedSubTags`
 // that disagrees with `canonicalBucket`, preserving first-occurrence order.
-// Used solely to format the conflict warning — keeping it separate lets
-// decideOverride stay branch-light while the log line still carries every
-// offending sub-tag exactly once.
+// Wrapper over dedupNonCanonical for naming-at-the-call-site clarity —
+// the conflict log line reads naturally as `nonCanonicalSubTags(...)`
+// while the shared helper carries the actual algorithm.
 func nonCanonicalSubTags(canonicalBucket string, whitelistedSubTags []string) []string {
+	return dedupNonCanonical(canonicalBucket, whitelistedSubTags)
+}
+
+// dedupNonCanonical filters whitelistedSubTags to the distinct entries
+// that disagree with canonicalBucket, preserving first-occurrence order.
+// Shared backbone for decideOverride (which only needs the count and the
+// first entry) and nonCanonicalSubTags (which formats the WARN line).
+func dedupNonCanonical(canonicalBucket string, whitelistedSubTags []string) []string {
 	seen := make(map[string]struct{}, len(whitelistedSubTags))
-	var out []string
+	out := make([]string, 0, len(whitelistedSubTags))
 	for _, sub := range whitelistedSubTags {
 		if sub == canonicalBucket {
 			continue
