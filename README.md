@@ -70,31 +70,63 @@ Same `#library/books` tag rendered in Bear, before and after `noxctl apply`:
 
 (Demo vault is at `examples/demo-vault/` — `setup.sh` populates it under `#nox-demo/books` and the paired `noxctl.toml` manages exactly that tag.)
 
+## noxctl vs. Forever Notes
+
+[Forever ✱ Notes](https://www.myforevernotes.com/) is a *method*: you build the master/hub structure once and maintain it by hand, on the honor system. noxctl is that same structure made *declarative and self-maintaining* — you describe the target once in TOML and the engine keeps the vault matching it, reconciling drift on every `apply` (or continuously, under the daemon).
+
+**What noxctl adds on top of the hand-run method:**
+
+- **No manual upkeep** — masters and hubs are regenerated, not hand-edited. Add an atom and the next pass picks it up; you never forget to update a hub.
+- **Consistency at scale** — twenty-plus tags stay in lockstep under one render contract. `noxctl apply` is idempotent by construction (`unchanged` in ≤ 3 passes), where hand-maintenance drifts as the vault grows.
+- **Drift reconciliation** — rename a note, move an atom between buckets, or delete one, and the structure self-heals on the next cycle instead of rotting silently.
+- **Bidirectional links for free** — every atom gets its canonical tag-line stamped automatically, so master→atom and atom→master both resolve without manual back-linking.
+
+**Where Forever Notes is still the better pick:**
+
+- **Zero setup, no code** — it's a framework, not a binary. Nothing to install, no CLI, no config file.
+- **Any device** — it lives in Apple Notes, so it syncs to iPhone/iPad and you edit structure on mobile. noxctl is macOS + Bear + a terminal.
+- **Full manual control** — if you *want* to hand-craft every hub, noxctl's automation is overhead you don't need.
+
+In one line: if you live in Bear on a Mac and your vault is big enough that hand-maintaining hubs is a chore, noxctl automates that chore away. If you want a no-install, cross-device method you drive by hand, stay with Forever Notes.
+
 ## Quick start
 
-> **Already have Bear tags you want managed?** Skip to [From existing vault](#from-existing-vault) for a `noxctl import`-based bootstrap, then come back here at Step 3.
+noxctl has two entry paths that share the same install and the same `validate → plan → apply` tail. Your track is decided at Step 2.
 
-**Step 0 — pick your first tags.** Open Bear and look at the tag sidebar. Pick 1-3 tags you want noxctl to manage first; incremental adoption is normal and you can add more later. The smallest useful catalog is a single tag.
+**Step 1 — Install (both paths).**
 
 ```bash
-# 1. Install
 go install github.com/barad1tos/noxctl/cmd/noxctl@latest
-
-# 2. Write a starter catalog (no network; no overwrite of existing files)
-mkdir -p ~/.config/noxctl
-noxctl init ~/.config/noxctl/noxctl.toml
-
-# 3. Confirm the schema parses without touching Bear
-noxctl validate ~/.config/noxctl/noxctl.toml
-
-# 4. Preview what apply would do
-noxctl plan --config ~/.config/noxctl/noxctl.toml
-
-# 5. Apply once you're happy with the diff
-noxctl apply --config ~/.config/noxctl/noxctl.toml
 ```
 
-`noxctl init` writes a 3-blueprint showcase catalog ready to edit. Replace the example `[[domain]]` blocks with your own tags (Step 0). If you want the absolute minimum starter (1 domain), see [`examples/minimal.toml`](examples/minimal.toml).
+**Step 2 — Build your catalog.** Every catalog needs one `[meta]` header plus one `[[domain]]` block per managed tag. `noxctl init` always writes the `[meta]` header, so it is the starting point for both tracks.
+
+```bash
+mkdir -p ~/.config/noxctl
+noxctl init ~/.config/noxctl/noxctl.toml   # writes [meta] + 3 worked examples
+```
+
+**Track A — starting from scratch.** Open the file and **replace** the three example `[[domain]]` blocks with your own tags. Each block names a `tag`, an `index_title`, and a `blueprint` (see [Choosing a blueprint](#choosing-a-blueprint)). The smallest useful catalog is one domain — [`examples/minimal.toml`](examples/minimal.toml) is a tested 1-domain starter.
+
+**Track B — importing existing Bear tags.**
+
+1. **Delete** the three example `[[domain]]` blocks `init` wrote — keep only the `[meta]` header.
+2. For each tag you want managed, run `noxctl import <tag>` and append its emitted block:
+   ```bash
+   noxctl import library/poetry >> ~/.config/noxctl/noxctl.toml
+   noxctl import research/papers >> ~/.config/noxctl/noxctl.toml
+   ```
+3. Open the file and tidy the inferred fields (`index_title`, bucket names, blueprint).
+
+`import` is read-only and emits no `[meta]` of its own — that is why `init` seeds the header first. Deleting the examples in step 1 also avoids a duplicate-tag error if you import a tag `init` shipped as a sample. See [From existing vault](#from-existing-vault) for how inference picks a blueprint.
+
+**Step 3 — Converge (both paths).**
+
+```bash
+noxctl validate ~/.config/noxctl/noxctl.toml          # schema check, no Bear I/O
+noxctl plan --config ~/.config/noxctl/noxctl.toml     # preview the diff
+noxctl apply --config ~/.config/noxctl/noxctl.toml    # write it to Bear
+```
 
 Optional: run `noxctl daemon --config ~/.config/noxctl/noxctl.toml` to keep the vault reconciled live as you edit notes in Bear.
 
@@ -111,17 +143,13 @@ Bear ships a built-in backup in **File → Backup Database…** — recommended 
 
 ## From existing vault
 
-If your Bear vault already has tags you want to put under noxctl management, run `noxctl import <bear-tag>` instead of editing the starter from scratch. It scans the notes under that tag, infers a likely blueprint based on observable structure (note count, sub-tag shape, body patterns), and prints a candidate `[[domain]]` stanza to stdout — copy-paste-ready into your `noxctl.toml`.
+[Quick start Track B](#quick-start) covers the steps; this section explains how `noxctl import <bear-tag>` decides what to emit. It scans every note under the tag and infers a blueprint from observable structure — note count and sub-tag shape:
 
-```bash
-# After `noxctl init` (Step 2 in Quick Start) but before `noxctl validate`:
-noxctl import library/poetry >> ~/.config/noxctl/noxctl.toml
-noxctl import research/papers >> ~/.config/noxctl/noxctl.toml
-# …repeat per tag, then open the file and tidy the inferred fields
-# (index_title, bucket names, etc.) before running validate.
-```
+- **0 notes** → `flat-list` (the lowest-friction starter).
+- **Every note shares one `#tag/<bucket>` sub-tag** → `flat-table` with the observed buckets.
+- **Anything else** → `flat-list` (the safe fallback).
 
-Output sample for one tag:
+`hub-routed` and the other Tier-2-hub blueprints are not auto-detected — their canonical-line signal overlaps with `flat-table`, so you switch to them by hand in the emitted stanza. Output sample for one tag:
 
 ```toml
 # noxctl import library/poetry — 47 notes scanned
