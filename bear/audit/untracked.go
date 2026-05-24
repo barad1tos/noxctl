@@ -22,10 +22,11 @@ import (
 
 // UntrackedFamily is one tag-family entry in the residue report.
 // Wire-tags match the engine.UntrackedFamily shape declared in
-// bear/engine/plan_result.go. wires the
-// boundary translation at engine.Plan to avoid an import cycle:
-// bear/engine imports bear (for *bear.Domain), so bear/untracked.go
-// cannot import bear/engine for the report type.
+// bear/engine/plan_result.go. engine.Plan wires the boundary
+// translation between the two so neither package depends on the
+// other: bear/engine imports bear/audit (for the scanner output), so
+// bear/audit/untracked.go cannot import bear/engine for the report
+// type without creating a cycle.
 type UntrackedFamily struct {
 	Tag       string `json:"tag"`
 	NoteCount int    `json:"note_count"`

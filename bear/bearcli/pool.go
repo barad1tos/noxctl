@@ -9,7 +9,7 @@
 // original bear/-level API carried — exports read as
 // `bearcli.Run`, `bearcli.Backend`, `bearcli.Metrics`, etc. Old names
 // remain available as backward-compatible aliases in bear/, see
-// bear/aliases.go.
+// bear/domain/aliases.go.
 package bearcli
 
 import (

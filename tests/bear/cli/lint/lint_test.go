@@ -229,7 +229,7 @@ func TestRun_EmptyDomains_RendersEmptyTally(t *testing.T) {
 }
 
 // orphanFamilyListPayload builds a single-note bearcli `list` payload
-// with the supplied id/title/tags. Used by the Phase 13 orphan-family
+// with the supplied id/title/tags. Used by the orphan-family
 // integration tests below — generic shape (no canonical-line content)
 // so both audit-mode and apply-mode tests can drive the same fixture
 // through cli.RunLint.

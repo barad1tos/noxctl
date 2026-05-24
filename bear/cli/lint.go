@@ -22,10 +22,10 @@ import (
 // audit.ScanOrphanFamilies (corpus-level), merges and re-sorts the
 // findings, then prints the grouped report. When apply is true, it
 // runs audit.LintApplyDomains (rewrites Fixable rows through bearcli)
-// AND then audit.ApplyOrphanFamilies (one `bearcli tag <id> orphans`
-// per stray-family atom) — the apply order matters: per-domain auto-
-// fix may rewrite atom bodies, so the orphan tag-add runs against the
-// post-fix atom state.
+// AND then audit.ApplyOrphanFamilies (one `bearcli tags add <id>
+// orphans` per stray-family atom) — the apply order matters:
+// per-domain auto-fix may rewrite atom bodies, so the orphan tag-add
+// runs against the post-fix atom state.
 //
 // On orphan-scan failure, audit-mode logs and proceeds with just the
 // per-domain findings (operator still sees most of the report). In

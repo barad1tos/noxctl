@@ -15,9 +15,9 @@ package audit
 //     an orphan regardless of depth.
 //   - Atoms already carrying `#orphans` (or `#orphans/<sub>`) are
 //     skipped wholesale — that is the idempotency contract. The apply
-//     step in Phase 13-02 wires `bearcli tag <noteID> orphans` per
-//     finding, so re-running the lint sweep on an already-triaged
-//     atom must produce zero findings.
+//     step issues `bearcli tags add <noteID> orphans` per finding, so
+//     re-running the lint sweep on an already-triaged atom must
+//     produce zero findings.
 //
 // Finding shape:
 //   - DomainTag is the empty string — orphan-family is a corpus-level
@@ -25,13 +25,13 @@ package audit
 //     managed Domain. SortFindings orders empty DomainTag before
 //     non-empty domains so the audit report grouping handles
 //     corpus-level findings deterministically without special-casing.
-//   - One Finding per atom (per CONTEXT.md decision d.2), not one per
-//     stray tag. Detail comma-joins multiple strays so the operator
-//     sees the full triage context for an atom in one report row;
-//     the apply step adds a single `#orphans` tag regardless of how
-//     many stray-family tags the atom carries.
-//   - Fixable is true: the apply path is a single bearcli tag call
-//     with no body rewrite.
+//   - One Finding per atom (not one per stray tag) so the operator
+//     sees the full triage context for an atom in one report row.
+//     Detail comma-joins multiple strays; the apply step adds a
+//     single `#orphans` tag regardless of how many stray-family tags
+//     the atom carries.
+//   - Fixable is true: the apply path is a single `bearcli tags add`
+//     call with no body rewrite.
 
 import (
 	"context"
@@ -102,8 +102,8 @@ func aggregateOrphanFamilies(notes []domain.AutoTagNote, managed map[string]stru
 // stray-family tag is present.
 //
 // Extracted from aggregateOrphanFamilies to keep both functions under
-// gocognit ≤15 per CONTEXT.md decision (d.2). The helper owns the
-// per-tag classification; the aggregator owns the per-note iteration.
+// gocognit ≤15. The helper owns the per-tag classification; the
+// aggregator owns the per-note iteration.
 func strayFamilyTags(note domain.AutoTagNote, managed map[string]struct{}) []string {
 	var strays []string
 	for _, tag := range note.Tags {
@@ -128,8 +128,8 @@ func strayFamilyTags(note domain.AutoTagNote, managed map[string]struct{}) []str
 // formatStrayDetail composes the operator-facing Detail message for an
 // orphan-family Finding. Comma-joins all stray tags and family names so
 // one report row captures full triage context. The trailing phrase
-// `tag-as-orphans candidate` is the apply-hint — Phase 13-02 will add
-// `#orphans` to the note via bearcli when --apply is set.
+// `tag-as-orphans candidate` is the apply-hint — ApplyOrphanFamilies
+// adds `#orphans` to the note via bearcli when --apply is set.
 func formatStrayDetail(strays []string) string {
 	families := uniqueFamilies(strays)
 	joinedStrays := strings.Join(strays, ", ")
@@ -208,8 +208,8 @@ func ScanOrphanFamilies(ctx context.Context, domains []*domain.Domain) ([]Findin
 	return aggregateOrphanFamilies(notes, managed), nil
 }
 
-// ApplyOrphanFamilies issues one `bearcli tag <noteID> orphans` call
-// per finding (via bearcli.AddTag). Log-and-continue on per-atom
+// ApplyOrphanFamilies issues one `bearcli tags add <noteID> orphans`
+// call per finding (via bearcli.AddTag). Log-and-continue on per-atom
 // failure: partial tagging is strictly better than abort because
 // orphan-family triage is an operator-facing workflow — the operator
 // would rather see "tagged 47, failed 3 (see log)" than "aborted at

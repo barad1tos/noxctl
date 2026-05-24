@@ -109,9 +109,9 @@ func assertDetailContains(t *testing.T, ctx, detail string, fragments []string) 
 	}
 }
 
-// TestAggregateOrphanFamilies_StrayTagDetected covers truth (1) from the
-// 13-CONTEXT.md specifics block: an atom with a managed tag plus a
-// stray-family tag produces exactly one finding for that stray.
+// TestAggregateOrphanFamilies_StrayTagDetected pins the core detection
+// contract: an atom with a managed tag plus a stray-family tag produces
+// exactly one finding for that stray.
 func TestAggregateOrphanFamilies_StrayTagDetected(t *testing.T) {
 	notes := []orphanFixture{{
 		ID:    "note-1",
@@ -192,10 +192,9 @@ func TestAggregateOrphanFamilies_AlreadyTaggedOrphansSub_Skipped(t *testing.T) {
 	}
 }
 
-// TestAggregateOrphanFamilies_ManagedFamiliesOnly_NoFindings covers
-// truth (3): when every tag's family root is in the managed set, the
-// detector emits zero findings. Negative path for SC-06 (managed-only
-// corpus → no false positives).
+// TestAggregateOrphanFamilies_ManagedFamiliesOnly_NoFindings: when
+// every tag's family root is in the managed set, the detector emits
+// zero findings — no false positives on a fully managed corpus.
 func TestAggregateOrphanFamilies_ManagedFamiliesOnly_NoFindings(t *testing.T) {
 	notes := []orphanFixture{{
 		ID:    "note-4",
@@ -263,11 +262,11 @@ func TestAggregateOrphanFamilies_BareTopLevel_Ignored(t *testing.T) {
 	}
 }
 
-// TestAggregateOrphanFamilies_MultipleStrayTags_SingleFindingWithJoinedDetail
-// covers truth (6) per CONTEXT.md decision (d.2): when an atom carries
-// multiple stray-family tags, the detector emits ONE finding (per atom)
-// with Detail comma-joining all strays. One #orphans tag will be added
-// at apply time regardless of how many strays the atom carries.
+// TestAggregateOrphanFamilies_MultipleStrayTags_SingleFindingWithJoinedDetail:
+// when an atom carries multiple stray-family tags, the detector emits
+// ONE finding (per atom) with Detail comma-joining all strays. One
+// #orphans tag will be added at apply time regardless of how many
+// strays the atom carries.
 func TestAggregateOrphanFamilies_MultipleStrayTags_SingleFindingWithJoinedDetail(t *testing.T) {
 	notes := []orphanFixture{{
 		ID:    "note-7",
@@ -294,10 +293,10 @@ func TestAggregateOrphanFamilies_MultipleStrayTags_SingleFindingWithJoinedDetail
 		})
 }
 
-// TestAggregateOrphanFamilies_Reproducer_LLMTipsWithQuicknotesDaily is
-// the live reproducer from 13-CONTEXT.md: the "System Prompt For Coding
-// Agents" atom must be detected when managed = {llm}. Wire-shape
-// equivalence to a real bearcli payload.
+// TestAggregateOrphanFamilies_Reproducer_LLMTipsWithQuicknotesDaily
+// reproduces the original vault scenario that motivated the detector:
+// an atom tagged `#llm/tips` plus `#quicknotes/daily` must surface when
+// managed = {llm}. Wire-shape equivalent to a real bearcli payload.
 func TestAggregateOrphanFamilies_Reproducer_LLMTipsWithQuicknotesDaily(t *testing.T) {
 	notes := []orphanFixture{{
 		ID:    "note-systemprompt",
@@ -340,13 +339,11 @@ func TestAggregateOrphanFamilies_ParseError(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------
 // Corpus-level orchestrator tests (ScanOrphanFamilies +
 // ApplyOrphanFamilies). These exercise the production-side I/O wrappers
 // that the CLI integration tests in tests/bear/cli/lint/ depend on, but
 // at finer granularity — error paths that the integration tests cannot
 // easily exercise via the cli.RunLint surface.
-// ---------------------------------------------------------------------
 
 // TestScanOrphanFamilies_BearcliError_WrappedReturn pins the
 // "bearcli list failed" error path: the corpus scan returns nil
