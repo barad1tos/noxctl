@@ -147,14 +147,42 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+      - name: Install gotestsum
+        # gotestsum wraps `go test --json` and emits JUnit XML for Codecov
+        # Test Analytics. Pinned version for reproducibility — bump via
+        # dependabot or manually.
+        run: go install gotest.tools/gotestsum@v1.13.0
       - name: Run tests with race detector + coverage
+        # gotestsum forwards args after `--` to `go test` unchanged.
+        # --rerun-fails=0: disable auto-rerun so Codecov sees true flakiness.
+        # --junitfile-testsuite-name=relative: shorter package paths in UI.
         run: |
-          go test -count=1 -race -coverpkg=./... -coverprofile=coverage.out -covermode=atomic ./...
+          mkdir -p test-results
+          gotestsum \
+            --junitfile test-results/junit.xml \
+            --junitfile-testsuite-name relative \
+            --format pkgname \
+            --rerun-fails=0 \
+            -- -count=1 -race -coverpkg=./... \
+               -coverprofile=coverage.out -covermode=atomic \
+               ./...
       - name: Upload coverage to Codecov
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v5
         with:
           files: coverage.out
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload test results to Codecov
+        # Test Analytics: flaky detection, failure trends, slow tests.
+        # Same action as coverage; `report-type: test_results` switches
+        # mode to consume JUnit XML produced by gotestsum.
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v5
+        with:
+          files: test-results/junit.xml
+          report-type: test_results
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
