@@ -15,6 +15,7 @@ package bear_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -29,9 +30,10 @@ import (
 // each), `cat` master content keyed by note ID, a stub `show` hash, and
 // records every `overwrite`. Reuses fakeOverwriteCall from autotag_test.go.
 type fastpassApplyBackend struct {
-	byTag      map[string]string // tag → `list --tag` JSON array payload
-	masters    map[string]string // note ID → master content (served via `cat`)
-	overwrites []fakeOverwriteCall
+	byTag        map[string]string // tag → `list --tag` JSON array payload
+	masters      map[string]string // note ID → master content (served via `cat`)
+	overwriteErr error             // when set, every `overwrite` fails (sweep error-handling path)
+	overwrites   []fakeOverwriteCall
 }
 
 func (f *fastpassApplyBackend) Run(_ context.Context, args []string, stdin string) ([]byte, error) {
@@ -47,6 +49,9 @@ func (f *fastpassApplyBackend) Run(_ context.Context, args []string, stdin strin
 		return []byte(`{"hash":"deadbeef"}`), nil
 	case "overwrite":
 		f.recordOverwrite(args, stdin)
+		if f.overwriteErr != nil {
+			return nil, f.overwriteErr
+		}
 		return []byte(`{"ok":true}`), nil
 	}
 	return []byte("{}"), nil
@@ -181,14 +186,16 @@ func TestApplyCrossDomainMoves_RewritesTag_WhenAtomClaimedByOtherMaster(t *testi
 	b := render.NewFlatListDomain("inbox/b", "✱ Inbox B")
 	const atomTitle = "Перенесена нотатка"
 
-	listA := notesJSON(t,
+	listA := notesJSON(
+		t,
 		map[string]any{"id": "master-a", "title": "✱ Inbox A", "tags": []string{"#inbox/a"}, "content": ""},
 		map[string]any{
 			"id": "atom-1", "title": atomTitle, "tags": []string{"#inbox/a"},
 			"content": "# " + atomTitle + "\n#inbox/a | [[✱ Inbox A]]\n---\nтіло\n",
 		},
 	)
-	listB := notesJSON(t,
+	listB := notesJSON(
+		t,
 		map[string]any{"id": "master-b", "title": "✱ Inbox B", "tags": []string{"#inbox/b"}, "content": ""},
 	)
 	backend := &fastpassApplyBackend{
@@ -215,5 +222,94 @@ func TestApplyCrossDomainMoves_RewritesTag_WhenAtomClaimedByOtherMaster(t *testi
 	}
 	if !strings.Contains(backend.overwrites[0].Content, "#inbox/b | [[") {
 		t.Errorf("atom canonical not rewritten to target inbox/b; got:\n%s", backend.overwrites[0].Content)
+	}
+}
+
+// TestApplyTimeBasedPromotion_ContinuesSweep_WhenOverwriteFails pins the
+// log-and-continue contract: when bearcli rejects one atom's overwrite, the
+// promotion sweep must keep going and still return nil (one bad atom does not
+// stall the whole pass). With two aged atoms and a failing overwrite, both are
+// attempted. User-facing bug if this regresses: a single rejected write aborts
+// the sweep and the remaining aged quicknotes never roll forward.
+//
+//cyrillic:permit
+func TestApplyTimeBasedPromotion_ContinuesSweep_WhenOverwriteFails(t *testing.T) {
+	domain.ResetBearcliPoolForTest(4)
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+
+	daily := render.NewFlatListDomain("inbox/daily", "✱ Daily")
+	weekly := render.NewFlatListDomain("inbox/weekly", "✱ Weekly")
+	rules := []fastpass.PromotionRule{{From: "inbox/daily", To: "inbox/weekly", Boundary: "day"}}
+
+	atoms := notesJSON(
+		t,
+		map[string]any{
+			"id": "aged-1", "title": "Перший", "tags": []string{"#inbox/daily"},
+			"content": "# Перший\n#inbox/daily | [[✱ Daily]]\n---\nx\n", "created": "2020-01-01T09:00:00Z",
+		},
+		map[string]any{
+			"id": "aged-2", "title": "Другий", "tags": []string{"#inbox/daily"},
+			"content": "# Другий\n#inbox/daily | [[✱ Daily]]\n---\ny\n", "created": "2020-01-02T09:00:00Z",
+		},
+	)
+	backend := &fastpassApplyBackend{
+		byTag:        map[string]string{"inbox/daily": atoms, "inbox/weekly": "[]"},
+		overwriteErr: errors.New("bearcli overwrite: simulated rejection"),
+	}
+	ctx := domain.ContextWithBackend(context.Background(), backend)
+
+	if err := fastpass.ApplyTimeBasedPromotion(ctx, []*domain.Domain{daily, weekly}, nil, rules); err != nil {
+		t.Fatalf("ApplyTimeBasedPromotion must log-and-continue, not return; got %v", err)
+	}
+	if len(backend.overwrites) != 2 {
+		t.Errorf("sweep stalled: attempted %d overwrites, want 2 (both aged atoms tried despite failures)",
+			len(backend.overwrites))
+	}
+}
+
+// TestApplyCrossDomainMoves_ReturnsError_WhenOverwriteFails pins the
+// cross-move error-propagation contract: unlike promotion's log-and-continue,
+// a failed tag rewrite during a cross-domain move surfaces as a returned error
+// so the orchestrator logs it and falls back to per-domain regen. User-facing
+// bug if this regresses: a failed cross-move is swallowed and the atom is left
+// half-moved with no signal.
+//
+//cyrillic:permit
+func TestApplyCrossDomainMoves_ReturnsError_WhenOverwriteFails(t *testing.T) {
+	domain.ResetBearcliPoolForTest(4)
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+
+	a := render.NewFlatListDomain("inbox/a", "✱ Inbox A")
+	b := render.NewFlatListDomain("inbox/b", "✱ Inbox B")
+	const atomTitle = "Перенесена нотатка"
+
+	listA := notesJSON(
+		t,
+		map[string]any{"id": "master-a", "title": "✱ Inbox A", "tags": []string{"#inbox/a"}, "content": ""},
+		map[string]any{
+			"id": "atom-1", "title": atomTitle, "tags": []string{"#inbox/a"},
+			"content": "# " + atomTitle + "\n#inbox/a | [[✱ Inbox A]]\n---\nтіло\n",
+		},
+	)
+	listB := notesJSON(
+		t,
+		map[string]any{"id": "master-b", "title": "✱ Inbox B", "tags": []string{"#inbox/b"}, "content": ""},
+	)
+	backend := &fastpassApplyBackend{
+		byTag: map[string]string{"inbox/a": listA, "inbox/b": listB},
+		masters: map[string]string{
+			"master-a": "# ✱ Inbox A\n",
+			"master-b": "# ✱ Inbox B\n- [[" + atomTitle + "]]\n",
+		},
+		overwriteErr: errors.New("bearcli overwrite: simulated rejection"),
+	}
+	ctx := domain.ContextWithBackend(context.Background(), backend)
+	pins, err := domain.LoadPinRegistry(filepath.Join(t.TempDir(), "pins.json"))
+	if err != nil {
+		t.Fatalf("LoadPinRegistry: %v", err)
+	}
+
+	if err = fastpass.ApplyCrossDomainMoves(ctx, []*domain.Domain{a, b}, pins); err == nil {
+		t.Fatalf("ApplyCrossDomainMoves returned nil despite a failed rewrite; want a propagated error")
 	}
 }

@@ -13,6 +13,7 @@ package audit_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -294,8 +295,12 @@ func TestLintAtom_FlagsUnsafeTitle_WhenTitleHasBrackets(t *testing.T) {
 		Content: "#work/tasks | [[Нотатка [з дужками]]]\nтіло\n",
 	}
 
-	if _, ok := findingByCategory(audit.LintAtom(d, note), audit.LintUnsafeTitle); !ok {
+	finding, ok := findingByCategory(audit.LintAtom(d, note), audit.LintUnsafeTitle)
+	if !ok {
 		t.Fatalf("LintAtom did not flag unsafe-title for a bracketed title; got %+v", audit.LintAtom(d, note))
+	}
+	if finding.Fixable {
+		t.Errorf("unsafe-title is not auto-fixable (operator must rename); got Fixable=true")
 	}
 }
 
@@ -370,8 +375,11 @@ func TestLogAuditFindings_EmitsSummaryAndPerFinding(t *testing.T) {
 	audit.LogAuditFindings(findings, logf)
 
 	joined := strings.Join(lines, "\n")
-	if !strings.Contains(joined, "2 findings (1 auto-fixable") || !strings.Contains(joined, "1 need manual review") {
-		t.Errorf("summary line missing or wrong counts; got:\n%s", joined)
+	if !strings.Contains(joined, "2 findings (1 auto-fixable") {
+		t.Errorf("summary line missing total/fixable counts; got:\n%s", joined)
+	}
+	if !strings.Contains(joined, "1 need manual review") {
+		t.Errorf("summary line missing manual-review count; got:\n%s", joined)
 	}
 	if !strings.Contains(joined, "Fixable one") || !strings.Contains(joined, "[fixable]") {
 		t.Errorf("fixable finding line missing its [fixable] marker; got:\n%s", joined)
@@ -391,14 +399,12 @@ func TestLogAuditFindings_Silent_WhenEmpty(t *testing.T) {
 	}
 }
 
-// TestAggregateUntrackedFromJSON_ReturnsEmptyReportAndError_OnMalformedJSON
-// pins the failure path of the untracked-residue scan: when bearcli hands
-// back malformed JSON, the aggregator must return a wrapped parse error AND
-// a well-formed empty report (non-nil TagFamilies slice so it still
-// JSON-serializes for `noxctl plan -o json`) — never a nil-slice panic or a
-// silent zero-finding success that hides the bearcli breakage.
-func TestAggregateUntrackedFromJSON_ReturnsEmptyReportAndError_OnMalformedJSON(t *testing.T) {
-	report, err := audit.AggregateUntrackedFromJSON([]byte("{not valid json"), map[string]struct{}{})
+// TestAggregateUntrackedFromJSON_ReturnsErrorOnMalformedJSON pins the failure
+// path of the untracked-residue scan: malformed bearcli output must surface a
+// wrapped parse error rather than a silent zero-finding success that hides the
+// breakage.
+func TestAggregateUntrackedFromJSON_ReturnsErrorOnMalformedJSON(t *testing.T) {
+	_, err := audit.AggregateUntrackedFromJSON([]byte("{not valid json"), map[string]struct{}{})
 
 	if err == nil {
 		t.Fatalf("want a parse error for malformed JSON; got nil")
@@ -406,10 +412,24 @@ func TestAggregateUntrackedFromJSON_ReturnsEmptyReportAndError_OnMalformedJSON(t
 	if !strings.Contains(err.Error(), "parse") {
 		t.Errorf("error should identify the parse failure; got %v", err)
 	}
-	if report.TagFamilies == nil {
-		t.Errorf("empty report must carry a non-nil TagFamilies slice for JSON serialization")
+}
+
+// TestAggregateUntrackedFromJSON_EmptyReportSerializesAsArray pins the
+// companion contract: the report returned alongside a parse error must
+// serialize with `"tag_families":[]` (not null), so `noxctl plan -o json`
+// emits a stable shape instead of a nil-slice that downstream tooling chokes
+// on. Asserted via the JSON the operator's tooling actually consumes.
+func TestAggregateUntrackedFromJSON_EmptyReportSerializesAsArray(t *testing.T) {
+	report, _ := audit.AggregateUntrackedFromJSON([]byte("{not valid json"), map[string]struct{}{})
+
+	data, marshalErr := json.Marshal(report)
+	if marshalErr != nil {
+		t.Fatalf("empty report failed to marshal: %v", marshalErr)
 	}
-	if report.TotalNotes != 0 {
-		t.Errorf("error report must report TotalNotes=0; got %d", report.TotalNotes)
+	if !strings.Contains(string(data), `"tag_families":[]`) {
+		t.Errorf("empty report must serialize tag_families as []; got %s", data)
+	}
+	if !strings.Contains(string(data), `"total_notes":0`) {
+		t.Errorf("empty report must serialize total_notes as 0; got %s", data)
 	}
 }

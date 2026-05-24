@@ -13,6 +13,7 @@ package engine_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"testing/synctest"
 
@@ -20,9 +21,10 @@ import (
 	"github.com/barad1tos/noxctl/bear/engine"
 )
 
-// planAtomRow is the single work atom every drift scenario stages: canonical
-// under "tasks", carrying only its own tags (no drag gesture). Reused so each
-// test varies only the master state.
+// planAtomRow is the single work atom every drift scenario stages. Its body
+// canonical (via canonicalAtomBody) puts it in the "інше" UnknownBucket; its
+// tags array carries #work/tasks. The drift assertions don't depend on the
+// bucket name — each test varies only the master state.
 //
 //cyrillic:permit
 func planAtomRow() map[string]any {
@@ -118,6 +120,11 @@ func TestPlan_ReportsDriftReplace_WhenMasterStale(t *testing.T) {
 		}
 		if diff.Kind != engine.DiffReplace {
 			t.Errorf("master diff kind = %q, want %q (stale master is a replace)", diff.Kind, engine.DiffReplace)
+		}
+		// The operator reads the Summary line in `noxctl plan` output; pin
+		// that it names the master change (not just that a Diff exists).
+		if !strings.Contains(diff.Summary, "master changed") {
+			t.Errorf("replace diff summary = %q, want it to mention \"master changed\"", diff.Summary)
 		}
 	})
 }

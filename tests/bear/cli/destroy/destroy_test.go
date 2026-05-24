@@ -24,6 +24,7 @@ import (
 // hash, and counts `overwrite` (canonical-strip) calls.
 type destroyFake struct {
 	listPayload []byte
+	trashErr    error // when set, every `trash` call fails (partial-failure path)
 	trashed     []string
 	overwrites  int
 }
@@ -36,6 +37,9 @@ func (f *destroyFake) Run(_ context.Context, args []string, _ string) ([]byte, e
 	case "list":
 		return f.listPayload, nil
 	case "trash":
+		if f.trashErr != nil {
+			return nil, f.trashErr
+		}
 		if len(args) >= 2 {
 			f.trashed = append(f.trashed, args[1])
 		}
@@ -86,7 +90,7 @@ func TestStripCanonical_RemovesTagLines(t *testing.T) {
 // line matches. Avoids spurious overwrite writes when destroy
 // double-passes an already-stripped note.
 func TestStripCanonical_NoChange(t *testing.T) {
-	body := "# Title\n#some/other/tag\nbody.\n"
+	body := "# Title\n#other/tag\nbody.\n"
 	got, changed := cli.StripCanonical(body, "#library/poetry")
 	if changed {
 		t.Error("expected changed=false when canonical tag is absent")
@@ -288,6 +292,54 @@ func TestRunDestroy_TrashesMasterAndStripsAtoms_OnAutoApprove(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "trashed 1 master/hub notes, stripped 1 atomic") {
 		t.Errorf("summary line missing expected counts; got:\n%s", out.String())
+	}
+}
+
+// TestRunDestroy_ReportsFailures_WhenTrashFails pins the partial-failure
+// path: when bearcli rejects the master/hub trash, RunDestroy must count the
+// failure, surface it in the summary, and return a non-nil error — never
+// report success. The atom strip still runs (log-and-continue), so the
+// operator sees an honest "trashed 0 ... stripped 1 ... 1 failures" line.
+// User-facing bug if this regresses: a destroy that half-failed reads as
+// complete and the operator never retries the stuck master.
+//
+//cyrillic:permit
+func TestRunDestroy_ReportsFailures_WhenTrashFails(t *testing.T) {
+	domain.ResetBearcliPoolForTest(4)
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+
+	fake := &destroyFake{
+		trashErr: errors.New("bearcli trash: simulated rejection"),
+		listPayload: destroyListJSON(
+			t,
+			map[string]any{"id": "m1", "title": "✱ Test", "tags": []string{"#library/test"}, "content": "# ✱ Test\n"},
+			map[string]any{
+				"id": "a1", "title": "Вірш", "tags": []string{"#library/test"},
+				"content": "# Вірш\n#library/test | [[✱ Test]]\n---\nтіло\n",
+			},
+		),
+	}
+	ctx := domain.ContextWithBackend(context.Background(), fake)
+
+	var out, errBuf bytes.Buffer
+	err := cli.RunDestroy(ctx, cli.DestroyOptions{
+		Domains:     []*domain.Domain{render.NewFlatListDomain("library/test", "✱ Test")},
+		Tag:         "library/test",
+		AutoApprove: true,
+		Stdout:      &out, Stderr: &errBuf,
+		Stdin: strings.NewReader(""),
+	})
+	if err == nil {
+		t.Fatalf("RunDestroy returned nil despite a trash failure; want a wrapped error")
+	}
+	if !strings.Contains(err.Error(), "failed") {
+		t.Errorf("error should report the failure; got %v", err)
+	}
+	if !strings.Contains(out.String(), "1 failures") {
+		t.Errorf("summary must report the failure count; got:\n%s", out.String())
+	}
+	if len(fake.trashed) != 0 {
+		t.Errorf("trash failed, so nothing should be recorded as trashed; got %v", fake.trashed)
 	}
 }
 

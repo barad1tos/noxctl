@@ -108,11 +108,14 @@ func TestRenderHub3Tier_PreservesUserBulletOrder(t *testing.T) {
 	}
 }
 
-// TestRenderHub3Tier_SplicesNewcomerIntoExistingOrder pins the splice rule: a
-// bullet not present in the existing order is inserted rather than dropped,
-// while the explicitly-ordered bullets keep their relative order. User-facing
-// bug if this regresses: a freshly-added atom silently vanishes from the hub
-// because it wasn't in the prior bullet order.
+// TestRenderHub3Tier_SplicesNewcomerIntoExistingOrder pins the full splice
+// rule: bullets present in the existing order keep their relative order, while
+// a newcomer not in that order is inserted at its ALPHABETICAL position among
+// them (not appended, not dropped). With prior order [Віктор, Алі] and
+// newcomer Беата, the result is Беата, Віктор, Алі — Беата sorts before
+// Віктор (Б < В) so it lands at the top; Віктор still precedes Алі. User-facing
+// bug if this regresses: a freshly-added atom either vanishes from the hub or
+// reshuffles the operator's curated order.
 //
 //cyrillic:permit
 func TestRenderHub3Tier_SplicesNewcomerIntoExistingOrder(t *testing.T) {
@@ -127,12 +130,20 @@ func TestRenderHub3Tier_SplicesNewcomerIntoExistingOrder(t *testing.T) {
 
 	out := render.DefaultRenderHub3Tier(d, "Романтизм", notes, existingOrder)
 
-	for _, title := range []string{"Алі", "Беата", "Віктор"} {
-		if !strings.Contains(out, "[["+title+"]]") {
-			t.Errorf("newcomer/known bullet %q dropped; got:\n%s", title, out)
-		}
+	posBeata := strings.Index(out, "[[Беата]]")
+	posViktor := strings.Index(out, "[[Віктор]]")
+	posAli := strings.Index(out, "[[Алі]]")
+	if posBeata < 0 || posViktor < 0 || posAli < 0 {
+		t.Fatalf("a bullet was dropped (Беата=%d Віктор=%d Алі=%d); got:\n%s", posBeata, posViktor, posAli, out)
 	}
-	if posViktor, posAli := strings.Index(out, "[[Віктор]]"), strings.Index(out, "[[Алі]]"); posViktor > posAli {
-		t.Errorf("existing order Віктор→Алі not preserved when splicing a newcomer; got:\n%s", out)
+	// Newcomer spliced alphabetically (Беата before Віктор) AND prior order
+	// preserved for the known bullets (Віктор before Алі).
+	if posBeata >= posViktor {
+		t.Errorf("newcomer Беата not spliced alphabetically before Віктор (Беата=%d Віктор=%d); got:\n%s",
+			posBeata, posViktor, out)
+	}
+	if posViktor >= posAli {
+		t.Errorf("existing order Віктор→Алі not preserved (Віктор=%d Алі=%d); got:\n%s",
+			posViktor, posAli, out)
 	}
 }
