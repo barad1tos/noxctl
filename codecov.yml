@@ -27,8 +27,14 @@ ignore:
   # rule forbids `*_test.go` inside production package directories.
   # Coverage on cobra wiring + flag plumbing comes from integration runs
   # against the live vault (ship-gate.sh) rather than per-package tests.
-  - "cmd/noxctl/**/*.go"
-  - "cmd/regen-watchd/**/*.go"
+  #
+  # Glob form is load-bearing: `<dir>/**/*.go` fails to match files that
+  # live directly in <dir> (no intermediate path segment for `**/` to
+  # consume), so codecov kept counting cmd/noxctl/*.go at 0% and dragged
+  # the project total down ~6pp. `<dir>/**` (gitignore-style, matches
+  # direct children + nested) is the reliable form.
+  - "cmd/noxctl/**"
+  - "cmd/regen-watchd/**"
 
 comment:
   layout: "condensed_header, condensed_files, condensed_footer"
