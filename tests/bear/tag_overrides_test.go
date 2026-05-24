@@ -161,6 +161,7 @@ func TestComputeTagOverrides(t *testing.T) {
 
 	t.Run("NonWhitelistedSubTag_LogsFilterReason", runNonWhitelistedSubTagCase)
 	t.Run("MultipleAtomsConflict_CountsTwo", runMultipleAtomsConflictCase)
+	t.Run("NoCanonicalInBody_FallbackToUnknownBucket", runUnknownBucketFallbackCase)
 
 	shapeCases := []tagOverrideCase{
 		{
@@ -320,6 +321,37 @@ func runMultipleAtomsConflictCase(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "ambiguous tag intent") {
 		t.Errorf("missing ambiguous-intent warning, got log: %q", buf.String())
+	}
+}
+
+// runUnknownBucketFallbackCase covers the fallback branch inside
+// computeTagOverrides where ParseMetaFromSubTag returns an empty bucket
+// (the atom body has no canonical tag-line yet — fresh UI-created
+// note pre-fast-pass). The algorithm must substitute d.UnknownBucket
+// as the canonical baseline before calling decideOverride so the
+// drag-tagged sub-tag still triggers a re-bucket override. Without
+// this fallback a freshly-created note with a sidebar-drag chip would
+// silently no-op until canonicalization caught up on a later cycle.
+//
+//cyrillic:permit
+func runUnknownBucketFallbackCase(t *testing.T) {
+	d := buildWorkDomain()
+	notes := []domain.Note{{
+		ID:      "note-no-canonical",
+		Title:   "Fresh UI note, no canonical tag-line in body",
+		Tags:    []string{"#work", "#work/tasks"},
+		Content: "# Fresh heading\n\nbody without any canonical line.\n",
+	}}
+	got, conflicts := d.ComputeTagOverridesForTest(notes)
+	if conflicts != 0 {
+		t.Errorf("conflict count = %d, want 0 (single whitelisted sub-tag must not be ambiguous)", conflicts)
+	}
+	if len(got) != 1 {
+		t.Fatalf("override count = %d, want 1; got map %v", len(got), got)
+	}
+	if got["note-no-canonical"] != "tasks" {
+		t.Errorf("note-no-canonical bucket = %q, want %q (fallback canonical=UnknownBucket → decideOverride must fire)",
+			got["note-no-canonical"], "tasks")
 	}
 }
 
