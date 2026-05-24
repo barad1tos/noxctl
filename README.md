@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/screenshots/repo_facade.svg" alt="noxctl — declarative Bear notes for the terminal" width="100%" />
+</p>
+
 # noxctl
 
 [![Install](https://img.shields.io/badge/install-go%20install-2E86AB?style=for-the-badge&logo=go&logoColor=white)](#quick-start)
@@ -14,6 +18,8 @@
 Declarative macOS CLI for Bear notes structure management — *Terraform for Bear notes*. Describe your Bear-vault layout (tags, hubs, masters, buckets) in a TOML file and `noxctl` keeps the vault matching that description idempotently.
 
 Brownfield — descended from a personal FSEvents-driven daemon (`regen-watchd`) that managed a 28-domain Bear corpus. The closed catalog of six rendering blueprints (`flat-list`, `flat-table`, `grouped-vertical`, `hub-routed`, `hub-routed-with-subtag`, `umbrella`) covers every shape that production used.
+
+**Standing on two shoulders.** The *what* comes from [Forever ✱ Notes](https://www.myforevernotes.com/) — a framework for organizing a knowledge vault around clickable master/hub notes (the `✱` master marker noxctl stamps on every index title is borrowed straight from it). The *how* comes from Terraform — declarative desired-state config plus `plan`/`apply` idempotent convergence. noxctl is Forever Notes' structure, maintained the Terraform way: describe the vault you want once, and the tool keeps it that shape.
 
 ## What noxctl does to your vault
 
@@ -58,8 +64,8 @@ A book by Yuval Noah Harari about human history.
 
 Same `#library/books` tag rendered in Bear, before and after `noxctl apply`:
 
-| Before | After |
-|---|---|
+| Before                                                                                                    | After                                                                                                                                         |
+|-----------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
 | ![Bear filtered to #nox-demo/books before apply: five atom notes, no master](docs/screenshots/before.png) | ![Bear filtered to #nox-demo/books after apply: master ✱ Books plus five atoms, canonical tag-line chips on each](docs/screenshots/after.png) |
 
 (Demo vault is at `examples/demo-vault/` — `setup.sh` populates it under `#nox-demo/books` and the paired `noxctl.toml` manages exactly that tag.)
@@ -181,20 +187,75 @@ Six rendering blueprints, each fitting a distinct tag shape. Pick by walking the
 
 **Comparison table:**
 
-| Blueprint | When to use | Required fields beyond the basics | Bucket source | Output shape |
-|---|---|---|---|---|
-| `flat-list` | inbox / capture tags, no grouping | none | n/a | one master with bullet list of every atom |
-| `flat-table` | bucketed collection, finite bucket set, small N | `buckets`, `unknown_bucket` | operator-declared | one master with markdown table, columns = buckets |
-| `grouped-vertical` | bucketed collection, large N per bucket | `buckets`, `unknown_bucket` | operator-declared | one master with `## Bucket (N)` H2 per bucket |
-| `hub-routed` | author / source grouping where bucket names live in atom bodies | `unknown_bucket`, `hub_h2_prefix` | atom canonical tag-line `[[Bucket Hub]]` | Tier-2: master lists hubs, each hub lists atoms |
-| `hub-routed-with-subtag` | hub-style layout but bucket names are sub-tags | `buckets`, `unknown_bucket` | atom sub-tag `#tag/bucket` | Tier-2: master lists hubs, each hub lists atoms |
-| `umbrella` | aggregate multiple existing domains under one master | `children`, `default_child` | n/a | master lists every child domain |
+| Blueprint                | When to use                                                     | Required fields beyond the basics | Bucket source                            | Output shape                                      |
+|--------------------------|-----------------------------------------------------------------|-----------------------------------|------------------------------------------|---------------------------------------------------|
+| `flat-list`              | inbox / capture tags, no grouping                               | none                              | n/a                                      | one master with bullet list of every atom         |
+| `flat-table`             | bucketed collection, finite bucket set, small N                 | `buckets`, `unknown_bucket`       | operator-declared                        | one master with markdown table, columns = buckets |
+| `grouped-vertical`       | bucketed collection, large N per bucket                         | `buckets`, `unknown_bucket`       | operator-declared                        | one master with `## Bucket (N)` H2 per bucket     |
+| `hub-routed`             | author / source grouping where bucket names live in atom bodies | `unknown_bucket`, `hub_h2_prefix` | atom canonical tag-line `[[Bucket Hub]]` | Tier-2: master lists hubs, each hub lists atoms   |
+| `hub-routed-with-subtag` | hub-style layout but bucket names are sub-tags                  | `buckets`, `unknown_bucket`       | atom sub-tag `#tag/bucket`               | Tier-2: master lists hubs, each hub lists atoms   |
+| `umbrella`               | aggregate multiple existing domains under one master            | `children`, `default_child`       | n/a                                      | master lists every child domain                   |
 
 Required fields beyond the basics — every blueprint also needs `tag`, `index_title`, `blueprint`. See `examples/<blueprint>.toml` for a copy-pasteable starter per blueprint.
 
 ## Idempotency contract
 
 Every change to the engine must keep `noxctl apply` reaching `unchanged` for every hub and master after at most three passes. Order-stabilization passes count toward that three — anything that needs more is a bug. The integration suite under `tests/bear/engine/` pins this contract.
+
+## How it works
+
+<details>
+<summary><b>Full lifecycle — from import to live daemon</b> (click to expand)</summary>
+
+### The journey of a tag
+
+noxctl moves a tag through five stages: discover it, declare it, preview, converge, then optionally keep it converged.
+
+```mermaid
+flowchart LR
+    A["Bear vault:<br/>existing tags"] -->|noxctl import TAG| B["candidate<br/>domain stanza"]
+    B --> C["noxctl.toml:<br/>operator-owned catalog"]
+    C -->|noxctl validate| D{schema OK?}
+    D -->|no| C
+    D -->|yes| E["noxctl plan:<br/>diff vs live vault"]
+    E -->|noxctl apply| F[("Bear SQLite<br/>via bearcli")]
+    F -->|re-pass until unchanged<br/>3 passes max| E
+    C -.->|noxctl daemon| G["FSEvents watcher:<br/>continuous reconcile"]
+    G -.-> F
+```
+
+1. **Import** (optional) — `noxctl import <tag>` scans the notes under an existing Bear tag, infers a likely blueprint, and prints a paste-ready `[[domain]]` stanza. Non-destructive: it writes nothing.
+2. **Declare** — you own `noxctl.toml`. Each managed tag is one `[[domain]]` block naming its blueprint and fields.
+3. **Validate** — `noxctl validate` runs the loader and every `Domain.Validate()` rule with zero Bear I/O. Typos surface as `noxctl.toml:LINE:COL: unknown field`.
+4. **Plan / apply** — `plan` diffs the catalog against the live vault; `apply` writes it back through `bearcli`, re-running until every hub and master reports `unchanged` (the [idempotency contract](#idempotency-contract): ≤ 3 passes).
+5. **Daemon** (optional) — `noxctl daemon` runs the same engine continuously, reconciling on every external edit. This is the step that makes noxctl closer to a **Kubernetes operator** than to one-shot Terraform: declarative desired state *plus* a reconciliation loop.
+
+### Inside the daemon loop
+
+The daemon watches Bear's SQLite directory via FSEvents. The hard part: noxctl's own writes also fire FSEvents, so a naive watcher would react to itself forever. A **self-write gate** and a **debounce window** prevent that.
+
+```mermaid
+flowchart TD
+    W["FSEvents on Bear DB dir"] --> SG{"isWatchedDBEvent?<br/>basename + self-write gate"}
+    SG -->|our own write| X["ignore:<br/>no feedback loop"]
+    SG -->|external edit| Q["reset quiet timer,<br/>arm max-burst timer"]
+    Q --> QT{"quiet 2s elapsed<br/>OR max-burst hit?"}
+    QT -->|no, burst still active| Q
+    QT -->|yes| C["cycleOnce:<br/>regen every domain"]
+    C --> SW["mark self-write,<br/>suppress own FSEvents"]
+    SW --> W
+    MP["mtime poll fallback"] -.->|Bear deferred a WAL commit<br/>past the FSEvent window| Q
+    AT["autotag tick"] -.->|4 fast-passes only,<br/>never full regen| C
+```
+
+- **Self-write gate** — before writing, the daemon marks the write as its own; the matching FSEvent is dropped instead of triggering another cycle. This is what keeps the loop from chasing its own tail.
+- **Debounce + max-burst** — a flurry of edits (Bear sync, a paste, a bulk re-tag) collapses into one regen. The quiet timer waits for 2s of silence; the max-burst timer caps how long a never-quiet stream can defer a cycle.
+- **mtime poll fallback** — Bear sometimes commits its SQLite WAL after the FSEvent window closes. A periodic `mtime` stat catches those and routes them through the same debounce path, so no edit is silently missed.
+- **autotag fast-pass** — a lightweight tick running only the four tag-hygiene passes (foreign-tag escape, daily-default, domain-bootstrap, placeholder-refresh), never the full per-domain regen.
+
+Every path converges on the same `cycleOnce`, and every `cycleOnce` honors the same `unchanged`-in-≤3-passes contract that `apply` does.
+
+</details>
 
 ## Configuration shape
 
