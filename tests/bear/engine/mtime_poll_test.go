@@ -94,7 +94,9 @@ func pollOptsFor(t *testing.T, stat *fakeStat, pollInterval, debounce time.Durat
 // TestLoadDaemon_BearcliConcurrency_SoftCap. Also serves the
 // tag-override integration tests that assert on `d.Logf` content
 // (suppression WARNs, conflict rollups). Prefix save/restore is
-// load-bearing for the latter because `d.Logf` writes a domain prefix.
+// defensive — production never calls log.SetPrefix, but a sibling
+// test in the same binary might, and an unrestored prefix would leak
+// into the captured buffer of the next test that uses this helper.
 //
 // Mutates package-global stdlib log state — tests using this helper MUST
 // NOT call t.Parallel(); otherwise siblings' log emissions race into the
