@@ -147,6 +147,9 @@ func TestComputeTagOverrides(t *testing.T) {
 			Content: canonicalBody("інше"),
 		}}
 		got, conflicts := d.ComputeTagOverridesForTest(notes)
+		if len(got) != 0 {
+			t.Errorf("override map must be empty when the only atom is ambiguous, got %v", got)
+		}
 		if _, present := got["note-002"]; present {
 			t.Errorf("note-002 should NOT be in override map, got %v", got)
 		}

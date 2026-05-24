@@ -2,27 +2,22 @@
 //
 // computeTagOverrides participates as the third override source in the
 // snapshot + regen pipelines (priority: master > hub > tag). This file
-// pins the end-to-end behavior:
+// groups the end-to-end locks into three families:
 //
-//  1. DragToTag_ReBuckets (snapshot path) — a note with canonical bucket
-//     A and a drag-added whitelisted sub-tag B (B != A, B in Buckets)
-//     surfaces in Groups[B] after one SnapshotDomainRenderInputs call.
-//  2. DragToTag_Idempotent (snapshot path) — two consecutive snapshots
-//     produce deep-equal Groups maps. The ≤3-pass idempotency contract
-//     demands no flap, no growing override map.
-//  3. FullRunRegen_RewritesCanonical (full regen path) — RunRegen on
-//     the same scenario re-stamps the atomic canonical to the new
-//     bucket, strips the stale family sub-tag from the body, and updates
-//     the master to show the atom under the new H2 section. Second run
-//     is a strict no-op (idempotent).
-//  4. MasterWinsOverTag (priority lock) — an atom whose master row claims
-//     bucket M and whose Bear tags claim bucket T routes to M; the master
-//     override pre-empts the tag override on collision.
-//  5. MembershipGuardSkipsForeignDomain — a foreign-family atom MUST
-//     NOT surface in any work-domain group. The fake mirrors production
-//     listNotes' `--tag work` filter so the guard is observed at the
-//     same surface bearcli enforces. Complements the existing
-//     processAtomic-side guard exercised by atomic_tag_guard_test.go.
+//   - **Snapshot-path locks** — observable via SnapshotDomainRenderInputs:
+//     DragToTag_ReBuckets, DragToTag_Idempotent, MasterWinsOverTag,
+//     HubWinsOverTag, MembershipGuardSkipsForeignDomain,
+//     MembershipGuardCatchesSurvivor.
+//   - **Regen-path locks** — observable only on full RunRegen (write
+//     side): FullRunRegen_RewritesCanonical (canonical re-stamp +
+//     master rebucket + second-run no-op), OnSkipLogsSuppression (WARN
+//     line when master claims an atom and tag drag is suppressed),
+//     ConflictRollupLogged (multi-atom conflict rollup line).
+//   - **Membership guards** — the listNotes `--tag X` upstream filter
+//     plus the in-function `hasFamilyMembership` check, exercised by
+//     SkipsForeignDomain (filter side) and CatchesSurvivor (in-function
+//     side). Complements the processAtomic-side guard locked by
+//     tests/bear/atomic_tag_guard_test.go.
 //
 // Test seam: a purpose-built fakeWorkBackend captures overwrites by
 // noteID and serves list/cat payloads. Kept local to this file so the
@@ -33,10 +28,8 @@
 package engine_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"log"
 	"reflect"
 	"slices"
 	"strings"
@@ -48,32 +41,19 @@ import (
 	"github.com/barad1tos/noxctl/bear/render"
 )
 
-// captureDomainLog redirects the package-level log writer to a buffer
-// so tests can assert on `d.Logf(...)` content. Restores the original
-// writer via t.Cleanup. Returns the buffer for substring assertions.
-func captureDomainLog(t *testing.T) *bytes.Buffer {
-	t.Helper()
-	orig := log.Writer()
-	flags := log.Flags()
-	prefix := log.Prefix()
-	buf := &bytes.Buffer{}
-	log.SetOutput(buf)
-	log.SetFlags(0)
-	log.SetPrefix("")
-	t.Cleanup(func() {
-		log.SetOutput(orig)
-		log.SetFlags(flags)
-		log.SetPrefix(prefix)
-	})
-	return buf
-}
+// (log capture lives in mtime_poll_test.go::captureLog — shared across
+// engine_test files that need to assert on d.Logf content.)
 
-// workDomainBuckets mirrors the priority bucket order Roman's `#work`
-// catalog entry exposes (examples/personal.toml). The whitelist MUST
-// include "tasks" (the drag target across the re-bucket cases) so the
-// override fires; "інше" is the UnknownBucket and intentionally NOT in
-// the whitelist — gatherWhitelistedSubTags accepts the unknown-bucket
-// value via its `sub != d.UnknownBucket` branch.
+// workDomainBuckets is a test-extended whitelist for the grouped-vertical
+// work-domain fixture. NOT a mirror of any real catalog entry — the live
+// `[[domain]] tag="work"` stanza ships a shorter list; this fixture pads
+// it with synthetic buckets so the integration scenarios can exercise
+// multiple drag targets (`tasks`, `development`, etc.) under a single
+// domain. The whitelist MUST include "tasks" (the drag target across the
+// re-bucket cases) so the override fires; "інше" is the UnknownBucket
+// and intentionally NOT in the whitelist — gatherWhitelistedSubTags
+// accepts the unknown-bucket value via its `sub != d.UnknownBucket`
+// branch.
 var workDomainBuckets = []string{
 	"tasks", "development", "english", "health",
 	"humor", "leisure", "instagram", "travel",
@@ -548,6 +528,9 @@ func assertSecondRunIsNoop(t *testing.T, fake *fakeWorkBackend, ctx context.Cont
 	fake.StageNote(t, masterNoteID, map[string]any{"id": masterNoteID, "title": "✱ Робота", "content": masterBody, "tags": []string{"#work"}})
 
 	overwritesBefore := fake.OverwriteCount()
+	if overwritesBefore == 0 {
+		t.Fatalf("first RunRegen produced 0 overwrites — assertion would be vacuously satisfied; check call ordering against assertAtomReBucketed / assertMasterReBucketed which prove the write path executed")
+	}
 	d.RunRegen(ctx)
 	overwritesAfter := fake.OverwriteCount()
 	if overwritesAfter != overwritesBefore {
@@ -836,7 +819,7 @@ func stageMasterTagConflict(t *testing.T, fake *fakeWorkBackend) {
 func TestTagOverrideIntegration_OnSkipLogsSuppression(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		buf := captureDomainLog(t)
+		buf := captureLog(t)
 		fake := newFakeWorkBackend()
 		stageMasterTagConflict(t, fake)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
@@ -844,8 +827,13 @@ func TestTagOverrideIntegration_OnSkipLogsSuppression(t *testing.T) {
 
 		d.RunRegen(ctx)
 
+		want := "note " + atomNoteID + " wanted tasks, kept development"
 		if !strings.Contains(buf.String(), "tag override suppressed by higher layer") {
 			t.Errorf("missing suppression WARN line on regen path; got log: %q", buf.String())
+		}
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("WARN line missing atom-context %q (catches swapped onSkip args); got log: %q",
+				want, buf.String())
 		}
 	})
 }
@@ -859,7 +847,7 @@ func TestTagOverrideIntegration_OnSkipLogsSuppression(t *testing.T) {
 func TestTagOverrideIntegration_ConflictRollupLogged(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		buf := captureDomainLog(t)
+		buf := captureLog(t)
 		fake := newFakeWorkBackend()
 		const atomA = "atom-conflict-A"
 		const atomB = "atom-conflict-B"
@@ -903,9 +891,12 @@ func TestTagOverrideIntegration_ConflictRollupLogged(t *testing.T) {
 
 		d.RunRegen(ctx)
 
-		if !strings.Contains(buf.String(), "tag conflicts: 2") {
-			t.Errorf("missing conflict-count rollup; want substring \"tag conflicts: 2\", got log: %q",
-				buf.String())
+		// Lock the FULL emit format so a "tag conflicts: 20" or similar
+		// digit-prefix collision can't satisfy the substring check.
+		want := "tag conflicts: 2 (no override applied)"
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("missing conflict-count rollup; want substring %q, got log: %q",
+				want, buf.String())
 		}
 	})
 }

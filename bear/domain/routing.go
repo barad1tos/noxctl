@@ -78,8 +78,7 @@ func (d *Domain) isHubNote(n Note) bool {
 // free-form wikilinks. Scanning HeaderZone there would mis-identify
 // body-content wikilinks (an orphan `| [[✱ Daily]] |...` line
 // leftover from a foreign-tag escape, a user-typed `[[reference]]`
-// in an atom body) as bucket names — see the May 2026 quicknote→
-// development drag regression.
+// in an atom body) as bucket names.
 // 3. Legacy fallback: first non-section ## H2 in body — guarded by
 // LegacyAuthorFallback (poetry only; aphorisms quote H2s would misread).
 func (d *Domain) DetectAuthor(body string) string {
@@ -540,9 +539,8 @@ func nonCanonicalSubTags(canonicalBucket string, whitelistedSubTags []string) []
 // in tests/bear/. Test seam — production callers MUST use RunRegen. Same
 // precedent as ProcessAtomicForTest in bear/domain/upserts.go.
 //
-// Returns (overrides, conflictCount) so the conflict-count branch of the
-// algorithm is observable from tests; older test cases that ignored the
-// count keep working via blank identifier.
+// Returns (overrides, conflictCount) so the conflict-count branch is
+// observable from tests.
 func (d *Domain) ComputeTagOverridesForTest(notes []Note) (map[string]string, int) {
 	return d.computeTagOverrides(notes)
 }
