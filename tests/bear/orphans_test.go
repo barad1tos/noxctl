@@ -78,7 +78,11 @@ func (f *orphanFakeBearcli) Run(_ context.Context, args []string, _ string) ([]b
 
 // armOrphanFakeBearcli installs the supplied fake backend on a fresh
 // context (with bearcli pool armed at cap=2 so corpus calls actually
-// execute) and registers cleanup. Returns the test context — pass it
+// execute) and registers cleanup that resets capacity to 1. Sibling
+// of armBearcliPool in tests/bear/cli/lint/lint_test.go — the
+// cleanup-to-1 sentinel matches that helper's rationale: a missing
+// arm in a later test shows up as a deterministic block rather than
+// spurious concurrency surprises. Returns the test context — pass it
 // into the orchestrator under test.
 func armOrphanFakeBearcli(t *testing.T, fake *orphanFakeBearcli) context.Context {
 	t.Helper()
@@ -95,16 +99,15 @@ func armOrphanFakeBearcli(t *testing.T, fake *orphanFakeBearcli) context.Context
 // directly — no parallel helper infrastructure.
 type orphanFixture = noteFixture
 
-// assertDetailContains is the shared substring assertion: every case
-// that checks Detail tokens uses it so the per-case body stays under
-// the dupl token threshold (≥50 tokens). Naming the case-specific
-// context via `ctx` keeps failure messages actionable without inlining
-// the 5-line for-range-Fatalf block in each test.
-func assertDetailContains(t *testing.T, ctx, detail string, fragments []string) {
+// assertDetailContains asserts every fragment is present in detail,
+// failing fast with the missing one and the supplied label. The label
+// scopes the failure message to the calling test case so a multi-case
+// failure points at the right scenario without a stack hunt.
+func assertDetailContains(t *testing.T, label, detail string, fragments []string) {
 	t.Helper()
 	for _, frag := range fragments {
 		if !strings.Contains(detail, frag) {
-			t.Fatalf("Detail must contain %q (%s); got %q", frag, ctx, detail)
+			t.Fatalf("Detail must contain %q (%s); got %q", frag, label, detail)
 		}
 	}
 }

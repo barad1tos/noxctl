@@ -201,7 +201,7 @@ func TestRun_ApplyMode_InvokesAutoFix(t *testing.T) {
 // contract: a ctx already canceled at entry produces no panic, no
 // hang, and the bearcli backend records zero list calls because the
 // per-domain loop bails on the ctx.Err check before issuing any
-// I/O. Scan' contract is that a canceled context short-
+// I/O. Scan's contract is that a canceled context short-
 // circuits each domain's listNotes call.
 func TestRun_CanceledContext_Aborts(t *testing.T) {
 	armBearcliPool(t)

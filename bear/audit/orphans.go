@@ -45,10 +45,8 @@ import (
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
-// orphansTag and orphansTagPrefix are the idempotency markers the
-// detector skips on. Either exact match or sub-tagged form
-// (`#orphans/<sub>`) signals the atom has already been triaged in a
-// prior sweep.
+// orphansTag / orphansTagPrefix — idempotency markers; see
+// isOrphansTag for the case-insensitive match contract.
 const (
 	orphansTag       = "#orphans"
 	orphansTagPrefix = "#orphans/"

@@ -10,9 +10,7 @@ package bearcli
 // traffic.
 //
 // The first production caller is audit.ApplyOrphanFamilies for the
-// `bearcli tags add <id> orphans` triage workflow. Future per-domain
-// tag mutations slot in here as new wrappers so the kindFromArgs
-// classification stays in one grep-detectable place (client.go).
+// `bearcli tags add <id> orphans` triage workflow.
 
 import (
 	"context"
