@@ -9,7 +9,7 @@
 // original bear/-level API carried — exports read as
 // `bearcli.Run`, `bearcli.Backend`, `bearcli.Metrics`, etc. Old names
 // remain available as backward-compatible aliases in bear/, see
-// bear/aliases.go.
+// bear/domain/aliases.go.
 package bearcli
 
 import (
@@ -45,7 +45,10 @@ type Metrics struct {
 	// callers render Average = WaitNanosSum / AcquireCount.
 	WaitNanosSum int64
 	// CallsByKind segregates AcquireCount by the bearcli sub-command
-	// argument ("list", "cat", "show", "overwrite", "create", "find").
+	// argument: "list", "cat", "show", "overwrite", "create", "find",
+	// "trash", "tags" (read-side / future use), "tags-add" (write-side
+	// AddTag), and "other" (defensive bucket for verbs not yet wired
+	// into the classifier). New verbs slot in here AND in incCallKind.
 	CallsByKind map[string]int64
 	// HashConflictsTotal counts the ErrHashConflict events observed
 	// by OverwriteWithRetry (regardless of retry outcome).
@@ -93,6 +96,10 @@ type poolMetrics struct {
 	callsOverwrite atomic.Int64
 	callsCreate    atomic.Int64
 	callsFind      atomic.Int64
+	callsTrash     atomic.Int64
+	callsTags      atomic.Int64
+	callsTagsAdd   atomic.Int64
+	callsOther     atomic.Int64
 	hashConflicts  atomic.Int64
 	retriesOK      atomic.Int64
 	retriesFail    atomic.Int64
@@ -209,6 +216,10 @@ func MetricsSnapshot() Metrics {
 			"overwrite": metrics.callsOverwrite.Load(),
 			"create":    metrics.callsCreate.Load(),
 			"find":      metrics.callsFind.Load(),
+			"trash":     metrics.callsTrash.Load(),
+			"tags":      metrics.callsTags.Load(),
+			"tags-add":  metrics.callsTagsAdd.Load(),
+			"other":     metrics.callsOther.Load(),
 		},
 		HashConflictsTotal: metrics.hashConflicts.Load(),
 		RetriesSucceeded:   metrics.retriesOK.Load(),
@@ -286,10 +297,9 @@ func updatePeak(inflight int64) {
 	}
 }
 
-// incCallKind bumps the per-kind counter for kind. Unknown kinds are
-// a silent no-op (defensive — caller is kindFromArgs which already
-// folds unrecognized args into "other", but a stray test-only call
-// with an unknown kind should not panic).
+// incCallKind bumps the per-kind counter for kind. Unknown kinds go
+// to callsOther so the metric does not silently lose third-party verbs
+// that kindFromArgs has not yet been taught about.
 func incCallKind(kind string) {
 	switch kind {
 	case "list":
@@ -304,5 +314,13 @@ func incCallKind(kind string) {
 		metrics.callsCreate.Add(1)
 	case "find":
 		metrics.callsFind.Add(1)
+	case "trash":
+		metrics.callsTrash.Add(1)
+	case "tags":
+		metrics.callsTags.Add(1)
+	case "tags-add":
+		metrics.callsTagsAdd.Add(1)
+	default:
+		metrics.callsOther.Add(1)
 	}
 }

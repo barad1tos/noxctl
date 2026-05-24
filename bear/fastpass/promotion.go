@@ -274,9 +274,9 @@ func indexPromotionDomains(all []*domain.Domain, rules []PromotionRule) map[stri
 // promoteAtomToDomain rewrites atom's canonical tag-line from source to
 // target and overwrites the note in Bear. Reuses rewriteCanonicalTag
 // (cross-domain helper) for the line surgery and equalIgnoringNewNoteLink
-// for the no-op gate. R2 asymmetry preserved: time-promotion is a soft
-// move, so the non-strict predicate is used here (rewriteAtomTag uses
-// the strict variant).
+// for the no-op gate. Asymmetry vs rewriteAtomTag: time-promotion is a
+// soft move, so the non-strict predicate is used here (rewriteAtomTag
+// uses the strict variant).
 func promoteAtomToDomain(ctx context.Context, atom domain.Note, source, target *domain.Domain) error {
 	newContent, rewrote := rewriteCanonicalTag(atom.Content, source.CanonicalTag, target)
 	if !rewrote || domain.EqualIgnoringNewNoteLink(newContent, atom.Content) {

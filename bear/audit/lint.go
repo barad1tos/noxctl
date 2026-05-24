@@ -42,11 +42,24 @@ const (
 	LintMalformedCanonical LintCategory = "malformed-canonical"
 	// LintUntracked — atomic note carries a tag whose top-level segment is
 	// NOT in the closed catalog of TOML-managed domains. Emitted by the
-	// residue scan (bear/untracked.go), NOT by per-atom LintAtom.
+	// residue scan (bear/audit/untracked.go), NOT by per-atom LintAtom.
 	// Informational: noxctl deliberately does not touch unmanaged tags;
 	// residue is separated from drift and does NOT contribute to plan
 	// exit-code 2.
 	LintUntracked LintCategory = "untracked"
+	// LintOrphanFamily — atomic note carries a `#<family>/<sub>` tag where
+	// `<family>` is NOT a managed catalog root. Corpus-level concern
+	// (sibling class of LintUntracked, not scoped to any single managed
+	// Domain): the DomainTag on the emitted Finding is the empty string.
+	//
+	// Detection fires only for the `#<family>/<sub>` shape; bare top-level
+	// tags (`#randomthing`) are out of scope and handled by LintUntracked.
+	// Atoms already carrying `#orphans` (with or without sub-tag) are
+	// skipped — the apply step (`bearcli tags add <noteID> orphans`) is
+	// therefore idempotent. The original stray-family tag is preserved so
+	// the operator has full context for manual triage (rename the stray,
+	// delete it, or move the atom to a proper domain).
+	LintOrphanFamily LintCategory = "orphan-family"
 )
 
 // Finding is one anomaly detected by the lint pass. Multiple findings can
