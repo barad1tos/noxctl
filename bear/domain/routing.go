@@ -6,7 +6,10 @@ package domain
 // I/O and atomic-body parsing so the routing decisions live in one
 // file the daemon orchestrator can reason about end-to-end.
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // FirstWikilinkAuthor scans `header` for the first `[[X]]` wikilink
 // whose target is neither empty nor the domain's master index title,
@@ -75,8 +78,7 @@ func (d *Domain) isHubNote(n Note) bool {
 // free-form wikilinks. Scanning HeaderZone there would mis-identify
 // body-content wikilinks (an orphan `| [[✱ Daily]] |...` line
 // leftover from a foreign-tag escape, a user-typed `[[reference]]`
-// in an atom body) as bucket names — see the May 2026 quicknote→
-// development drag regression.
+// in an atom body) as bucket names.
 // 3. Legacy fallback: first non-section ## H2 in body — guarded by
 // LegacyAuthorFallback (poetry only; aphorisms quote H2s would misread).
 func (d *Domain) DetectAuthor(body string) string {
@@ -101,8 +103,15 @@ func (d *Domain) DetectAuthor(body string) string {
 // groupAtomics partitions atomic notes by bucket key. Hub notes and the master
 // are skipped via Domain.skipNote. Notes without a detectable bucket fall into
 // Domain.UnknownBucket. The override map (keyed by note ID) wins over the
-// canonical-header bucket — this is how cut/paste moves in the master propagate
-// into atomic re-bucketing on the next regen.
+// canonical-header bucket — three override sources feed it in priority order:
+//
+//	master > hub > tag > canonical-header > BucketFromSubTag > UnknownBucket
+//
+// Master and hub overrides are deliberate gestures (table cut/paste, hub bullet
+// move); tag is a single quick sidebar drag. On collision the deliberate gesture
+// wins. mergeOverrideLayer is the single source of truth for the merge
+// semantics; see its doc-comment for the byte-equivalent invariant shared
+// between snapshot.go::SnapshotDomainRenderInputs and regen.go::RunRegen.
 func (d *Domain) groupAtomics(notes []Note, overrides map[string]string) map[string][]Note {
 	groups := make(map[string][]Note)
 	for _, note := range notes {
@@ -124,16 +133,6 @@ func (d *Domain) groupAtomics(notes []Note, overrides map[string]string) map[str
 	return groups
 }
 
-// computeMasterOverrides reads the current master, parses its table via
-// Domain.ParseMasterTable, and returns a noteID→bucket map for atomics whose
-// table position disagrees with their canonical header. Empty map (nil-safe)
-// when ParseMasterTable is unset, the master is missing, or the user hasn't
-// moved anything since the last regen.
-//
-// Master is the source of truth for flat-table domains: a user who cuts a
-// bullet from one column and pastes it into another expects that bullet's
-// atomic to follow. The next regen sees the disagreement here and rewrites the
-// atomic's canonical header on its way through runAtomicsPass.
 // parseMasterTableForNotes locates the master in the supplied note slice
 // and returns its parsed identifier→bucket map. Empty map when the master
 // is missing or has no rows the parser recognizes.
@@ -172,6 +171,16 @@ func (d *Domain) overrideForNote(note Note, titleToBucket map[string]string) (st
 	return masterBucket, true
 }
 
+// computeMasterOverrides reads the current master, parses its table via
+// Domain.ParseMasterTable, and returns a noteID→bucket map for atomics whose
+// table position disagrees with their canonical header. Empty map (nil-safe)
+// when ParseMasterTable is unset, the master is missing, or the user hasn't
+// moved anything since the last regen.
+//
+// Master is the source of truth for flat-table domains: a user who cuts a
+// bullet from one column and pastes it into another expects that bullet's
+// atomic to follow. The next regen sees the disagreement here and rewrites the
+// atomic's canonical header on its way through runAtomicsPass.
 func (d *Domain) computeMasterOverrides(notes []Note) map[string]string {
 	if d.ParseMasterTable == nil {
 		return nil
@@ -324,6 +333,222 @@ func ParseHubBulletIdentifiers(content string) []string {
 		out = append(out, extractCellNoteIDs(trimmed)...)
 	}
 	return out
+}
+
+// mergeOverrideLayer folds `from` into `into` with skip-if-already-claimed
+// semantics: any atomID already present in `into` keeps its existing bucket,
+// so the caller can chain layers in priority order (master first, hub second,
+// tag last) and the earlier layer always wins on collision. Lazy-initializes
+// `into` when nil so callers don't have to pre-allocate — important because
+// computeMasterOverrides returns nil for domains without a ParseMasterTable
+// and the hub/tag layers still need a place to deposit their overrides.
+//
+// `onSkip` (nil-safe) is invoked once per atom whose suppressed bucket
+// disagrees with the kept bucket — agreeing duplicates pass silently.
+// Callback receives (atomID, keptBucket, suppressedBucket). The write-side
+// apply path wires this to a WARN log line so a curator drag that loses
+// to a deliberate gesture is visible; the read-only plan/snapshot path
+// passes nil to stay silent.
+//
+// Returns the (possibly-mutated) merged map. Single source of truth for the
+// merge semantics: SnapshotDomainRenderInputs (snapshot.go) and RunRegen
+// (regen.go) both route every override merge through this helper so the
+// post-merge override map stays byte-equivalent between the read-only plan
+// path and the write-side apply path.
+func mergeOverrideLayer(into, from map[string]string, onSkip func(atomID, kept, suppressed string)) map[string]string {
+	for atomID, bucket := range from {
+		if kept, claimed := into[atomID]; claimed {
+			if onSkip != nil && kept != bucket {
+				onSkip(atomID, kept, bucket)
+			}
+			continue
+		}
+		if into == nil {
+			into = make(map[string]string)
+		}
+		into[atomID] = bucket
+	}
+	return into
+}
+
+// computeTagOverrides reads each atomic's Bear tag-array and records a
+// noteID→bucket override whenever the user has dragged a whitelisted
+// `#<family>/<sub>` sub-tag onto the note in Bear's sidebar that disagrees
+// with the canonical-header bucket. Sibling to computeMasterOverrides
+// (flat-table cut/paste) and computeHubOverrides (Tier-2 hub cut/paste).
+//
+// The sidebar drag is a single quick gesture vs the deliberate multi-step
+// master/hub cut/paste flow. Merge priority therefore puts tag overrides
+// LAST: master > hub > tag. When master or hub already claim an atom, the
+// deliberate gesture wins — see SnapshotDomainRenderInputs (snapshot.go)
+// and RunRegen (regen.go) for the merge sites; this primitive returns the
+// candidate map only.
+//
+// Conflict resolution is strict: a single non-canonical whitelisted sub-tag
+// fires the override (95% of real drags). Two or more non-canonical sub-tags
+// emit a domain-prefixed warning via d.Logf and record no override —
+// predictability over guessing what the user meant.
+//
+// No-op (returns (nil, 0)) for non-sub-tag preserving blueprints: only
+// domains that wire CanonicalTagFor (grouped-vertical, hub-routed-with-subtag)
+// participate. Also returns (nil, 0) when the blueprint gate passes but no
+// note needs re-bucketing — the map is lazy-initialized at the first write
+// so zero-override sweeps stay allocation-free; both mergeOverrideLayer
+// and groupAtomics handle the nil map verbatim.
+//
+// conflictCount reports how many notes hit the ambiguous-intent branch
+// (≥2 distinct non-canonical sub-tags). Caller surfaces the rollup as a
+// cycle-summary line so 50 individual WARN lines don't drown the count.
+func (d *Domain) computeTagOverrides(notes []Note) (overrides map[string]string, conflictCount int) {
+	if d.CanonicalTagFor == nil {
+		return nil, 0
+	}
+	family := strings.SplitN(d.Tag, "/", 2)[0]
+	prefix := family + "/"
+	for _, note := range notes {
+		if !hasFamilyMembership(note.Tags, family) {
+			continue
+		}
+		whitelistedSubTags := gatherWhitelistedSubTags(d, note, prefix, family)
+		if len(whitelistedSubTags) == 0 {
+			continue
+		}
+		canonicalBucket := ParseMetaFromSubTag(d, note.Content).Bucket
+		if canonicalBucket == "" {
+			canonicalBucket = d.UnknownBucket
+		}
+		bucket, conflict := decideOverride(canonicalBucket, whitelistedSubTags)
+		if conflict {
+			d.Logf("WARN: ambiguous tag intent on note %s: %v — keeping canonical=%s",
+				note.ID, nonCanonicalSubTags(canonicalBucket, whitelistedSubTags), canonicalBucket)
+			conflictCount++
+			continue
+		}
+		if bucket == "" {
+			continue
+		}
+		if overrides == nil {
+			overrides = make(map[string]string)
+		}
+		overrides[note.ID] = bucket
+	}
+	return overrides, conflictCount
+}
+
+// hasFamilyMembership reports whether `tags` carries the daemon-managed
+// family's bare parent tag (`<family>`). The `#` prefix is optional so
+// callers that hand in trimmed tag arrays still match, mirroring the
+// lenient `strings.TrimPrefix(tag, "#")` shape used by
+// gatherWhitelistedSubTags. A note with only the leaf sub-tag and no
+// parent (`#work/tasks` without `#work`) is treated as foreign — the
+// existing MissingDomainTag_Skipped contract.
+func hasFamilyMembership(tags []string, family string) bool {
+	for _, tag := range tags {
+		if strings.TrimPrefix(tag, "#") == family {
+			return true
+		}
+	}
+	return false
+}
+
+// gatherWhitelistedSubTags returns the ordered list of sub-tag segments from
+// `note.Tags` that (a) carry the `<family>/` prefix, (b) are a single
+// segment (depth=2 invariant — Bear tag-tree never goes deeper), and (c)
+// appear in `d.Buckets ∪ {d.UnknownBucket}`. Order follows tags iteration so
+// callers see a deterministic sequence in tests and log lines.
+//
+// Whitelist match is byte-exact (case-sensitive) by design: Bear's sidebar
+// tag tree treats `#work/Tasks` and `#work/tasks` as two distinct nodes,
+// so the daemon mirrors that exact-match semantics. If an operator's TOML
+// whitelist (`Buckets = ["tasks"]`) disagrees with the Bear-typed chip
+// case (`#work/Tasks`), the chip is rejected and a WARN line surfaces the
+// case mismatch — same as any other non-whitelist sub-tag.
+//
+// Logs a WARN line for every `#<family>/<sub>` whose `<sub>` is rejected by
+// the whitelist gate — the operator's drag silently disappearing was the
+// failure mode that motivated this signal. Per-occurrence (no per-cycle
+// dedup): a single Bear tag rarely fires twice in one note.
+func gatherWhitelistedSubTags(d *Domain, note Note, prefix, family string) []string {
+	var out []string
+	for _, tag := range note.Tags {
+		bare := strings.TrimPrefix(tag, "#")
+		sub, ok := strings.CutPrefix(bare, prefix)
+		if !ok || sub == "" || strings.Contains(sub, "/") {
+			continue
+		}
+		if sub != d.UnknownBucket && !slices.Contains(d.Buckets, sub) {
+			d.Logf("WARN: non-whitelist sub-tag #%s/%s on note %s ignored (extend Buckets to enable)",
+				family, sub, note.ID)
+			continue
+		}
+		out = append(out, sub)
+	}
+	return out
+}
+
+// decideOverride collapses the whitelist set against the canonical bucket
+// into the final routing decision:
+//
+//   - All entries match canonical → ("", false): already canonical, no work.
+//   - Exactly one distinct non-canonical entry → (bucket, false): override
+//     fires (duplicates of the same sub-tag count as one — a self-collision
+//     like ["tasks", "tasks"] is not a conflict).
+//   - Two or more distinct non-canonical entries → ("", true): conflict,
+//     caller logs and skips.
+//
+// Splitting this out keeps computeTagOverrides' cognitive complexity below
+// the ≤15 threshold without losing the algorithm's readable shape. Shares
+// the dedupNonCanonical pass with nonCanonicalSubTags so a single source
+// of truth governs which sub-tags are considered "competing claims."
+func decideOverride(canonicalBucket string, whitelistedSubTags []string) (bucket string, conflict bool) {
+	distinct := dedupNonCanonical(canonicalBucket, whitelistedSubTags)
+	switch len(distinct) {
+	case 0:
+		return "", false
+	case 1:
+		return distinct[0], false
+	default:
+		return "", true
+	}
+}
+
+// nonCanonicalSubTags returns the distinct subset of `whitelistedSubTags`
+// that disagrees with `canonicalBucket`, preserving first-occurrence order.
+// Wrapper over dedupNonCanonical for naming-at-the-call-site clarity —
+// the conflict log line reads naturally as `nonCanonicalSubTags(...)`
+// while the shared helper carries the actual algorithm.
+func nonCanonicalSubTags(canonicalBucket string, whitelistedSubTags []string) []string {
+	return dedupNonCanonical(canonicalBucket, whitelistedSubTags)
+}
+
+// dedupNonCanonical filters whitelistedSubTags to the distinct entries
+// that disagree with canonicalBucket, preserving first-occurrence order.
+// Shared backbone for decideOverride (which only needs the count and the
+// first entry) and nonCanonicalSubTags (which formats the WARN line).
+func dedupNonCanonical(canonicalBucket string, whitelistedSubTags []string) []string {
+	seen := make(map[string]struct{}, len(whitelistedSubTags))
+	out := make([]string, 0, len(whitelistedSubTags))
+	for _, sub := range whitelistedSubTags {
+		if sub == canonicalBucket {
+			continue
+		}
+		if _, dup := seen[sub]; dup {
+			continue
+		}
+		seen[sub] = struct{}{}
+		out = append(out, sub)
+	}
+	return out
+}
+
+// ComputeTagOverridesForTest exposes computeTagOverrides for external tests
+// in tests/bear/. Test seam — production callers MUST use RunRegen. Same
+// precedent as ProcessAtomicForTest in bear/domain/upserts.go.
+//
+// Returns (overrides, conflictCount) so the conflict-count branch is
+// observable from tests.
+func (d *Domain) ComputeTagOverridesForTest(notes []Note) (map[string]string, int) {
+	return d.computeTagOverrides(notes)
 }
 
 // collectExtraTags pulls non-canonical tags from a header line — anything

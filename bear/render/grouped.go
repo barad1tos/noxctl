@@ -88,6 +88,7 @@ func NewGroupedVerticalDomain(tag, indexTitle, unknownBucket string, buckets []s
 		CanonicalTag:     "#" + tag,
 		IndexTitle:       indexTitle,
 		UnknownBucket:    unknownBucket,
+		Buckets:          columns,
 		HubH2Prefix:      "",
 		ParseMeta:        domain.ParseMetaFromSubTag,
 		BacklinkFor:      MasterBacklink,

@@ -13,7 +13,7 @@ import (
 )
 
 // RunRegen reconciles one Domain's Bear corpus end-to-end: list its
-// notes, compute master + hub overrides, run the atomics pass to
+// notes, compute master, hub, and tag overrides, run the atomics pass to
 // stamp canonical lines, render and upsert each hub, then render and
 // upsert the master index. Logs per-domain progress and aggregate
 // counts; per-note failures are logged and surfaced via the final
@@ -25,28 +25,33 @@ func (d *Domain) RunRegen(ctx context.Context) {
 		d.Logf("list failed: %v", err)
 		return
 	}
+	// Priority merge: master > hub > tag. Each layer's overrides skip atoms
+	// already claimed by a higher-priority layer — deliberate gestures (master
+	// cut/paste, hub bullet move) beat the single quick sidebar drag.
+	// mergeOverrideLayer is the single source of truth — snapshot.go routes
+	// through the same helper so the post-merge override map stays
+	// byte-equivalent between plan and apply. Log lines are regen-only
+	// (snapshot is silent for engine.Plan).
 	overrides := d.computeMasterOverrides(notes)
 	if len(overrides) > 0 {
-		d.Logf("master regroup: %d atomic(s) moved between columns", len(overrides))
+		d.Logf("master layer claimed %d additional atomic(s)", len(overrides))
 	}
-	// Hub-side overrides: a bullet inside a Tier-2 hub claims its atomic for
-	// that hub's bucket. Master overrides win on collision because the master
-	// is the more deliberate gesture (table cut/paste vs. dragging a bullet
-	// into a sibling hub).
-	hubOverrides := d.computeHubOverrides(notes)
-	added := 0
-	for atomID, bucket := range hubOverrides {
-		if _, alreadySet := overrides[atomID]; alreadySet {
-			continue
-		}
-		if overrides == nil {
-			overrides = make(map[string]string)
-		}
-		overrides[atomID] = bucket
-		added++
+	beforeHub := len(overrides)
+	overrides = mergeOverrideLayer(overrides, d.computeHubOverrides(notes), nil)
+	if hubAdded := len(overrides) - beforeHub; hubAdded > 0 {
+		d.Logf("hub layer claimed %d additional atomic(s)", hubAdded)
 	}
-	if added > 0 {
-		d.Logf("hub regroup: %d atomic(s) moved between hubs", added)
+	beforeTag := len(overrides)
+	tagOverrides, tagConflicts := d.computeTagOverrides(notes)
+	overrides = mergeOverrideLayer(overrides, tagOverrides, func(atomID, kept, suppressed string) {
+		d.Logf("WARN: tag override suppressed by higher layer: note %s wanted %s, kept %s",
+			atomID, suppressed, kept)
+	})
+	if tagAdded := len(overrides) - beforeTag; tagAdded > 0 {
+		d.Logf("tag layer claimed %d additional atomic(s)", tagAdded)
+	}
+	if tagConflicts > 0 {
+		d.Logf("tag conflicts: %d (no override applied)", tagConflicts)
 	}
 	groups := d.groupAtomics(notes, overrides)
 	var atomicsTouched, atomicsFailed int
