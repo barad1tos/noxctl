@@ -19,6 +19,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -265,5 +266,60 @@ func TestBearcliMetrics_CallsByKind(t *testing.T) {
 	assertKindCount(t, "find", 0)
 	if got := domain.BearcliMetricsSnapshot().Capacity; got != 5 {
 		t.Errorf("after ResetBearcliMetrics: Capacity = %d, want 5 (untouched)", got)
+	}
+}
+
+// alwaysOKBackend is a minimal bearcli.Backend that returns an empty
+// JSON array for every Run call. Used by kind-classification tests that
+// only care about the metrics side effect (kindFromArgs + incCallKind),
+// not about the bearcli output payload.
+type alwaysOKBackend struct{}
+
+func (alwaysOKBackend) Run(_ context.Context, _ []string, _ string) ([]byte, error) {
+	return []byte("[]"), nil
+}
+
+// TestBearcliMetrics_KindClassification proves that kindFromArgs maps
+// every supported bearcli sub-command to its dedicated CallsByKind
+// bucket and that incCallKind increments the matching counter. Covers
+// the eight first-class verbs (list/cat/show/overwrite/create/find/
+// trash) plus the two-level `tags` family (`tags` bare vs `tags add`)
+// and the defensive `other` fallback for empty/unknown args.
+//
+// The trash + tags + tags-add classifications were added in Phase 13
+// alongside bear/bearcli/tag.go::AddTag — prior to this they collapsed
+// into the `other` bucket and silently inflated the unknown-kind
+// metric. This test pins their first-class status so a future refactor
+// cannot regress them back into `other`.
+func TestBearcliMetrics_KindClassification(t *testing.T) {
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	domain.ResetBearcliPoolForTest(4)
+
+	ctx := domain.ContextWithBackend(context.Background(), alwaysOKBackend{})
+
+	cases := []struct {
+		name string
+		args []string
+		kind string
+	}{
+		{"list", []string{"list", "--tag", "x"}, "list"},
+		{"cat", []string{"cat", "id"}, "cat"},
+		{"show", []string{"show", "id"}, "show"},
+		{"overwrite", []string{"overwrite", "id"}, "overwrite"},
+		{"create", []string{"create"}, "create"},
+		{"find", []string{"find", "--tag", "x"}, "find"},
+		{"trash", []string{"trash", "id"}, "trash"},
+		{"tags-bare", []string{"tags", "list"}, "tags"},
+		{"tags-add", []string{"tags", "add", "id", "x"}, "tags-add"},
+		{"unknown-verb", []string{"unknown-verb"}, "other"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			domain.ResetBearcliMetrics()
+			if _, err := bearcli.Run(ctx, tc.args, ""); err != nil {
+				t.Fatalf("bearcli.Run(%v) failed: %v", tc.args, err)
+			}
+			assertKindCount(t, tc.kind, 1)
+		})
 	}
 }

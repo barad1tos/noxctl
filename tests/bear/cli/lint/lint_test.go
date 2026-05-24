@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/audit"
 	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/render"
@@ -600,5 +601,164 @@ func TestRun_AuditMode_OrphanFamilyLabelInOutput(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "orphan-family:") {
 		t.Errorf("audit output missing 'orphan-family:' category header; got %q", out)
+	}
+}
+
+// multiOrphanListPayload builds a bearcli `list` payload carrying N
+// stray-family atoms — one per orphan finding. Each atom owns the
+// canonical `#test/notes` tag (so the per-domain Scan still picks it
+// up) plus a UNIQUE `#strayfam<i>/sub` tag (so the corpus orphan scan
+// emits one finding per atom). Lets the apply-error tests drive
+// ApplyOrphanFamilies with a controllable finding count.
+func multiOrphanListPayload(t *testing.T, count int) []byte {
+	t.Helper()
+	notes := make([]map[string]any, count)
+	for i := range count {
+		notes[i] = map[string]any{
+			"id":      "note-stray-" + string(rune('a'+i)),
+			"title":   "Stray Note " + string(rune('A'+i)),
+			"content": "",
+			"tags":    []string{"#test/notes", "#strayfam" + string(rune('a'+i)) + "/sub"},
+			"created": "2026-05-23T12:00:00Z",
+		}
+	}
+	raw, err := json.Marshal(notes)
+	if err != nil {
+		t.Fatalf("marshal multi-orphan payload: %v", err)
+	}
+	return raw
+}
+
+// tagAddFailFakeBearcli wraps fakeBearcli and returns an error on every
+// `tags add` call. Per-domain list and corpus `list --location notes`
+// pass through to the embedded fake so the orphan scan succeeds and
+// produces findings; the apply step then hits the failing tags-add
+// path. failTagAddCount counts how many tags-add calls were attempted.
+type tagAddFailFakeBearcli struct {
+	*fakeBearcli
+	tagAddErr error
+}
+
+func (f *tagAddFailFakeBearcli) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	if len(args) >= 2 && args[0] == "tags" && args[1] == "add" {
+		// Still record the call so countKind("tags") works.
+		_, _ = f.fakeBearcli.Run(ctx, args, stdin)
+		return nil, f.tagAddErr
+	}
+	return f.fakeBearcli.Run(ctx, args, stdin)
+}
+
+// partialTagAddFailFakeBearcli wraps fakeBearcli and fails only the
+// FIRST `tags add` call, succeeding on every subsequent one. Used to
+// drive the mixed-result branch in runApplyOrphanPass — ApplyOrphan
+// Families returns (tagged > 0, failed > 0, nil) and runApplyOrphan
+// Pass surfaces the failure as ErrLintFailed without aborting the
+// batch early.
+type partialTagAddFailFakeBearcli struct {
+	*fakeBearcli
+	firstCallDone atomic.Bool
+}
+
+func (f *partialTagAddFailFakeBearcli) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	if len(args) >= 2 && args[0] == "tags" && args[1] == "add" {
+		_, _ = f.fakeBearcli.Run(ctx, args, stdin)
+		if f.firstCallDone.CompareAndSwap(false, true) {
+			return nil, errors.New("bearcli tags add: simulated transient on first call")
+		}
+		return []byte(`{"ok":true}`), nil
+	}
+	return f.fakeBearcli.Run(ctx, args, stdin)
+}
+
+// assertWrappedErr fails the test when err is nil, does not wrap
+// wantSentinel via errors.Is, or does not contain wantSubstr. Used by
+// the apply-mode error-path tests to keep each sub-case under the
+// gocognit budget — every assertion shape ("non-nil + wraps X + says
+// Y") collapses to one helper call.
+func assertWrappedErr(t *testing.T, label string, err error, wantSentinel error, wantSubstr string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("%s: err = nil, want wrapped %v", label, wantSentinel)
+	}
+	if !errors.Is(err, wantSentinel) {
+		t.Errorf("%s: err = %v, want errors.Is(err, %v)", label, err, wantSentinel)
+	}
+	if !strings.Contains(err.Error(), wantSubstr) {
+		t.Errorf("%s: err = %v, want message containing %q", label, err, wantSubstr)
+	}
+}
+
+// orphanErrCaseBackend builds the BearcliBackend for each apply-mode
+// error-path sub-case. Returns the backend AND the context to drive
+// RunLint with (the ctx-cancel case must hand back a pre-canceled
+// context; the other cases run on a fresh ctx).
+type orphanErrCaseBackend func(t *testing.T) (context.Context, domain.BearcliBackend)
+
+// orphanErrCase pins one production error return from runApplyOrphan
+// Pass to a (sentinel, substring) tuple.
+type orphanErrCase struct {
+	name       string
+	build      orphanErrCaseBackend
+	wantSent   error
+	wantSubstr string
+}
+
+// orphanErrCases enumerates the three error paths inside runApplyOrphan
+// Pass: ctx-cancel at entry (line 91-93), ApplyOrphanFamilies wrapped
+// error (line 103-105), and ErrLintFailed for failed > 0 (line 106-
+// 108). Earlier integration tests covered only the happy path and the
+// scan-failure branch; this set fills the apply-side gaps.
+var orphanErrCases = []orphanErrCase{
+	{
+		name: "CtxCanceledAtApplyEntry",
+		build: func(t *testing.T) (context.Context, domain.BearcliBackend) {
+			fake := newFakeBearcli(brokenH1ListPayload(t))
+			ctx, cancel := context.WithCancel(domain.ContextWithBackend(t.Context(), fake))
+			cancel()
+			return ctx, fake
+		},
+		wantSent:   context.Canceled,
+		wantSubstr: "orphan pass",
+	},
+	{
+		name: "ApplyAllFailed_AbortsWithSentinel",
+		build: func(t *testing.T) (context.Context, domain.BearcliBackend) {
+			fake := &tagAddFailFakeBearcli{
+				fakeBearcli: newFakeBearcli(multiOrphanListPayload(t, 3)),
+				tagAddErr:   errors.New("bearcli tags add: simulated total failure"),
+			}
+			return domain.ContextWithBackend(t.Context(), fake), fake
+		},
+		wantSent:   audit.ErrApplyAllFailed,
+		wantSubstr: "orphan tag-add",
+	},
+	{
+		name: "PartialApplyFailure_ReturnsErrLintFailed",
+		build: func(t *testing.T) (context.Context, domain.BearcliBackend) {
+			fake := &partialTagAddFailFakeBearcli{
+				fakeBearcli: newFakeBearcli(multiOrphanListPayload(t, 2)),
+			}
+			return domain.ContextWithBackend(t.Context(), fake), fake
+		},
+		wantSent:   cli.ErrLintFailed,
+		wantSubstr: "orphan tag-add failed for 1",
+	},
+}
+
+// TestRun_ApplyMode_OrphanPass_ErrorPaths covers the three error
+// returns from runApplyOrphanPass that earlier integration tests do
+// not exercise. Each sub-case pins one of the production error paths
+// so a future refactor cannot silently swap an early return for a
+// log-and-continue.
+func TestRun_ApplyMode_OrphanPass_ErrorPaths(t *testing.T) {
+	for _, tc := range orphanErrCases {
+		t.Run(tc.name, func(t *testing.T) {
+			armBearcliPool(t)
+			ctx, _ := tc.build(t)
+
+			var buf bytes.Buffer
+			err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+			assertWrappedErr(t, tc.name, err, tc.wantSent, tc.wantSubstr)
+		})
 	}
 }
