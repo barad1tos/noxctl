@@ -106,12 +106,15 @@ func runShapeOnly(t *testing.T, tc tagOverrideCase) {
 	if tc.mutateDomain != nil {
 		tc.mutateDomain(d)
 	}
-	got, _ := d.ComputeTagOverridesForTest(noteFrom(tc))
+	got, conflicts := d.ComputeTagOverridesForTest(noteFrom(tc))
 	if tc.wantNilMap {
 		if got != nil {
 			t.Errorf("expected nil map, got %v", got)
 		}
 		return
+	}
+	if conflicts != 0 {
+		t.Errorf("shape-only case must not trigger conflicts, got count=%d", conflicts)
 	}
 	if len(got) != len(tc.wantOverrides) {
 		t.Errorf("override count mismatch: got %d (%v), want %d (%v)",
@@ -152,6 +155,9 @@ func TestComputeTagOverrides(t *testing.T) {
 		}
 		assertWarningLog(t, buf.String())
 	})
+
+	t.Run("NonWhitelistedSubTag_LogsFilterReason", runNonWhitelistedSubTagCase)
+	t.Run("MultipleAtomsConflict_CountsTwo", runMultipleAtomsConflictCase)
 
 	shapeCases := []tagOverrideCase{
 		{
@@ -259,6 +265,58 @@ func TestComputeTagOverrides(t *testing.T) {
 	}
 	for _, tc := range shapeCases {
 		t.Run(tc.name, func(t *testing.T) { runShapeOnly(t, tc) })
+	}
+}
+
+// runNonWhitelistedSubTagCase verifies the non-whitelist filter emits
+// its operator-facing log line without bumping the conflict counter.
+// Extracted from TestComputeTagOverrides so the parent function stays
+// under gocognit ≤15.
+//
+//cyrillic:permit
+func runNonWhitelistedSubTagCase(t *testing.T) {
+	buf := captureTagOverrideLog(t)
+	d := buildWorkDomain()
+	notes := []domain.Note{{
+		ID:      "note-nonwhitelist",
+		Title:   "Drag with unknown sub-tag",
+		Tags:    []string{"#work", "#work/randomstuff"},
+		Content: canonicalBody("інше"),
+	}}
+	got, conflicts := d.ComputeTagOverridesForTest(notes)
+	if len(got) != 0 {
+		t.Errorf("non-whitelist sub-tag must NOT produce override, got %v", got)
+	}
+	if conflicts != 0 {
+		t.Errorf("non-whitelist filter must not bump conflict counter, got %d", conflicts)
+	}
+	if !strings.Contains(buf.String(), "non-whitelist sub-tag") {
+		t.Errorf("missing non-whitelist filter log line, got: %q", buf.String())
+	}
+}
+
+// runMultipleAtomsConflictCase asserts that two ambiguous atoms each
+// increment the conflict counter to a total of 2 (per-atom counting,
+// not per-pair). Extracted from TestComputeTagOverrides for gocognit.
+//
+//cyrillic:permit
+func runMultipleAtomsConflictCase(t *testing.T) {
+	buf := captureTagOverrideLog(t)
+	d := buildWorkDomain()
+	ambiguous := []string{"#work", "#work/tasks", "#work/development"}
+	notes := []domain.Note{
+		{ID: "atom-A", Title: "Ambiguous A", Tags: ambiguous, Content: canonicalBody("інше")},
+		{ID: "atom-B", Title: "Ambiguous B", Tags: ambiguous, Content: canonicalBody("інше")},
+	}
+	got, conflicts := d.ComputeTagOverridesForTest(notes)
+	if len(got) != 0 {
+		t.Errorf("both ambiguous atoms should skip override, got %v", got)
+	}
+	if conflicts != 2 {
+		t.Errorf("conflict count = %d, want 2 (one per ambiguous atom)", conflicts)
+	}
+	if !strings.Contains(buf.String(), "ambiguous tag intent") {
+		t.Errorf("missing ambiguous-intent warning, got log: %q", buf.String())
 	}
 }
 

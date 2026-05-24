@@ -33,8 +33,10 @@
 package engine_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"reflect"
 	"slices"
 	"strings"
@@ -45,6 +47,26 @@ import (
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/render"
 )
+
+// captureDomainLog redirects the package-level log writer to a buffer
+// so tests can assert on `d.Logf(...)` content. Restores the original
+// writer via t.Cleanup. Returns the buffer for substring assertions.
+func captureDomainLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	orig := log.Writer()
+	flags := log.Flags()
+	prefix := log.Prefix()
+	buf := &bytes.Buffer{}
+	log.SetOutput(buf)
+	log.SetFlags(0)
+	log.SetPrefix("")
+	t.Cleanup(func() {
+		log.SetOutput(orig)
+		log.SetFlags(flags)
+		log.SetPrefix(prefix)
+	})
+	return buf
+}
 
 // workDomainBuckets mirrors the priority bucket order Roman's `#work`
 // catalog entry exposes (examples/personal.toml). The whitelist MUST
@@ -336,24 +358,50 @@ func noteIDs(notes []domain.Note) []string {
 //
 //cyrillic:permit
 func TestTagOverrideIntegration_DragToTag_ReBuckets(t *testing.T) {
+	runWorkSnapshotCase(t, stageDragScenario, assertDragRebucketsToTasks)
+}
+
+// assertDragRebucketsToTasks verifies the tag drag re-bucketed the
+// atom into "tasks" and emptied it out of "інше". Named function
+// instead of inline closure to break dupl-linter symmetry with
+// TestTagOverrideIntegration_MasterWinsOverTag's assertion lambda.
+//
+//cyrillic:permit
+func assertDragRebucketsToTasks(t *testing.T, inputs domain.RenderInputs) {
+	t.Helper()
+	if got := noteIDs(inputs.Groups["tasks"]); !slices.Equal(got, []string{atomNoteID}) {
+		t.Errorf("Groups[\"tasks\"] = %v, want [%s] (tag override should re-bucket the atom)",
+			got, atomNoteID)
+	}
+	if got := noteIDs(inputs.Groups["інше"]); slices.Contains(got, atomNoteID) {
+		t.Errorf("Groups[\"інше\"] still contains %s; override failed to move it out", atomNoteID)
+	}
+}
+
+// runWorkSnapshotCase wraps the shared synctest harness: pool reset,
+// fake backend, scenario staging, SnapshotDomainRenderInputs call,
+// then user-supplied per-case assertions. Extracted so the
+// drag-rebuckets and master-wins-over-tag tests stop tripping the
+// dupl linter on their identical skeleton (synctest+stage+snapshot).
+//
+//cyrillic:permit
+func runWorkSnapshotCase(
+	t *testing.T,
+	stage func(t *testing.T, fake *fakeWorkBackend),
+	assertFn func(t *testing.T, inputs domain.RenderInputs),
+) {
+	t.Helper()
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeWorkBackend()
-		stageDragScenario(t, fake)
+		stage(t, fake)
 		ctx := domain.ContextWithBackend(context.Background(), fake)
 		d := buildWorkDomainForIntegration()
-
 		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
 		if err != nil {
 			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
 		}
-		if got := noteIDs(inputs.Groups["tasks"]); !slices.Equal(got, []string{atomNoteID}) {
-			t.Errorf("Groups[\"tasks\"] = %v, want [%s] (tag override should re-bucket the atom)",
-				got, atomNoteID)
-		}
-		if got := noteIDs(inputs.Groups["інше"]); slices.Contains(got, atomNoteID) {
-			t.Errorf("Groups[\"інше\"] still contains %s; override failed to move it out", atomNoteID)
-		}
+		assertFn(t, inputs)
 	})
 }
 
@@ -397,47 +445,12 @@ func TestTagOverrideIntegration_DragToTag_Idempotent(t *testing.T) {
 //
 //cyrillic:permit
 func TestTagOverrideIntegration_MasterWinsOverTag(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		resetPoolForApply(t)
-		fake := newFakeWorkBackend()
-		// Atom carries canonical bucket "інше" plus a #work/tasks drag
-		// (tag override candidate → tasks). Master lists the atom under
-		// "## development" (master override candidate → development).
-		// Priority master > tag must land the atom in development.
-		masterContent := "# ✱ Робота\n#work\n---\n## development (1)\n- [[Нова нотатка]]\n"
-		fake.StageList(t, []map[string]any{
-			{
-				"id":      atomNoteID,
-				"title":   "Нова нотатка",
-				"tags":    []string{"#work", "#work/tasks"},
-				"content": canonicalAtomBody(),
-			},
-			{
-				"id":      masterNoteID,
-				"title":   "✱ Робота",
-				"tags":    []string{"#work"},
-				"content": masterContent,
-			},
-		})
-		fake.StageNote(t, masterNoteID, map[string]any{
-			"id":      masterNoteID,
-			"title":   "✱ Робота",
-			"content": masterContent,
-			"tags":    []string{"#work"},
-		})
-		fake.StageNote(t, atomNoteID, map[string]any{
-			"id":      atomNoteID,
-			"title":   "Нова нотатка",
-			"content": canonicalAtomBody(),
-			"tags":    []string{"#work", "#work/tasks"},
-		})
-		ctx := domain.ContextWithBackend(context.Background(), fake)
-		d := buildWorkDomainForIntegration()
-
-		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
-		if err != nil {
-			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
-		}
+	// Atom carries canonical "інше" + tag drag → tasks; master parks it
+	// under "## development". Priority master > tag must land the atom in
+	// "development" (shared setup lives in stageMasterTagConflict — the
+	// WARN-log twin OnSkipLogsSuppression exercises the same scenario
+	// through RunRegen rather than the snapshot path).
+	runWorkSnapshotCase(t, stageMasterTagConflict, func(t *testing.T, inputs domain.RenderInputs) {
 		if got := noteIDs(inputs.Groups["development"]); !slices.Equal(got, []string{atomNoteID}) {
 			t.Errorf("Groups[\"development\"] = %v, want [%s] (master must outrank tag)",
 				got, atomNoteID)
@@ -771,6 +784,128 @@ func TestTagOverrideIntegration_MembershipGuardCatchesSurvivor(t *testing.T) {
 		if got := noteIDs(inputs.Groups["tasks"]); slices.Contains(got, atomNoteID) {
 			t.Errorf("Groups[\"tasks\"] contains %s — in-function hasFamilyMembership guard failed; "+
 				"tag override fired on an atom without #work parent", atomNoteID)
+		}
+	})
+}
+
+// stageMasterTagConflict primes the fake backend with the canonical
+// master-vs-tag conflict scenario: one atom carries a `#work/tasks`
+// drag (tag override candidate → "tasks") while the master parks the
+// same atom under "## development" (master override candidate →
+// "development"). Shared by master-priority and onSkip-log tests to
+// keep dupl quiet — both want identical setup, differ only in which
+// signal they assert.
+func stageMasterTagConflict(t *testing.T, fake *fakeWorkBackend) {
+	t.Helper()
+	const masterContent = "# ✱ Робота\n#work\n---\n## development (1)\n- [[Нова нотатка]]\n"
+	fake.StageList(t, []map[string]any{
+		{
+			"id":      atomNoteID,
+			"title":   "Нова нотатка",
+			"tags":    []string{"#work", "#work/tasks"},
+			"content": canonicalAtomBody(),
+		},
+		{
+			"id":      masterNoteID,
+			"title":   "✱ Робота",
+			"tags":    []string{"#work"},
+			"content": masterContent,
+		},
+	})
+	fake.StageNote(t, atomNoteID, map[string]any{
+		"id":      atomNoteID,
+		"title":   "Нова нотатка",
+		"content": canonicalAtomBody(),
+		"tags":    []string{"#work", "#work/tasks"},
+	})
+	fake.StageNote(t, masterNoteID, map[string]any{
+		"id":      masterNoteID,
+		"title":   "✱ Робота",
+		"content": masterContent,
+		"tags":    []string{"#work"},
+	})
+}
+
+// TestTagOverrideIntegration_OnSkipLogsSuppression — exercises the
+// onSkip callback path during RunRegen. When master claims a bucket
+// and a tag drag wants a different one, the suppression is silent on
+// the snapshot/plan path but MUST emit a WARN line on the regen/apply
+// path so the operator sees their gesture was overridden.
+//
+//cyrillic:permit
+func TestTagOverrideIntegration_OnSkipLogsSuppression(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		resetPoolForApply(t)
+		buf := captureDomainLog(t)
+		fake := newFakeWorkBackend()
+		stageMasterTagConflict(t, fake)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
+		d := buildWorkDomainForIntegration()
+
+		d.RunRegen(ctx)
+
+		if !strings.Contains(buf.String(), "tag override suppressed by higher layer") {
+			t.Errorf("missing suppression WARN line on regen path; got log: %q", buf.String())
+		}
+	})
+}
+
+// TestTagOverrideIntegration_ConflictRollupLogged — exercises the
+// `tag conflicts: N (no override applied)` rollup line on the regen
+// path. Two atoms each carry ambiguous sub-tags so the conflict
+// counter increments to 2; the summary line MUST surface that count.
+//
+//cyrillic:permit
+func TestTagOverrideIntegration_ConflictRollupLogged(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		resetPoolForApply(t)
+		buf := captureDomainLog(t)
+		fake := newFakeWorkBackend()
+		const atomA = "atom-conflict-A"
+		const atomB = "atom-conflict-B"
+		ambiguousTags := []string{"#work", "#work/tasks", "#work/development"}
+		fake.StageList(t, []map[string]any{
+			{
+				"id":      atomA,
+				"title":   "Ambiguous A",
+				"tags":    ambiguousTags,
+				"content": canonicalAtomBody(),
+			},
+			{
+				"id":      atomB,
+				"title":   "Ambiguous B",
+				"tags":    ambiguousTags,
+				"content": canonicalAtomBody(),
+			},
+			{
+				"id":      masterNoteID,
+				"title":   "✱ Робота",
+				"tags":    []string{"#work"},
+				"content": "# ✱ Робота\n#work\n---\n",
+			},
+		})
+		for _, id := range []string{atomA, atomB} {
+			fake.StageNote(t, id, map[string]any{
+				"id":      id,
+				"title":   "Ambiguous",
+				"content": canonicalAtomBody(),
+				"tags":    ambiguousTags,
+			})
+		}
+		fake.StageNote(t, masterNoteID, map[string]any{
+			"id":      masterNoteID,
+			"title":   "✱ Робота",
+			"content": "# ✱ Робота\n#work\n---\n",
+			"tags":    []string{"#work"},
+		})
+		ctx := domain.ContextWithBackend(context.Background(), fake)
+		d := buildWorkDomainForIntegration()
+
+		d.RunRegen(ctx)
+
+		if !strings.Contains(buf.String(), "tag conflicts: 2") {
+			t.Errorf("missing conflict-count rollup; want substring \"tag conflicts: 2\", got log: %q",
+				buf.String())
 		}
 	})
 }

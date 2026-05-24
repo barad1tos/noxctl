@@ -90,8 +90,11 @@ func SnapshotDomainRenderInputs(ctx context.Context, d *Domain) (RenderInputs, e
 	// plan-diff renderer instead.
 	overrides := d.computeMasterOverrides(notes)
 	overrides = mergeOverrideLayer(overrides, d.computeHubOverrides(notes), nil)
-	tagOverrides, _ := d.computeTagOverrides(notes)
+	tagOverrides, tagConflicts := d.computeTagOverrides(notes)
 	overrides = mergeOverrideLayer(overrides, tagOverrides, nil)
+	if tagConflicts > 0 {
+		d.Logf("tag conflicts: %d (no override applied)", tagConflicts)
+	}
 	groups := d.groupAtomics(notes, overrides)
 	if groups == nil {
 		groups = map[string][]Note{}

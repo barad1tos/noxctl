@@ -66,13 +66,38 @@ func TestFactoryPopulatesBuckets(t *testing.T) {
 	// `append([]string(nil), buckets...)` copy at the top of each factory
 	// the field would alias the caller's slice and downstream writes would
 	// silently shift the whitelist.
-	t.Run("grouped_vertical_defensive_copy", func(t *testing.T) {
-		src := []string{"tasks", "development"}
-		d := render.NewGroupedVerticalDomain("work", "✱ Робота", "інше", src)
-		src[0] = "MUTATED"
-		if d.Buckets[0] != "tasks" {
-			t.Errorf("Buckets[0] = %q after caller mutated source; want %q (factory must defensive-copy)",
-				d.Buckets[0], "tasks")
-		}
-	})
+	defensiveCases := []defensiveCopyCase{
+		{"grouped_vertical_defensive_copy", []string{"tasks", "development"}, "tasks", buildGroupedDomain},
+		{"hub_routed_with_subtag_defensive_copy", []string{"sessions", "memory"}, "sessions", buildHubRoutedDomain},
+	}
+	for _, dc := range defensiveCases {
+		t.Run(dc.name, func(t *testing.T) {
+			d := dc.make(dc.src)
+			dc.src[0] = "MUTATED"
+			if d.Buckets[0] != dc.expected {
+				t.Errorf("Buckets[0] = %q after caller mutated source; want %q (factory must defensive-copy)",
+					d.Buckets[0], dc.expected)
+			}
+		})
+	}
+}
+
+// defensiveCopyCase pairs a factory-builder fn with the source slice
+// the test will mutate post-construction. Named functions (rather than
+// inline closures) keep per-row token count under the dupl threshold.
+type defensiveCopyCase struct {
+	name     string
+	src      []string
+	expected string
+	make     func(buckets []string) *domain.Domain
+}
+
+//cyrillic:permit
+func buildGroupedDomain(buckets []string) *domain.Domain {
+	return render.NewGroupedVerticalDomain("work", "✱ Робота", "інше", buckets)
+}
+
+//cyrillic:permit
+func buildHubRoutedDomain(buckets []string) *domain.Domain {
+	return render.NewHubRoutedSubTagDomain("claude", "✱ Claude", "general", buckets)
 }
