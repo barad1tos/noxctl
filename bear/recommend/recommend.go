@@ -7,6 +7,7 @@ package recommend
 // Confidence grades how cleanly the deciding metric cleared its threshold.
 type Confidence int
 
+// Confidence grade constants ordered from weakest to strongest signal.
 const (
 	Low Confidence = iota
 	Medium
@@ -91,7 +92,49 @@ func flatConfidence(m Metrics) Confidence {
 	return Medium
 }
 
-func recommendTopLevel(_ Metrics) Recommendation {
-	return Recommendation{Blueprint: "grouped-vertical"}
+// recommendTopLevel handles a bucketed top-level tag: sub-tags are legal, so the
+// fork is grouped-vertical (atoms inline) vs hub-routed-with-subtag (Tier-2 hub
+// per bucket). The single threshold hubMinPerBucket breaks this intent tie.
+func recommendTopLevel(m Metrics) Recommendation {
+	if m.AtomsPerBucket >= hubMinPerBucket {
+		return Recommendation{
+			Blueprint: "hub-routed-with-subtag", Confidence: forkConfidence(m), DecidingMetric: "atoms_per_bucket",
+			Alternative: "grouped-vertical",
+			Rationale:   "many atoms per sub-tag bucket — a Tier-2 hub per bucket pays off",
+		}
+	}
+	return Recommendation{
+		Blueprint: "grouped-vertical", Confidence: forkConfidence(m), DecidingMetric: "atoms_per_bucket",
+		Alternative: "hub-routed-with-subtag",
+		Rationale:   "few atoms per bucket — one master with inline sections is enough",
+	}
 }
-func recommendNested(_ Metrics) Recommendation { return Recommendation{Blueprint: "grouped-vertical"} }
+
+// recommendNested handles a bucketed 2-level tag: a sub-tag would be 3-level
+// (forbidden), so buckets live in content. Author signal / high cardinality means
+// many discovered buckets -> Tier-2 hubs (hub-routed); else inline sections.
+func recommendNested(m Metrics) Recommendation {
+	if m.BodyAuthorSignal >= authorMinSignal || m.BucketCardinality >= hubMinCardinality {
+		return Recommendation{
+			Blueprint: "hub-routed", Confidence: High, DecidingMetric: "body_author_signal",
+			Rationale: "many content-derived buckets (authors/sources) — Tier-2 hubs",
+		}
+	}
+	return Recommendation{
+		Blueprint: "grouped-vertical", Confidence: Medium, DecidingMetric: "bucket_cardinality",
+		Rationale: "a small declared bucket set — one master with inline sections",
+	}
+}
+
+// forkConfidence is Low near the hubMinPerBucket boundary (the intent tie),
+// High when the metric is well clear of it.
+func forkConfidence(m Metrics) Confidence {
+	d := m.AtomsPerBucket - hubMinPerBucket
+	if d < 0 {
+		d = -d
+	}
+	if d <= 2 {
+		return Low
+	}
+	return High
+}
