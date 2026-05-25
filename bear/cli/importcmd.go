@@ -73,7 +73,7 @@ func emit(w io.Writer, tag string, noteCount int, r recommend.Recommendation, bu
 	}
 	if strings.Count(tag, "/") == 0 && needsBuckets(r.Blueprint) {
 		_, _ = fmt.Fprintln(w, "# note: if these sub-tags are themselves managed domains, this may be")
-		_, _ = fmt.Fprintln(w, "#   an umbrella — run `noxctl recommend` for vault-wide detection.")
+		_, _ = fmt.Fprintln(w, "#   an umbrella — a future vault-wide pass detects umbrellas automatically.")
 	}
 	_, _ = fmt.Fprintln(w, "#\n# Paste the [[domain]] block below into your noxctl.toml.")
 	_, _ = fmt.Fprintln(w)
@@ -83,6 +83,8 @@ func emit(w io.Writer, tag string, noteCount int, r recommend.Recommendation, bu
 	_, _ = fmt.Fprintf(w, "  blueprint   = %q\n", r.Blueprint)
 	if needsBuckets(r.Blueprint) {
 		_, _ = fmt.Fprintf(w, "  buckets        = %s\n", tomlStringSlice(buckets))
+	}
+	if needsUnknownBucket(r.Blueprint) {
 		_, _ = fmt.Fprintln(w, `  unknown_bucket = "Other"`)
 	}
 	if needsHubH2(r.Blueprint) {
@@ -91,7 +93,15 @@ func emit(w io.Writer, tag string, noteCount int, r recommend.Recommendation, bu
 }
 
 func needsBuckets(bp string) bool { return bp == "grouped-vertical" || bp == "hub-routed-with-subtag" }
-func needsHubH2(bp string) bool   { return bp == "hub-routed" }
+
+// needsUnknownBucket reports whether the blueprint requires an unknown_bucket
+// field. hub-routed, hub-routed-with-subtag, and grouped-vertical all require
+// it per the dispatch contract; hub-routed does NOT take a buckets array.
+func needsUnknownBucket(bp string) bool {
+	return bp == "grouped-vertical" || bp == "hub-routed-with-subtag" || bp == "hub-routed"
+}
+
+func needsHubH2(bp string) bool { return bp == "hub-routed" }
 
 // suggestIndexTitle generates a master-note title from the tag.
 // Picks the last `/`-separated segment, title-cases it, and prepends

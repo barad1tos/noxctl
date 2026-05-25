@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/cli"
+	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -244,7 +245,7 @@ func TestRunImport_ReturnsError_WhenListFails(t *testing.T) {
 // TestEmitWithNotes_TopLevelBucketedHintsUmbrella: a bucketed top-level tag gets
 // a grouped-vertical recommendation plus an umbrella hint — import cannot see
 // sibling tags, so it cannot tell sub-tag buckets from child domains and points
-// the operator at `noxctl recommend` rather than guessing umbrella.
+// the operator at the future vault-wide pass rather than guessing umbrella.
 func TestEmitWithNotes_TopLevelBucketedHintsUmbrella(t *testing.T) {
 	notes := []domain.Note{
 		{ID: "1", Title: "A", Tags: []string{"#reading", "#reading/books"}},
@@ -253,7 +254,60 @@ func TestEmitWithNotes_TopLevelBucketedHintsUmbrella(t *testing.T) {
 	var buf bytes.Buffer
 	cli.EmitWithNotesForTest(&buf, "reading", notes)
 	out := buf.String()
-	if !strings.Contains(out, "umbrella") || !strings.Contains(out, "noxctl recommend") {
-		t.Errorf("top-level bucketed tag should hint umbrella + noxctl recommend; got:\n%s", out)
+	if !strings.Contains(out, "umbrella") || !strings.Contains(out, "vault-wide") {
+		t.Errorf("top-level bucketed tag should hint umbrella + vault-wide pass; got:\n%s", out)
+	}
+}
+
+// TestEmitWithNotes_DispatchContract_I4 verifies that every blueprint the
+// recommender can emit produces a stanza that config.Dispatch accepts without
+// error. This catches mismatches between emit field names/presence and the
+// dispatch contract (e.g. hub-routed missing unknown_bucket).
+func TestEmitWithNotes_DispatchContract_I4(t *testing.T) {
+	ptr := func(s string) *string { return &s }
+	buckets := []string{"A", "B"}
+	unknown := "Other"
+	h2prefix := "Items"
+
+	cases := []struct {
+		name   string
+		stanza config.Stanza
+	}{
+		{
+			name: "flat-list",
+			stanza: config.Stanza{
+				Tag: "research/papers", IndexTitle: "✱ Papers", Blueprint: "flat-list",
+			},
+		},
+		{
+			name: "grouped-vertical",
+			stanza: config.Stanza{
+				Tag: "english", IndexTitle: "✱ English", Blueprint: "grouped-vertical",
+				Buckets: &buckets, UnknownBucket: &unknown,
+			},
+		},
+		{
+			name: "hub-routed",
+			stanza: config.Stanza{
+				Tag: "library/poetry", IndexTitle: "✱ Poetry", Blueprint: "hub-routed",
+				UnknownBucket: ptr("Other"), HubH2Prefix: &h2prefix,
+			},
+		},
+		{
+			name: "hub-routed-with-subtag",
+			stanza: config.Stanza{
+				Tag: "claude", IndexTitle: "✱ Claude", Blueprint: "hub-routed-with-subtag",
+				Buckets: &buckets, UnknownBucket: &unknown,
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := config.Dispatch(tc.stanza, nil)
+			if err != nil {
+				t.Errorf("Dispatch(%s) error: %v", tc.name, err)
+			}
+		})
 	}
 }
