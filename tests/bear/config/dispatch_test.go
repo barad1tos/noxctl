@@ -114,6 +114,43 @@ func assertDispatchBuildsCleanly(t *testing.T, stanza config.Stanza, resolver fu
 	}
 }
 
+// TestDispatchGroupedVerticalSelectsVariantByTagDepth pins the one branch
+// buildGroupedVertical adds: tag depth selects the canonicalization variant.
+// A top-level tag gets the sub-tag variant (CanonicalTagFor emits
+// `#tag/bucket`); an already-2-level tag gets the flat variant (CanonicalTagFor
+// nil — bucket lives in the canonical 3rd segment). Without this assertion,
+// flipping the depth check, dropping it, or hardcoding one factory leaves the
+// rest of the suite green: assertDispatchBuildsCleanly checks only Tag /
+// IndexTitle / CanonicalTag, none of which differ between the two factories.
+func TestDispatchGroupedVerticalSelectsVariantByTagDepth(t *testing.T) {
+	topLevel := config.Stanza{
+		Tag: "reading", IndexTitle: "✱ Reading", Blueprint: "grouped-vertical",
+		UnknownBucket: new("Other"), Buckets: sliceStrPtr("Books", "Talks"),
+	}
+	d, err := config.Dispatch(topLevel, noResolver())
+	if err != nil {
+		t.Fatalf("Dispatch(top-level grouped-vertical): %v", err)
+	}
+	if d.CanonicalTagFor == nil {
+		t.Fatal("top-level grouped-vertical: CanonicalTagFor nil; want the sub-tag variant")
+	}
+	if got := d.CanonicalTagFor(d, "Books"); got != "#reading/Books" {
+		t.Errorf("top-level grouped-vertical canonical = %q, want %q (sub-tag variant)", got, "#reading/Books")
+	}
+
+	twoLevel := config.Stanza{
+		Tag: "library/aphorisms", IndexTitle: "✱ Афоризми", Blueprint: "grouped-vertical",
+		UnknownBucket: new("Інші"), Buckets: sliceStrPtr("Класика", "Сучасні"),
+	}
+	d2, err := config.Dispatch(twoLevel, noResolver())
+	if err != nil {
+		t.Fatalf("Dispatch(2-level grouped-vertical): %v", err)
+	}
+	if d2.CanonicalTagFor != nil {
+		t.Error("2-level grouped-vertical: CanonicalTagFor non-nil; want the flat variant (bucket in canonical 3rd segment)")
+	}
+}
+
 // TestDispatchUnknownBlueprintSentinel: unknown blueprint produces an
 // error wrapping ErrUnknownBlueprint with the valid catalog enumerated
 // in the message body.
