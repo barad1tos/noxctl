@@ -241,13 +241,41 @@ Five rendering blueprints, each fitting a distinct tag shape. Pick by walking th
 
 Required fields beyond the basics — every blueprint also needs `tag`, `index_title`, `blueprint`. See `examples/<blueprint>.toml` for a copy-pasteable starter per blueprint.
 
-**What each blueprint renders in Bear:**
+**What each blueprint produces (structure):**
 
-|     |     |
-| --- | --- |
-| **`flat-list`** — one master, every atom as a bullet<br><img src="docs/screenshots/blueprint-flat-list.png" alt="flat-list master: a single master note with a flat bullet list of atom wikilinks" width="100%"> | **`grouped-vertical`** — one master with a `## Bucket (N)` H2 section per bucket<br><img src="docs/screenshots/blueprint-grouped-vertical.png" alt="grouped-vertical master: an H2 section per bucket with bullets below each" width="100%"> |
-| **`hub-routed`** — Tier-2: master lists hubs, each hub lists atoms<br><img src="docs/screenshots/blueprint-hub-routed.png" alt="hub-routed master plus a Tier-2 hub note listing its atoms" width="100%"> | **`hub-routed-with-subtag`** — Tier-2, buckets from sub-tags<br><img src="docs/screenshots/blueprint-hub-routed-with-subtag.png" alt="hub-routed-with-subtag master and a hub whose bucket comes from a sub-tag" width="100%"> |
-| **`umbrella`** — master aggregating several child domains<br><img src="docs/screenshots/blueprint-umbrella.png" alt="umbrella master listing several child domains" width="100%"> |  |
+All five masters render as a list, so a screenshot of the master alone barely
+tells them apart — the difference is _what sits below each link_ and _where the
+buckets come from_, not the master's surface. The schematic shows that structure
+(`──→` means "the link opens this note"):
+
+```text
+flat-list                ✱ Master ── • atom   • atom   • atom
+
+grouped-vertical         ✱ Master
+                         ├─ ## Bucket A (N) ── • atom  • atom
+                         └─ ## Bucket B (M) ── • atom
+                         · atoms sit inline in the master; buckets operator-declared
+
+hub-routed               ✱ Master ── ## Authors
+                         ├─ [[Frost]] (12) ──→ ## Poems ── • poem  • poem
+                         └─ [[Rilke]]  (8) ──→ …
+                         · buckets discovered from atom CONTENT; tag stays flat (#library/poetry)
+
+hub-routed-with-subtag   ✱ Master ── ## Categories
+                         ├─ [[claude · sessions]] (15) ──→ • atom  • atom
+                         └─ [[claude · memory]]   (18) ──→ …
+                         · buckets are real #claude/* SUB-TAGS (shown in Bear's sidebar)
+
+umbrella                 ✱ Master ── ## Divisions
+                         ├─ [[✱ Poetry]]    (706) ──→ Poetry's own master (hub-routed)
+                         └─ [[✱ Aphorisms]]  (47) ──→ Aphorisms' own master (grouped-vertical)
+                         · links open OTHER domains, each with its own blueprint
+```
+
+`flat-list` and `grouped-vertical` put atoms directly in the master.
+`hub-routed`, `hub-routed-with-subtag`, and `umbrella` share an index-of-links
+master but diverge below it — content-derived hubs, sub-tag hubs, and whole
+child domains respectively.
 
 ## Idempotency contract
 

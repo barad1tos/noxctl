@@ -10,19 +10,10 @@ Bear-rendered screenshots referenced from the main README's
 | `before.png` | Bear filtered to `#nox-demo/books`, five demo atoms visible, no master                                                       | pending — capture per instructions below |
 | `after.png`  | Same filter after `noxctl apply --config examples/demo-vault/noxctl.toml`, six notes visible (5 atoms + 1 `✱ Books` master) | pending — capture per instructions below |
 
-## Blueprint gallery slots
-
-Five screenshots referenced from the main README's "Choosing a blueprint" section — one per blueprint, showing the master (and a Tier-2 hub where relevant). Each maps to a copy-pasteable config in `examples/<blueprint>.toml`.
-
-| File                                   | Blueprint                | What to show                                                        | Status  |
-|----------------------------------------|--------------------------|---------------------------------------------------------------------|---------|
-| `blueprint-flat-list.png`              | `flat-list`              | the master with its flat bullet list of atoms                       | pending |
-| `blueprint-grouped-vertical.png`       | `grouped-vertical`       | the master with one `## Bucket (N)` H2 section per bucket           | pending |
-| `blueprint-hub-routed.png`             | `hub-routed`             | the master listing hubs, plus one Tier-2 hub note listing its atoms | pending |
-| `blueprint-hub-routed-with-subtag.png` | `hub-routed-with-subtag` | same Tier-2 shape, buckets sourced from `#tag/bucket` sub-tags       | pending |
-| `blueprint-umbrella.png`               | `umbrella`               | the umbrella master aggregating its child domains                   | pending |
-
-Capture each by applying the matching `examples/<blueprint>.toml` (or screenshotting the equivalent master already in your vault), then crop to the rendered master/hub. Optimize to under ~200 KB and commit; the embeds in the main README pick them up by filename automatically.
+Per-blueprint visuals are NOT screenshots: the five masters all render as a
+list, so master screenshots barely tell them apart. The README's "Choosing a
+blueprint" section uses a text schematic of each blueprint's structure instead
+(what sits below each link, where buckets come from) — no capture needed.
 
 ## How to (re-)capture
 
