@@ -58,17 +58,27 @@ const (
 	authorMinSignal   = 0.5 // fraction with author bodies to count as content-bucketed
 )
 
+// Blueprint names the recommender can emit. Named so the decision tree never
+// repeats the string literals (and stays in step with the dispatch catalog).
+const (
+	blueprintFlatList        = "flat-list"
+	blueprintGroupedVertical = "grouped-vertical"
+	blueprintHubRouted       = "hub-routed"
+	blueprintHubRoutedSubtag = "hub-routed-with-subtag"
+	blueprintUmbrella        = "umbrella"
+)
+
 // Recommend runs the ordered decision tree over the metrics. First match wins.
 func Recommend(m Metrics) Recommendation {
 	if m.ChildFamilies >= umbrellaMinChild {
 		return Recommendation{
-			Blueprint: "umbrella", Confidence: High, DecidingMetric: "child_families",
+			Blueprint: blueprintUmbrella, Confidence: High, DecidingMetric: "child_families",
 			Rationale: "tag has child tag-families that are themselves domains",
 		}
 	}
 	if !isBucketed(m) {
 		return Recommendation{
-			Blueprint: "flat-list", Confidence: flatConfidence(m), DecidingMetric: "buckets",
+			Blueprint: blueprintFlatList, Confidence: flatConfidence(m), DecidingMetric: "buckets",
 			Rationale: "no bucket signal (sub-tags or author H2s) detected",
 		}
 	}
@@ -98,14 +108,14 @@ func flatConfidence(m Metrics) Confidence {
 func recommendTopLevel(m Metrics) Recommendation {
 	if m.AtomsPerBucket >= hubMinPerBucket {
 		return Recommendation{
-			Blueprint: "hub-routed-with-subtag", Confidence: forkConfidence(m), DecidingMetric: "atoms_per_bucket",
-			Alternative: "grouped-vertical",
+			Blueprint: blueprintHubRoutedSubtag, Confidence: forkConfidence(m), DecidingMetric: "atoms_per_bucket",
+			Alternative: blueprintGroupedVertical,
 			Rationale:   "many atoms per sub-tag bucket — a Tier-2 hub per bucket pays off",
 		}
 	}
 	return Recommendation{
-		Blueprint: "grouped-vertical", Confidence: forkConfidence(m), DecidingMetric: "atoms_per_bucket",
-		Alternative: "hub-routed-with-subtag",
+		Blueprint: blueprintGroupedVertical, Confidence: forkConfidence(m), DecidingMetric: "atoms_per_bucket",
+		Alternative: blueprintHubRoutedSubtag,
 		Rationale:   "few atoms per bucket — one master with inline sections is enough",
 	}
 }
@@ -116,12 +126,12 @@ func recommendTopLevel(m Metrics) Recommendation {
 func recommendNested(m Metrics) Recommendation {
 	if m.BodyAuthorSignal >= authorMinSignal || m.BucketCardinality >= hubMinCardinality {
 		return Recommendation{
-			Blueprint: "hub-routed", Confidence: High, DecidingMetric: "body_author_signal",
+			Blueprint: blueprintHubRouted, Confidence: High, DecidingMetric: "body_author_signal",
 			Rationale: "many content-derived buckets (authors/sources) — Tier-2 hubs",
 		}
 	}
 	return Recommendation{
-		Blueprint: "grouped-vertical", Confidence: Medium, DecidingMetric: "bucket_cardinality",
+		Blueprint: blueprintGroupedVertical, Confidence: Medium, DecidingMetric: "bucket_cardinality",
 		Rationale: "a small declared bucket set — one master with inline sections",
 	}
 }
