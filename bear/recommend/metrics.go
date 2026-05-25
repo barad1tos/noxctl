@@ -26,7 +26,7 @@ func ComputeMetrics(tag string, notes []domain.Note, childFamilies []string) Met
 		Buckets:           sortedKeys(counts),
 	}
 	if len(notes) > 0 {
-		m.SubtagCoverage = float64(withBucket) / float64(len(notes))
+		m.BucketCoverage = float64(withBucket) / float64(len(notes))
 	}
 	return m
 }
@@ -66,14 +66,13 @@ func canonicalBucket(tag, content string) string {
 	want := "#" + tag
 	for line := range strings.SplitSeq(content, "\n") {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, want+" |") && line != want {
+		if !strings.HasPrefix(line, want+" |") {
 			continue
 		}
 		parts := strings.Split(line, "|")
 		if len(parts) >= 3 {
 			return strings.TrimSpace(parts[2])
 		}
-		return ""
 	}
 	return ""
 }

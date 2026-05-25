@@ -20,14 +20,14 @@ func TestRecommend_UmbrellaAndFlatList(t *testing.T) {
 func TestRecommend_BucketedBranches(t *testing.T) {
 	// top-level, few atoms/bucket -> grouped-vertical; alternative noted
 	gv := recommend.Recommend(recommend.Metrics{
-		TagDepth: 1, BucketCardinality: 5, SubtagCoverage: 1, AtomsPerBucket: 2,
+		TagDepth: 1, BucketCardinality: 5, BucketCoverage: 1, AtomsPerBucket: 2,
 	})
 	if gv.Blueprint != "grouped-vertical" || gv.Alternative != "hub-routed-with-subtag" {
 		t.Errorf("top-level low/bucket -> %q (alt %q), want grouped-vertical / hub-routed-with-subtag", gv.Blueprint, gv.Alternative)
 	}
 	// top-level, many atoms/bucket -> hub-routed-with-subtag
 	hs := recommend.Recommend(recommend.Metrics{
-		TagDepth: 1, BucketCardinality: 8, SubtagCoverage: 1, AtomsPerBucket: 15,
+		TagDepth: 1, BucketCardinality: 8, BucketCoverage: 1, AtomsPerBucket: 15,
 	})
 	if hs.Blueprint != "hub-routed-with-subtag" {
 		t.Errorf("top-level high/bucket -> %q, want hub-routed-with-subtag", hs.Blueprint)
@@ -41,10 +41,49 @@ func TestRecommend_BucketedBranches(t *testing.T) {
 	}
 	// 2-level, weak signal/low cardinality -> grouped-vertical
 	gv2 := recommend.Recommend(recommend.Metrics{
-		TagDepth: 2, BucketCardinality: 3, SubtagCoverage: 1, AtomsPerBucket: 4,
+		TagDepth: 2, BucketCardinality: 3, BucketCoverage: 1, AtomsPerBucket: 4,
 	})
 	if gv2.Blueprint != "grouped-vertical" {
 		t.Errorf("2-level low-card -> %q, want grouped-vertical", gv2.Blueprint)
+	}
+}
+
+func TestRecommend_NestedCardinalityArm(t *testing.T) {
+	// I1: cardinality-only arm — BodyAuthorSignal below threshold, BucketCardinality at threshold.
+	// Must yield hub-routed with DecidingMetric=="bucket_cardinality", not "body_author_signal".
+	r := recommend.Recommend(recommend.Metrics{
+		TagDepth: 2, BucketCardinality: 6, BodyAuthorSignal: 0, BucketCoverage: 1,
+	})
+	if r.Blueprint != "hub-routed" {
+		t.Errorf("cardinality arm -> blueprint %q, want hub-routed", r.Blueprint)
+	}
+	if r.DecidingMetric != "bucket_cardinality" {
+		t.Errorf("cardinality arm -> DecidingMetric %q, want bucket_cardinality", r.DecidingMetric)
+	}
+	if r.Confidence != recommend.High {
+		t.Errorf("cardinality arm -> Confidence %v, want High", r.Confidence)
+	}
+}
+
+func TestRecommend_MediumConfidence(t *testing.T) {
+	// M4: large flat-list tag (NoteCount>15, no bucket signal) yields Medium confidence.
+	r := recommend.Recommend(recommend.Metrics{TagDepth: 2, NoteCount: 40})
+	if r.Blueprint != "flat-list" {
+		t.Errorf("large flat-list -> blueprint %q, want flat-list", r.Blueprint)
+	}
+	if r.Confidence != recommend.Medium {
+		t.Errorf("large flat-list -> Confidence %v, want Medium", r.Confidence)
+	}
+
+	// Nested grouped-vertical fallback also yields Medium.
+	gv := recommend.Recommend(recommend.Metrics{
+		TagDepth: 2, BucketCardinality: 3, BucketCoverage: 1, AtomsPerBucket: 4,
+	})
+	if gv.Blueprint != "grouped-vertical" {
+		t.Errorf("nested low-card -> blueprint %q, want grouped-vertical", gv.Blueprint)
+	}
+	if gv.Confidence != recommend.Medium {
+		t.Errorf("nested low-card -> Confidence %v, want Medium", gv.Confidence)
 	}
 }
 
@@ -71,18 +110,18 @@ func TestRecommend_ReproducesPersonalCatalog(t *testing.T) {
 		{"quicknote/daily", recommend.Metrics{TagDepth: 2, NoteCount: 40}, "flat-list"},
 
 		// Grouped-vertical: bucketed but few atoms/bucket (2-level, low cardinality).
-		{"library/aphorisms", recommend.Metrics{TagDepth: 2, BucketCardinality: 3, SubtagCoverage: 1, AtomsPerBucket: 15}, "grouped-vertical"},
-		{"it/vendors", recommend.Metrics{TagDepth: 2, BucketCardinality: 4, SubtagCoverage: 1, AtomsPerBucket: 5}, "grouped-vertical"},
+		{"library/aphorisms", recommend.Metrics{TagDepth: 2, BucketCardinality: 3, BucketCoverage: 1, AtomsPerBucket: 15}, "grouped-vertical"},
+		{"it/vendors", recommend.Metrics{TagDepth: 2, BucketCardinality: 4, BucketCoverage: 1, AtomsPerBucket: 5}, "grouped-vertical"},
 
 		// Grouped-vertical: top-level with sub-tags but too few atoms/bucket for Tier-2.
-		{"english", recommend.Metrics{TagDepth: 1, BucketCardinality: 5, SubtagCoverage: 1, AtomsPerBucket: 3}, "grouped-vertical"},
+		{"english", recommend.Metrics{TagDepth: 1, BucketCardinality: 5, BucketCoverage: 1, AtomsPerBucket: 3}, "grouped-vertical"},
 
 		// Hub-routed: 2-level with strong author signal or high bucket cardinality.
 		{"library/poetry", recommend.Metrics{TagDepth: 2, BucketCardinality: 40, BodyAuthorSignal: 0.9, AtomsPerBucket: 12}, "hub-routed"},
 		{"llm/agents", recommend.Metrics{TagDepth: 2, BucketCardinality: 30, BodyAuthorSignal: 0.6, AtomsPerBucket: 4}, "hub-routed"},
 
 		// Hub-routed-with-subtag: top-level, many atoms/bucket justifies Tier-2 hubs.
-		{"claude", recommend.Metrics{TagDepth: 1, BucketCardinality: 8, SubtagCoverage: 1, AtomsPerBucket: 9}, "hub-routed-with-subtag"},
+		{"claude", recommend.Metrics{TagDepth: 1, BucketCardinality: 8, BucketCoverage: 1, AtomsPerBucket: 9}, "hub-routed-with-subtag"},
 
 		// Umbrella: has child tag-families.
 		{"library", recommend.Metrics{TagDepth: 1, ChildFamilies: 6}, "umbrella"},

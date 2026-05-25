@@ -31,7 +31,7 @@ type Metrics struct {
 	TagDepth          int      // 1 (top-level) or 2 (nested)
 	NoteCount         int      // atoms carrying the tag
 	ChildFamilies     int      // distinct populated child tag-families
-	SubtagCoverage    float64  // fraction of notes with a single-segment #tag/<bucket>
+	BucketCoverage    float64  // fraction of notes with a detectable bucket (sub-tag or canonical 3rd segment)
 	BucketCardinality int      // distinct observed buckets
 	AtomsPerBucket    int      // median notes per observed bucket
 	BodyAuthorSignal  float64  // fraction of notes with an author-like body
@@ -54,7 +54,7 @@ const (
 	hubMinPerBucket   = 8   // atoms/bucket >= this makes a Tier-2 hub worth it
 	hubMinCardinality = 6   // distinct buckets >= this leans hub-routed (2-level)
 	umbrellaMinChild  = 2   // child families >= this => umbrella
-	subtagMinCoverage = 0.7 // fraction with #tag/bucket to count as sub-tag-bucketed
+	bucketMinCoverage = 0.7 // fraction with a detectable bucket to count as bucketed
 	authorMinSignal   = 0.5 // fraction with author bodies to count as content-bucketed
 )
 
@@ -78,7 +78,7 @@ func Recommend(m Metrics) Recommendation {
 	}
 	if !isBucketed(m) {
 		return Recommendation{
-			Blueprint: blueprintFlatList, Confidence: flatConfidence(m), DecidingMetric: "buckets",
+			Blueprint: blueprintFlatList, Confidence: flatConfidence(m), DecidingMetric: "bucket_cardinality",
 			Rationale: "no bucket signal (sub-tags or author H2s) detected",
 		}
 	}
@@ -91,7 +91,7 @@ func Recommend(m Metrics) Recommendation {
 // isBucketed reports whether the notes carry a usable grouping signal.
 func isBucketed(m Metrics) bool {
 	return m.BucketCardinality >= 1 &&
-		(m.SubtagCoverage >= subtagMinCoverage || m.BodyAuthorSignal >= authorMinSignal)
+		(m.BucketCoverage >= bucketMinCoverage || m.BodyAuthorSignal >= authorMinSignal)
 }
 
 // flatConfidence is High for a clearly-small tag, Medium otherwise.
@@ -124,10 +124,16 @@ func recommendTopLevel(m Metrics) Recommendation {
 // (forbidden), so buckets live in content. Author signal / high cardinality means
 // many discovered buckets -> Tier-2 hubs (hub-routed); else inline sections.
 func recommendNested(m Metrics) Recommendation {
-	if m.BodyAuthorSignal >= authorMinSignal || m.BucketCardinality >= hubMinCardinality {
+	if m.BodyAuthorSignal >= authorMinSignal {
 		return Recommendation{
 			Blueprint: blueprintHubRouted, Confidence: High, DecidingMetric: "body_author_signal",
 			Rationale: "many content-derived buckets (authors/sources) — Tier-2 hubs",
+		}
+	}
+	if m.BucketCardinality >= hubMinCardinality {
+		return Recommendation{
+			Blueprint: blueprintHubRouted, Confidence: High, DecidingMetric: "bucket_cardinality",
+			Rationale: "many distinct buckets — Tier-2 hubs keep the master scannable",
 		}
 	}
 	return Recommendation{
