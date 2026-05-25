@@ -11,6 +11,7 @@ import (
 // tree reads. Pure: childFamilies is supplied by the vault-wide caller (nil for
 // a single-tag scan).
 func ComputeMetrics(tag string, notes []domain.Note, childFamilies []string) Metrics {
+	notes = atomsOnly(notes)
 	counts := bucketCounts(tag, notes)
 	withBucket := 0
 	for _, c := range counts {
@@ -29,6 +30,20 @@ func ComputeMetrics(tag string, notes []domain.Note, childFamilies []string) Met
 		m.BucketCoverage = float64(withBucket) / float64(len(notes))
 	}
 	return m
+}
+
+// atomsOnly drops managed master/hub notes (titled with the ✱ index marker)
+// so their generated canonical lines and "new note" links never count as
+// buckets or inflate the note total (spec: metrics exclude managed master/hubs).
+func atomsOnly(notes []domain.Note) []domain.Note {
+	out := make([]domain.Note, 0, len(notes))
+	for _, n := range notes {
+		if strings.HasPrefix(strings.TrimSpace(n.Title), "✱") {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
 }
 
 // bucketCounts maps each observed bucket to its note count. A bucket comes from
@@ -71,10 +86,19 @@ func canonicalBucket(tag, content string) string {
 		}
 		parts := strings.Split(line, "|")
 		if len(parts) >= 3 {
-			return strings.TrimSpace(parts[2])
+			if b := strings.TrimSpace(parts[2]); isPlausibleBucket(b) {
+				return b
+			}
 		}
 	}
 	return ""
+}
+
+// isPlausibleBucket rejects values that are clearly not a bucket name — a
+// markdown link or a bear:// URL (e.g. a master's "new note" placeholder that
+// slipped past atomsOnly).
+func isPlausibleBucket(s string) bool {
+	return s != "" && !strings.HasPrefix(s, "[") && !strings.Contains(s, "](") && !strings.Contains(s, "://")
 }
 
 func sortedKeys(m map[string]int) []string {

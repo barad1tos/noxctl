@@ -46,3 +46,30 @@ func TestComputeMetrics_SubtagBuckets(t *testing.T) {
 		t.Errorf("Buckets = %q, want sorted homework,vocab", got)
 	}
 }
+
+// TestComputeMetrics_ExcludesManagedMaster scans a real-shaped note set that
+// includes the managed master note (titled with the index marker, whose
+// canonical line carries a "new note" bear:// link). The master must NOT be
+// counted as a note nor its link parsed as a bucket — otherwise a flat-list
+// tag is mis-read as bucketed. This pins the gap the synthetic calibration
+// table could not catch (it never ran ComputeMetrics on real notes).
+func TestComputeMetrics_ExcludesManagedMaster(t *testing.T) {
+	notes := []domain.Note{
+		{
+			ID: "m", Title: "✱ Rules", Tags: []string{"#llm/rules"},
+			Content: "# ✱ Rules\n#llm/rules | [[✱ Rules]] | [New note](bear://x-callback-url/create?x=1)\n---\n- [[A]]",
+		},
+		{ID: "1", Title: "Rule A", Tags: []string{"#llm/rules"}, Content: "#llm/rules\nbody one"},
+		{ID: "2", Title: "Rule B", Tags: []string{"#llm/rules"}, Content: "#llm/rules\nbody two"},
+	}
+	m := recommend.ComputeMetrics("llm/rules", notes, nil)
+	if m.NoteCount != 2 {
+		t.Errorf("NoteCount = %d, want 2 (managed master excluded)", m.NoteCount)
+	}
+	if m.BucketCardinality != 0 {
+		t.Errorf("BucketCardinality = %d, want 0 (master link is not a bucket); buckets=%v", m.BucketCardinality, m.Buckets)
+	}
+	if got := recommend.Recommend(m).Blueprint; got != "flat-list" {
+		t.Errorf("Recommend = %q, want flat-list", got)
+	}
+}
