@@ -206,6 +206,8 @@ When two blueprints are a close call (the `grouped-vertical` ↔ `hub-routed-wit
 
 Tidy the inferred fields (`index_title`, bucket names, `hub_h2_prefix`) before you paste — they are educated starting points, not final values. Bulk multi-tag import (`noxctl import --all`) is on the roadmap; for now, run `import` per tag and concatenate the output.
 
+The signals, thresholds, and tie-breaks above are the narrative view of the recommender in `bear/recommend/` — `recommend.go` holds the authoritative decision tree and the threshold constants, so check it there if this section ever looks out of date.
+
 </details>
 
 <details>
