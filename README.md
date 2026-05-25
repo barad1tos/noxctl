@@ -246,7 +246,13 @@ Required fields beyond the basics — every blueprint also needs `tag`, `index_t
 All five masters render as a list, so a screenshot of the master alone barely
 tells them apart — the difference is _what sits below each link_ and _where the
 buckets come from_, not the master's surface. The schematic shows that structure
-(`──→` means "the link opens this note"):
+(`──→` means "the link opens this note"). The config fields it implies —
+`buckets`, `unknown_bucket`, `children`, `hub_h2_prefix` — are in the comparison
+table above and in `examples/<blueprint>.toml`, so the diagram maps straight to
+config.
+
+<!-- Editor note: this schematic is whitespace-aligned and renders monospace
+     inside the code fence below; keep the columns aligned when editing. -->
 
 ```text
 flat-list                ✱ Master ── • atom   • atom   • atom
