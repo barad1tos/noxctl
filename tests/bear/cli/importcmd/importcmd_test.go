@@ -15,9 +15,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/BurntSushi/toml"
 	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -267,8 +269,6 @@ func TestEmitWithNotes_DispatchContract_I4(t *testing.T) {
 	ptr := func(s string) *string { return &s }
 	buckets := []string{"A", "B"}
 	unknown := "Other"
-	h2prefix := "Items"
-
 	cases := []struct {
 		name   string
 		stanza config.Stanza
@@ -290,7 +290,7 @@ func TestEmitWithNotes_DispatchContract_I4(t *testing.T) {
 			name: "hub-routed",
 			stanza: config.Stanza{
 				Tag: "library/poetry", IndexTitle: "✱ Poetry", Blueprint: "hub-routed",
-				UnknownBucket: ptr("Other"), HubH2Prefix: &h2prefix,
+				UnknownBucket: ptr("Other"), HubH2Prefix: new("Items"),
 			},
 		},
 		{
@@ -307,6 +307,70 @@ func TestEmitWithNotes_DispatchContract_I4(t *testing.T) {
 			_, err := config.Dispatch(tc.stanza, nil)
 			if err != nil {
 				t.Errorf("Dispatch(%s) error: %v", tc.name, err)
+			}
+		})
+	}
+}
+
+// TestEmitWithNotes_DispatchRoundTrip closes the gap the I4 contract test leaves
+// open: I4 dispatches hand-built Stanzas, so it cannot catch emit printing the
+// wrong field set for a blueprint (the I2 bug class — hub-routed missing
+// unknown_bucket). This drives emit over note shapes that reach each blueprint
+// the import path can produce, decodes emit's ACTUAL TOML output back into a
+// config.Catalog, and dispatches the decoded stanza — pinning emit's field
+// selection (needsBuckets / needsUnknownBucket / needsHubH2) against the live
+// dispatch contract end to end. umbrella is unreachable here: import passes nil
+// childFamilies, so ChildFamilies is always 0.
+func TestEmitWithNotes_DispatchRoundTrip(t *testing.T) {
+	groupedNotes := []domain.Note{
+		{ID: "1", Title: "A", Tags: []string{"#research/papers", "#research/papers/Math"}},
+		{ID: "2", Title: "B", Tags: []string{"#research/papers", "#research/papers/Physics"}},
+		{ID: "3", Title: "C", Tags: []string{"#research/papers", "#research/papers/Math"}},
+	}
+	authorNotes := []domain.Note{
+		{ID: "1", Title: "P1", Tags: []string{"#library/poetry"}, Content: "#library/poetry | [[✱ Poetry]] | Frost\n---\n## Frost\n- x"},
+		{ID: "2", Title: "P2", Tags: []string{"#library/poetry"}, Content: "#library/poetry | [[✱ Poetry]] | Rilke\n---\n## Rilke\n- y"},
+	}
+	// 8 atoms in one top-level sub-tag bucket: AtomsPerBucket == hubMinPerBucket,
+	// so recommendTopLevel forks to hub-routed-with-subtag (a Tier-2 hub per bucket).
+	subtagHubNotes := make([]domain.Note, 0, 8)
+	for i := range 8 {
+		id := strconv.Itoa(i)
+		subtagHubNotes = append(subtagHubNotes, domain.Note{
+			ID: id, Title: "R" + id, Tags: []string{"#recipes", "#recipes/dinner"},
+		})
+	}
+
+	cases := []struct {
+		name          string
+		tag           string
+		notes         []domain.Note
+		wantBlueprint string
+	}{
+		{"flat-list", "research/papers", nil, "flat-list"},
+		{"grouped-vertical", "research/papers", groupedNotes, "grouped-vertical"},
+		{"hub-routed", "library/poetry", authorNotes, "hub-routed"},
+		{"hub-routed-with-subtag", "recipes", subtagHubNotes, "hub-routed-with-subtag"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			cli.EmitWithNotesForTest(&buf, tc.tag, tc.notes)
+
+			var cat config.Catalog
+			if _, err := toml.Decode(buf.String(), &cat); err != nil {
+				t.Fatalf("decode emitted stanza: %v\n%s", err, buf.String())
+			}
+			if len(cat.Domains) != 1 {
+				t.Fatalf("decoded %d domains, want 1\n%s", len(cat.Domains), buf.String())
+			}
+			got := cat.Domains[0]
+			if got.Blueprint != tc.wantBlueprint {
+				t.Fatalf("emitted blueprint = %q, want %q\n%s", got.Blueprint, tc.wantBlueprint, buf.String())
+			}
+			if _, err := config.Dispatch(got, nil); err != nil {
+				t.Errorf("Dispatch(emitted %s) error: %v\n%s", tc.name, err, buf.String())
 			}
 		})
 	}
