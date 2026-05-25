@@ -8,8 +8,8 @@
 # This is the absolute minimum to get started. For a richer starter
 # with three blueprints side-by-side see `examples/three-blueprints
 # .toml`. For a full real-world reference covering every blueprint
-# (umbrella, hub-routed, flat-table, grouped-vertical, hub-routed-
-# with-subtag) see `examples/personal.toml`.
+# (umbrella, hub-routed, grouped-vertical, hub-routed-with-subtag)
+# see `examples/personal.toml`.
 
 [meta]
   version = "1"

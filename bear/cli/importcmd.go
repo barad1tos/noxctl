@@ -35,13 +35,13 @@ type ImportOptions struct {
 //
 //   - 0 notes → emit flat-list, lowest-friction starter.
 //   - All notes share a common single-segment sub-tag (e.g. every
-//     note carries `#tag/Books`) → emit flat-table with the observed
-//     sub-tag set as `buckets`.
+//     note carries `#tag/Books`) → emit grouped-vertical with the
+//     observed sub-tag set as `buckets`.
 //   - Otherwise → emit flat-list and note the fallback.
 //
 // hub-routed deliberately NOT auto-detected: the structural signal
 // (Tier-2 hub notes routing buckets via canonical lines) is the
-// same shape flat-table emits, so a reliable disambiguation needs
+// same shape grouped-vertical emits, so a reliable disambiguation needs
 // operator input. Notes inside a hub-routed atom carry their own
 // H2 sections (Sections, References, etc.) — counting those would
 // classify content structure as catalog structure. Operators who
@@ -75,7 +75,7 @@ func EmitWithNotesForTest(w io.Writer, tag string, notes []domain.Note) {
 type suggestion struct {
 	blueprint string
 	rationale string
-	buckets   []string // populated for flat-table
+	buckets   []string // populated for grouped-vertical
 }
 
 // infer picks a blueprint based on observable structure across the
@@ -89,7 +89,7 @@ func infer(tag string, notes []domain.Note) suggestion {
 	}
 	if buckets, ok := commonSubTagBuckets(tag, notes); ok {
 		return suggestion{
-			blueprint: "flat-table",
+			blueprint: "grouped-vertical",
 			rationale: fmt.Sprintf(
 				"every note carries a single-segment sub-tag (%d distinct buckets observed).",
 				len(buckets)),
@@ -150,7 +150,7 @@ func emit(w io.Writer, tag string, noteCount int, s suggestion) {
 	_, _ = fmt.Fprintf(w, "  tag         = %q\n", tag)
 	_, _ = fmt.Fprintf(w, "  index_title = %q\n", suggestIndexTitle(tag))
 	_, _ = fmt.Fprintf(w, "  blueprint   = %q\n", s.blueprint)
-	if s.blueprint == "flat-table" {
+	if s.blueprint == "grouped-vertical" {
 		_, _ = fmt.Fprintf(w, "  buckets        = %s\n", tomlStringSlice(s.buckets))
 		_, _ = fmt.Fprintln(w, `  unknown_bucket = "Other"`)
 	}

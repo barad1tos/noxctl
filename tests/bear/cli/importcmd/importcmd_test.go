@@ -67,11 +67,11 @@ func TestEmitWithNotes_EmptyTag(t *testing.T) {
 	}
 }
 
-// TestEmitWithNotes_FlatTableShape pins the sub-tag → flat-table
-// inference: when every note carries the same `#tag/<bucket>`
-// sub-tag pattern, the suggestion is flat-table with the observed
-// bucket set populated.
-func TestEmitWithNotes_FlatTableShape(t *testing.T) {
+// TestEmitWithNotes_GroupedVerticalShape pins the sub-tag →
+// grouped-vertical inference: when every note carries the same
+// `#tag/<bucket>` sub-tag pattern, the suggestion is grouped-vertical
+// with the observed bucket set populated.
+func TestEmitWithNotes_GroupedVerticalShape(t *testing.T) {
 	notes := []domain.Note{
 		{ID: "1", Title: "Note A", Tags: []string{"#research/papers", "#research/papers/Math"}},
 		{ID: "2", Title: "Note B", Tags: []string{"#research/papers", "#research/papers/Physics"}},
@@ -81,12 +81,12 @@ func TestEmitWithNotes_FlatTableShape(t *testing.T) {
 	cli.EmitWithNotesForTest(&buf, "research/papers", notes)
 	out := buf.String()
 	for _, want := range []string{
-		`blueprint   = "flat-table"`,
+		`blueprint   = "grouped-vertical"`,
 		`buckets        = ["Math", "Physics"]`,
 		`unknown_bucket = "Other"`,
 	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("flat-table output missing %q\n%s", want, out)
+			t.Errorf("grouped-vertical output missing %q\n%s", want, out)
 		}
 	}
 }
@@ -172,14 +172,14 @@ func TestRunImport_EmitsFlatListStanza_WhenTagEmpty(t *testing.T) {
 	}
 }
 
-// TestRunImport_EmitsFlatTableStanza_WhenNotesShareSubTag drives the
-// flat-table inference end-to-end: notes all carrying `#tag/<bucket>` produce
-// a flat-table stanza with the observed buckets. User-facing bug if this
-// regresses: a tag the operator already sub-categorized imports as a flat
-// list, dropping the bucket structure they built.
+// TestRunImport_EmitsGroupedVerticalStanza_WhenNotesShareSubTag drives the
+// grouped-vertical inference end-to-end: notes all carrying `#tag/<bucket>`
+// produce a grouped-vertical stanza with the observed buckets. User-facing
+// bug if this regresses: a tag the operator already sub-categorized imports
+// as a flat list, dropping the bucket structure they built.
 //
 //cyrillic:permit
-func TestRunImport_EmitsFlatTableStanza_WhenNotesShareSubTag(t *testing.T) {
+func TestRunImport_EmitsGroupedVerticalStanza_WhenNotesShareSubTag(t *testing.T) {
 	domain.ResetBearcliPoolForTest(4)
 	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
 
@@ -193,8 +193,8 @@ func TestRunImport_EmitsFlatTableStanza_WhenNotesShareSubTag(t *testing.T) {
 	if err := cli.RunImport(ctx, cli.ImportOptions{Tag: "research/papers", Stdout: &buf}); err != nil {
 		t.Fatalf("RunImport: %v", err)
 	}
-	if !strings.Contains(buf.String(), `blueprint   = "flat-table"`) {
-		t.Errorf("shared-sub-tag import should suggest flat-table; got:\n%s", buf.String())
+	if !strings.Contains(buf.String(), `blueprint   = "grouped-vertical"`) {
+		t.Errorf("shared-sub-tag import should suggest grouped-vertical; got:\n%s", buf.String())
 	}
 }
 

@@ -59,7 +59,6 @@ func TestExamples_PerBlueprintCoverage(t *testing.T) {
 	// catalog grows and the example set doesn't.
 	blueprints := []string{
 		"flat-list",
-		"flat-table",
 		"grouped-vertical",
 		"hub-routed",
 		"hub-routed-with-subtag",

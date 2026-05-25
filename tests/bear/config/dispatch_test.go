@@ -21,12 +21,12 @@ func noResolver() func([]string) ([]*domain.Domain, error) {
 	return nil
 }
 
-// TestDispatchMapSize: the closed catalog has EXACTLY 6 declarative
+// TestDispatchMapSize: the closed catalog has EXACTLY 5 declarative
 // blueprints. Adding or removing one requires an explicit map edit
 // plus a new builder; this test is the canary.
 func TestDispatchMapSize(t *testing.T) {
-	if got := config.DispatchSize(); got != 6 {
-		t.Fatalf("dispatch map size = %d, want 6 (closed catalog)", got)
+	if got := config.DispatchSize(); got != 5 {
+		t.Fatalf("dispatch map size = %d, want 5 (closed catalog)", got)
 	}
 }
 
@@ -51,13 +51,13 @@ func validDispatchCases() map[string]dispatchCase {
 		"flat-list": {stanza: config.Stanza{
 			Tag: "llm/characters", IndexTitle: "✱ Characters", Blueprint: "flat-list",
 		}},
-		"flat-table": {stanza: config.Stanza{
-			Tag: "library/aphorisms", IndexTitle: "✱ Афоризми", Blueprint: "flat-table",
-			UnknownBucket: new("Інші"), Buckets: bucketsTwo("Класика", "Сучасні"),
+		"grouped-vertical (sub-tag/top-level)": {stanza: config.Stanza{
+			Tag: "reading", IndexTitle: "✱ Reading", Blueprint: "grouped-vertical",
+			UnknownBucket: new("Other"), Buckets: bucketsTwo("Books", "Talks"),
 		}},
-		"grouped-vertical": {stanza: config.Stanza{
-			Tag: "personal/work", IndexTitle: "✱ Work", Blueprint: "grouped-vertical",
-			UnknownBucket: new("_misc"), Buckets: bucketsTwo("meeting", "review"),
+		"grouped-vertical (flat/2-level)": {stanza: config.Stanza{
+			Tag: "library/aphorisms", IndexTitle: "✱ Афоризми", Blueprint: "grouped-vertical",
+			UnknownBucket: new("Інші"), Buckets: bucketsTwo("Класика", "Сучасні"),
 		}},
 		"hub-routed": {stanza: config.Stanza{
 			Tag: "library/poetry", IndexTitle: "✱ Поезія", Blueprint: "hub-routed",
@@ -129,7 +129,7 @@ func TestDispatchUnknownBlueprintSentinel(t *testing.T) {
 		t.Errorf("err = %v, want errors.Is ErrUnknownBlueprint", err)
 	}
 	for _, want := range []string{
-		"flat-list", "flat-table", "grouped-vertical",
+		"flat-list", "grouped-vertical",
 		"hub-routed", "hub-routed-with-subtag", "umbrella",
 	} {
 		if !strings.Contains(err.Error(), want) {

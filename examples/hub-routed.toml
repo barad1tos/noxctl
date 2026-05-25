@@ -7,8 +7,8 @@
 #   pipe-segment names the bucket.
 # - You want a Tier-2 layout: master lists hubs (one per bucket),
 #   each hub lists atoms within that bucket.
-# - Bucket discovery is data-driven (vs flat-table where buckets
-#   are operator-declared).
+# - Bucket discovery is data-driven (vs grouped-vertical where
+#   buckets are operator-declared).
 #
 # What it produces:
 #   Master:

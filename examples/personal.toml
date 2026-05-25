@@ -1,7 +1,7 @@
 # noxctl.toml — maintainer's full 28-domain real-world reference
 #
 # The catalog Roman uses against his actual Bear vault. Covers every
-# blueprint (flat-list, flat-table, grouped-vertical, hub-routed,
+# blueprint (flat-list, grouped-vertical, hub-routed,
 # hub-routed-with-subtag, umbrella) and demonstrates promotions,
 # umbrella+leaves relationships, and locale-specific (`uk`) hub /
 # master titles.
@@ -52,7 +52,7 @@
 [[domain]]
   tag = "library/aphorisms"
   index_title = "✱ Афоризми"
-  blueprint = "flat-table"
+  blueprint = "grouped-vertical"
   unknown_bucket = "Невідомі"
   buckets = ["Книги", "Кіно", "Ігри"]
 
@@ -91,7 +91,7 @@
 [[domain]]
   tag = "library/prose"
   index_title = "✱ Проза"
-  blueprint = "flat-table"
+  blueprint = "grouped-vertical"
   unknown_bucket = "Мої"
   buckets = ["Мої", "Чужі"]
 
@@ -168,14 +168,14 @@
 [[domain]]
   tag = "it/vendors"
   index_title = "✱ IT Vendors"
-  blueprint = "flat-table"
+  blueprint = "grouped-vertical"
   unknown_bucket = "інше"
   buckets = ["apple", "aws", "mikrotik", "windows"]
 
 [[domain]]
   tag = "it/technologies"
   index_title = "✱ IT Технології"
-  blueprint = "flat-table"
+  blueprint = "grouped-vertical"
   unknown_bucket = "articles"
   buckets = ["kubernetes", "linux", "python", "articles"]
 

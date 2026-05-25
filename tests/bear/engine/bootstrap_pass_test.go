@@ -101,7 +101,7 @@ func TestApplyDomainBootstrap_LeafDomain_HubRouted(t *testing.T) {
 }
 
 // TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat — note
-// tagged `#library/aphorisms` routes to the flat-table aphorisms leaf,
+// tagged `#library/aphorisms` routes to the grouped-vertical (2-level) aphorisms leaf,
 // producing `#library/aphorisms | [[✱ Афоризми]] | Невідомі` per
 // post-i18n-split UnknownBucket="Невідомі" (NOT the Books bucket).
 func TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat(t *testing.T) {
