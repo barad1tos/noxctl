@@ -22,25 +22,21 @@ import (
 var importCmd = &cobra.Command{
 	Use:   "import <bear-tag>",
 	Short: "Print a candidate [[domain]] stanza for an existing Bear tag",
-	Long: `import scans every Bear note carrying the supplied tag
-and prints a [[domain]] block you can paste into noxctl.toml. The
-blueprint is chosen by one of two paths:
+	Long: `import scans every Bear note carrying the supplied tag,
+computes 7 structural metrics (bucket cardinality, sub-tag coverage,
+author-body signal, etc.), and runs them through an ordered decision
+tree that covers all five blueprints:
 
-  - 0 notes               → flat-list (lowest-friction starter)
-  - Uniform sub-tag       → grouped-vertical with the observed buckets
-  - Anything else         → flat-list (safe fallback)
+  flat-list             no bucket signal detected
+  grouped-vertical      few atoms per bucket — inline sections
+  hub-routed-with-subtag  many atoms per sub-tag bucket — Tier-2 hubs
+  hub-routed            2-level tag with strong author/source signal
+  umbrella              tag has populated child tag-families
 
-The "uniform sub-tag" check is strict: EVERY note must carry the
-same #tag/<bucket> pattern for grouped-vertical to win. A single
-outlier (notes carrying only #tag with no sub-tag) makes the
-heuristic fall through to the next branch. Clean up outliers in Bear
-before re-running import if you expect grouped-vertical inference.
-
-hub-routed is NOT auto-detected — its Tier-2 hub signal overlaps
-with grouped-vertical at the canonical-line level, and atom-body H2
-sections belong to the operator's content, not the catalog. Switch
-to hub-routed manually in the emitted stanza if you want
-bucket-per-hub routing.
+The output includes a "# recommend:" comment with the chosen
+blueprint, confidence grade, deciding metric, and rationale. When
+the decision is close, an "# alternative:" line names the runner-up
+and explains why the primary won.
 
 import never writes to noxctl.toml. After reviewing the suggested
 fields (index_title, bucket names), paste the block into your
