@@ -56,3 +56,42 @@ const (
 	subtagMinCoverage = 0.7 // fraction with #tag/bucket to count as sub-tag-bucketed
 	authorMinSignal   = 0.5 // fraction with author bodies to count as content-bucketed
 )
+
+// Recommend runs the ordered decision tree over the metrics. First match wins.
+func Recommend(m Metrics) Recommendation {
+	if m.ChildFamilies >= umbrellaMinChild {
+		return Recommendation{
+			Blueprint: "umbrella", Confidence: High, DecidingMetric: "child_families",
+			Rationale: "tag has child tag-families that are themselves domains",
+		}
+	}
+	if !isBucketed(m) {
+		return Recommendation{
+			Blueprint: "flat-list", Confidence: flatConfidence(m), DecidingMetric: "buckets",
+			Rationale: "no bucket signal (sub-tags or author H2s) detected",
+		}
+	}
+	if m.TagDepth == 1 {
+		return recommendTopLevel(m)
+	}
+	return recommendNested(m)
+}
+
+// isBucketed reports whether the notes carry a usable grouping signal.
+func isBucketed(m Metrics) bool {
+	return m.BucketCardinality >= 1 &&
+		(m.SubtagCoverage >= subtagMinCoverage || m.BodyAuthorSignal >= authorMinSignal)
+}
+
+// flatConfidence is High for a clearly-small tag, Medium otherwise.
+func flatConfidence(m Metrics) Confidence {
+	if m.NoteCount <= flatMaxNotes {
+		return High
+	}
+	return Medium
+}
+
+func recommendTopLevel(_ Metrics) Recommendation {
+	return Recommendation{Blueprint: "grouped-vertical"}
+}
+func recommendNested(_ Metrics) Recommendation { return Recommendation{Blueprint: "grouped-vertical"} }
