@@ -103,7 +103,7 @@ func TestCobraSmoke(t *testing.T) {
 		{"init-help-template", []string{"init", "--help"}, "template", true},
 		{"destroy-help-auto-approve", []string{"destroy", "--help"}, "--auto-approve", true},
 		{"destroy-help-confirm", []string{"destroy", "--help"}, "type-to-confirm", true},
-		{"import-help-uniform-subtag", []string{"import", "--help"}, "Uniform sub-tag", true},
+		{"import-help-five-blueprints", []string{"import", "--help"}, "five blueprints", true},
 		{"destroy-no-arg", []string{"destroy", "--config", validFixture}, "accepts 1 arg", false},
 		{"import-no-arg", []string{"import", "--config", validFixture}, "accepts 1 arg", false},
 	}

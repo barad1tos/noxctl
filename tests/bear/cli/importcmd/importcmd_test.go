@@ -50,8 +50,7 @@ func importListJSON(t *testing.T, rows ...map[string]any) []byte {
 }
 
 // TestEmitWithNotes_EmptyTag covers the 0-notes branch: import
-// should suggest flat-list as the lowest-friction starter and call
-// it out in the rationale.
+// should suggest flat-list and include a recommend: comment line.
 func TestEmitWithNotes_EmptyTag(t *testing.T) {
 	var buf bytes.Buffer
 	cli.EmitWithNotesForTest(&buf, "research/papers", nil)
@@ -59,7 +58,7 @@ func TestEmitWithNotes_EmptyTag(t *testing.T) {
 	for _, want := range []string{
 		"research/papers",
 		`blueprint   = "flat-list"`,
-		"lowest-friction starter",
+		"recommend:",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("empty-tag output missing %q\n%s", want, out)
@@ -91,13 +90,10 @@ func TestEmitWithNotes_GroupedVerticalShape(t *testing.T) {
 	}
 }
 
-// TestEmitWithNotes_AtomH2NotInferredAsHub locks the design call
-// that atom-body H2 sections do NOT signal hub-routed. The H2s
-// belong to the operator's note content (Sections, References,
-// quotes); the catalog blueprint must not be inferred from them.
-// Notes carrying multiple H2 headers without a uniform sub-tag fall
-// through to flat-list, and the rationale steers the operator to
-// pick hub-routed manually if they want bucket-per-hub routing.
+// TestEmitWithNotes_AtomH2NotInferredAsHub locks the design call that
+// atom-body H2 sections without a matching sub-tag do NOT signal
+// hub-routed. When notes have H2s but no sub-tag bucket signal, the
+// engine finds BucketCardinality=0 and falls to flat-list.
 func TestEmitWithNotes_AtomH2NotInferredAsHub(t *testing.T) {
 	notes := []domain.Note{
 		{ID: "1", Title: "A", Tags: []string{"#library/quotes"}, Content: "# A\n## Shakespeare\nquote\n"},
@@ -108,16 +104,13 @@ func TestEmitWithNotes_AtomH2NotInferredAsHub(t *testing.T) {
 	cli.EmitWithNotesForTest(&buf, "library/quotes", notes)
 	out := buf.String()
 	if !strings.Contains(out, `blueprint   = "flat-list"`) {
-		t.Errorf("atom-body H2s should NOT infer hub-routed; got:\n%s", out)
-	}
-	if strings.Contains(out, "hub-routed") && !strings.Contains(out, "manually") {
-		t.Errorf("output mentions hub-routed without the manual-switch hint:\n%s", out)
+		t.Errorf("H2s without sub-tag bucket signal should NOT infer hub-routed; got:\n%s", out)
 	}
 }
 
-// TestEmitWithNotes_Fallback covers the safe-default branch: notes
-// with no shared sub-tag and fewer than three H2 headers fall back
-// to flat-list with an explicit "safe fallback" rationale.
+// TestEmitWithNotes_Fallback covers the no-bucket-signal branch: notes
+// with no sub-tags and no canonical bucket lines fall back to flat-list.
+// The recommend: comment line must be present.
 func TestEmitWithNotes_Fallback(t *testing.T) {
 	notes := []domain.Note{
 		{ID: "1", Title: "A", Tags: []string{"#inbox"}, Content: "# A\nplain body\n"},
@@ -128,7 +121,7 @@ func TestEmitWithNotes_Fallback(t *testing.T) {
 	out := buf.String()
 	for _, want := range []string{
 		`blueprint   = "flat-list"`,
-		"safe fallback",
+		"recommend:",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("fallback output missing %q\n%s", want, out)
@@ -195,6 +188,35 @@ func TestRunImport_EmitsGroupedVerticalStanza_WhenNotesShareSubTag(t *testing.T)
 	}
 	if !strings.Contains(buf.String(), `blueprint   = "grouped-vertical"`) {
 		t.Errorf("shared-sub-tag import should suggest grouped-vertical; got:\n%s", buf.String())
+	}
+}
+
+// TestRunImport_HubRoutedFromAuthorBodies verifies that a 2-level tag whose notes
+// carry author-H2 bodies AND canonical bucket lines is inferred as hub-routed.
+// The author-signal metric clears authorMinSignal (0.5), overriding the low
+// bucket cardinality, so the engine picks Tier-2 hubs over inline sections.
+func TestRunImport_HubRoutedFromAuthorBodies(t *testing.T) {
+	notes := []domain.Note{
+		{
+			ID: "1", Title: "P1", Tags: []string{"#library/poetry"},
+			Content: "#library/poetry | [[✱ Poetry]] | Frost\n---\n## Frost\n- x",
+		},
+		{
+			ID: "2", Title: "P2", Tags: []string{"#library/poetry"},
+			Content: "#library/poetry | [[✱ Poetry]] | Rilke\n---\n## Rilke\n- y",
+		},
+	}
+	var buf bytes.Buffer
+	cli.EmitWithNotesForTest(&buf, "library/poetry", notes)
+	out := buf.String()
+	if !strings.Contains(out, `blueprint   = "hub-routed"`) {
+		t.Errorf("author-rich 2-level tag should infer hub-routed; got:\n%s", out)
+	}
+	if !strings.Contains(out, "recommend:") {
+		t.Errorf("emit should include the rationale comment; got:\n%s", out)
+	}
+	if !strings.Contains(out, `hub_h2_prefix  = "Items"`) {
+		t.Errorf("hub-routed blueprint should include hub_h2_prefix; got:\n%s", out)
 	}
 }
 
