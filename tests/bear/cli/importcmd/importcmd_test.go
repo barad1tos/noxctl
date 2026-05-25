@@ -261,6 +261,27 @@ func TestEmitWithNotes_TopLevelBucketedHintsUmbrella(t *testing.T) {
 	}
 }
 
+// TestEmitWithNotes_NoUmbrellaHintForNestedTag is the negative pair of the test
+// above: a 2-level bucketed tag (e.g. research/papers) cannot be an umbrella —
+// its sub-tags would be 3-level, forbidden by the tag-flatness rule — so emit
+// must NOT print the umbrella hint. The hint is gated on the tag being
+// top-level (strings.Count(tag, "/") == 0); this pins that gate.
+func TestEmitWithNotes_NoUmbrellaHintForNestedTag(t *testing.T) {
+	notes := []domain.Note{
+		{ID: "1", Title: "A", Tags: []string{"#research/papers", "#research/papers/Math"}},
+		{ID: "2", Title: "B", Tags: []string{"#research/papers", "#research/papers/Physics"}},
+	}
+	var buf bytes.Buffer
+	cli.EmitWithNotesForTest(&buf, "research/papers", notes)
+	out := buf.String()
+	if !strings.Contains(out, `blueprint   = "grouped-vertical"`) {
+		t.Fatalf("nested bucketed tag should infer grouped-vertical; got:\n%s", out)
+	}
+	if strings.Contains(out, "umbrella") || strings.Contains(out, "vault-wide") {
+		t.Errorf("2-level tag must NOT emit the umbrella hint; got:\n%s", out)
+	}
+}
+
 // TestEmitWithNotes_DispatchContract_I4 verifies that every blueprint the
 // recommender can emit produces a stanza that config.Dispatch accepts without
 // error. This catches mismatches between emit field names/presence and the

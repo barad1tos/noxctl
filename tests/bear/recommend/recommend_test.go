@@ -25,12 +25,23 @@ func TestRecommend_BucketedBranches(t *testing.T) {
 	if gv.Blueprint != "grouped-vertical" || gv.Alternative != "hub-routed-with-subtag" {
 		t.Errorf("top-level low/bucket -> %q (alt %q), want grouped-vertical / hub-routed-with-subtag", gv.Blueprint, gv.Alternative)
 	}
-	// top-level, many atoms/bucket -> hub-routed-with-subtag
+	// top-level, many atoms/bucket -> hub-routed-with-subtag, with the full
+	// verdict shape (deciding metric, the grouped-vertical alternative, and a
+	// clear-of-boundary High confidence) pinned, not just the blueprint name.
 	hs := recommend.Recommend(recommend.Metrics{
 		TagDepth: 1, BucketCardinality: 8, BucketCoverage: 1, AtomsPerBucket: 15,
 	})
 	if hs.Blueprint != "hub-routed-with-subtag" {
 		t.Errorf("top-level high/bucket -> %q, want hub-routed-with-subtag", hs.Blueprint)
+	}
+	if hs.DecidingMetric != "atoms_per_bucket" {
+		t.Errorf("top-level high/bucket -> DecidingMetric %q, want atoms_per_bucket", hs.DecidingMetric)
+	}
+	if hs.Alternative != "grouped-vertical" {
+		t.Errorf("top-level high/bucket -> Alternative %q, want grouped-vertical", hs.Alternative)
+	}
+	if hs.Confidence != recommend.High {
+		t.Errorf("top-level high/bucket (AtomsPerBucket=15, clear of 8) -> Confidence %v, want High", hs.Confidence)
 	}
 	// 2-level, strong author signal -> hub-routed
 	hr := recommend.Recommend(recommend.Metrics{
@@ -131,6 +142,38 @@ func TestRecommend_HubMinPerBucket_Edge(t *testing.T) {
 	})
 	if at7.Blueprint != "grouped-vertical" {
 		t.Errorf("AtomsPerBucket=7 -> blueprint %q, want grouped-vertical", at7.Blueprint)
+	}
+}
+
+// TestRecommend_ForkConfidence_Boundary pins the forkConfidence grading on the
+// top-level intent fork: the verdict is Low when AtomsPerBucket sits within 2 of
+// hubMinPerBucket (the tie zone, either arm) and High once it is clearly past it.
+// Distinct from HubMinPerBucket_Edge, which pins only which blueprint wins.
+func TestRecommend_ForkConfidence_Boundary(t *testing.T) {
+	cases := []struct {
+		name           string
+		atomsPerBucket int
+		wantBlueprint  string
+		wantConfidence recommend.Confidence
+	}{
+		{"at-threshold-tie", 8, "hub-routed-with-subtag", recommend.Low}, // d=0
+		{"just-above-tie", 10, "hub-routed-with-subtag", recommend.Low},  // d=2
+		{"clear-above", 11, "hub-routed-with-subtag", recommend.High},    // d=3
+		{"just-below-tie", 7, "grouped-vertical", recommend.Low},         // d=1
+		{"clear-below", 2, "grouped-vertical", recommend.High},           // d=6
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := recommend.Recommend(recommend.Metrics{
+				TagDepth: 1, BucketCardinality: 4, BucketCoverage: 1, AtomsPerBucket: tc.atomsPerBucket,
+			})
+			if r.Blueprint != tc.wantBlueprint {
+				t.Errorf("AtomsPerBucket=%d -> blueprint %q, want %q", tc.atomsPerBucket, r.Blueprint, tc.wantBlueprint)
+			}
+			if r.Confidence != tc.wantConfidence {
+				t.Errorf("AtomsPerBucket=%d -> confidence %v, want %v", tc.atomsPerBucket, r.Confidence, tc.wantConfidence)
+			}
+		})
 	}
 }
 
