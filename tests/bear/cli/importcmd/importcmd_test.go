@@ -4,10 +4,10 @@
 // the cobra smoke test; this file pins the inference contract for
 // each input shape.
 //
-// The heuristic itself lives in the unexported `infer` function;
-// tests reach it through `cli.EmitWithNotesForTest`, a thin
-// production-package seam that runs the same emit pass over a
-// caller-supplied note set (no bearcli round trip required).
+// The inference lives in the bear/recommend engine; import delegates to
+// it. Tests reach the emit path through `cli.EmitWithNotesForTest`, a thin
+// production-package seam that runs the same compute+recommend+emit pass
+// over a caller-supplied note set (no bearcli round trip required).
 package importcmd_test
 
 import (
@@ -238,5 +238,22 @@ func TestRunImport_ReturnsError_WhenListFails(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "list notes") {
 		t.Errorf("error should identify the list failure; got %v", err)
+	}
+}
+
+// TestEmitWithNotes_TopLevelBucketedHintsUmbrella: a bucketed top-level tag gets
+// a grouped-vertical recommendation plus an umbrella hint — import cannot see
+// sibling tags, so it cannot tell sub-tag buckets from child domains and points
+// the operator at `noxctl recommend` rather than guessing umbrella.
+func TestEmitWithNotes_TopLevelBucketedHintsUmbrella(t *testing.T) {
+	notes := []domain.Note{
+		{ID: "1", Title: "A", Tags: []string{"#reading", "#reading/books"}},
+		{ID: "2", Title: "B", Tags: []string{"#reading", "#reading/talks"}},
+	}
+	var buf bytes.Buffer
+	cli.EmitWithNotesForTest(&buf, "reading", notes)
+	out := buf.String()
+	if !strings.Contains(out, "umbrella") || !strings.Contains(out, "noxctl recommend") {
+		t.Errorf("top-level bucketed tag should hint umbrella + noxctl recommend; got:\n%s", out)
 	}
 }

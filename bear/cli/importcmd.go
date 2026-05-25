@@ -60,10 +60,14 @@ func EmitWithNotesForTest(w io.Writer, tag string, notes []domain.Note) {
 // output straight into their config or copy a slice.
 func emit(w io.Writer, tag string, noteCount int, r recommend.Recommendation, buckets []string) {
 	_, _ = fmt.Fprintf(w, "# noxctl import %s — %d notes scanned\n", tag, noteCount)
-	_, _ = fmt.Fprintf(w, "# recommend: %s (confidence: %s; deciding metric: %s)\n",
-		r.Blueprint, r.Confidence, r.DecidingMetric)
+	_, _ = fmt.Fprintf(w, "# recommend: %s (confidence: %s; deciding metric: %s) — %s\n",
+		r.Blueprint, r.Confidence, r.DecidingMetric, r.Rationale)
 	if r.Alternative != "" {
-		_, _ = fmt.Fprintf(w, "# alternative: %s — %s\n", r.Alternative, r.Rationale)
+		_, _ = fmt.Fprintf(w, "# alternative: %s (choose it if your intent differs)\n", r.Alternative)
+	}
+	if strings.Count(tag, "/") == 0 && needsBuckets(r.Blueprint) {
+		_, _ = fmt.Fprintln(w, "# note: if these sub-tags are themselves managed domains, this may be")
+		_, _ = fmt.Fprintln(w, "#   an umbrella — run `noxctl recommend` for vault-wide detection.")
 	}
 	_, _ = fmt.Fprintln(w, "#\n# Paste the [[domain]] block below into your noxctl.toml.")
 	_, _ = fmt.Fprintln(w)
