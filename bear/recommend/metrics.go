@@ -100,4 +100,21 @@ func medianCount(counts map[string]int) int {
 	return vals[(len(vals)-1)/2]
 }
 
-func authorSignal(_ []domain.Note) float64 { return 0 }
+// authorSignal returns the fraction of notes whose body carries at least one
+// `## ` H2 heading (an author/source section). Conservative: only counts H2,
+// not bare lead lines, to avoid over-recommending Tier-2 hubs.
+func authorSignal(notes []domain.Note) float64 {
+	if len(notes) == 0 {
+		return 0
+	}
+	withH2 := 0
+	for _, n := range notes {
+		for line := range strings.SplitSeq(n.Content, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "## ") {
+				withH2++
+				break
+			}
+		}
+	}
+	return float64(withH2) / float64(len(notes))
+}
