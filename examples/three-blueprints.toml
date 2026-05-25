@@ -6,8 +6,8 @@
 # without touching Bear, then `noxctl plan` to preview the diff
 # against your live vault.
 #
-# Three blueprints are shown — flat-list, flat-table, and hub-routed.
-# The full catalog of six (flat-list, flat-table, grouped-vertical,
+# Three blueprints are shown — flat-list, grouped-vertical, and
+# hub-routed. The full catalog of five (flat-list, grouped-vertical,
 # hub-routed, hub-routed-with-subtag, umbrella) lives in
 # examples/personal.toml as a working real-world reference.
 
@@ -25,13 +25,13 @@
   index_title = "✱ Inbox"
   blueprint   = "flat-list"
 
-# flat-table: master is a bucketed table. Pre-declare the buckets and
-# the "unknown bucket" name; atoms whose canonical line names an
-# undeclared bucket land under `unknown_bucket`.
+# grouped-vertical: master groups atoms into `## Bucket (N)` H2
+# sections. Pre-declare the buckets and the "unknown bucket" name;
+# atoms whose bucket is undeclared land under `unknown_bucket`.
 [[domain]]
   tag            = "library/quotes"
   index_title    = "✱ Quotes"
-  blueprint      = "flat-table"
+  blueprint      = "grouped-vertical"
   buckets        = ["Books", "Films", "Talks"]
   unknown_bucket = "Other"
 

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/render"
@@ -12,8 +13,8 @@ import (
 // builders ignore it.
 type buildFunc func(stanza Stanza, resolveChildren func([]string) ([]*domain.Domain, error)) (*domain.Domain, error)
 
-// dispatch is the closed 6-entry catalog that maps a blueprint string
-// to the corresponding domain.New*Domain factory. Adding a seventh
+// dispatch is the closed 5-entry catalog that maps a blueprint string
+// to the corresponding domain.New*Domain factory. Adding a sixth
 // blueprint requires an explicit map entry plus a new builder; there
 // is intentionally no reflection or struct-tag-driven grammar.
 //
@@ -21,24 +22,27 @@ type buildFunc func(stanza Stanza, resolveChildren func([]string) ([]*domain.Dom
 // is the public entry point. DispatchSize is exported for tests.
 var dispatch = map[string]buildFunc{
 	"flat-list":              buildFlatList,
-	"flat-table":             bucketedBuilder("flat-table", render.NewGroupedVerticalFlatDomain),
-	"grouped-vertical":       bucketedBuilder("grouped-vertical", render.NewGroupedVerticalDomain),
+	"grouped-vertical":       buildGroupedVertical,
 	"hub-routed":             buildHubRouted,
 	"hub-routed-with-subtag": buildHubRoutedSubTag,
 	"umbrella":               buildUmbrella,
 }
 
-// bucketedBuilder returns a buildFunc bound to the given blueprint
-// label and bear factory. The flat-table and grouped-vertical
-// blueprints share the same contract; spelling them out as two
-// closure literals in the dispatch map literal would trip dupl, and
-// the factory function remains the only meaningful difference.
-func bucketedBuilder(blueprint string,
-	factory func(tag, indexTitle, unknownBucket string, buckets []string) *domain.Domain,
-) buildFunc {
-	return func(stanza Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
-		return buildBucketed(blueprint, stanza, factory)
+// buildGroupedVertical builds a vertical-sections master, selecting the
+// atom-canonicalization variant by tag depth rather than by a separate
+// blueprint name. A top-level tag (e.g. "english") carries buckets as
+// real `#tag/bucket` sub-tags, so Bear's sidebar shows the 2-level tree.
+// An already-2-level tag (e.g. "library/aphorisms") cannot — a 3-level
+// sub-tag is forbidden by the tag-flatness rule (max 2 segments,
+// enforced at load) — so its bucket lives in the canonical header's 3rd
+// segment instead. Both variants render the identical vertical-sections
+// master via MasterFlatGrouped; only the parse/canonical callbacks differ.
+func buildGroupedVertical(stanza Stanza, _ func([]string) ([]*domain.Domain, error)) (*domain.Domain, error) {
+	factory := render.NewGroupedVerticalDomain
+	if strings.Count(stanza.Tag, "/") == 1 {
+		factory = render.NewGroupedVerticalFlatDomain
 	}
+	return buildBucketed("grouped-vertical", stanza, factory)
 }
 
 // DispatchSize returns the number of entries in the closed catalog.
@@ -50,12 +54,12 @@ func DispatchSize() int { return len(dispatch) }
 // validBlueprints is the human-readable enumeration appended to
 // ErrUnknownBlueprint messages. Keep in sync with the dispatch map
 // keys (the test enforces this).
-const validBlueprints = "flat-list, flat-table, grouped-vertical, " +
+const validBlueprints = "flat-list, grouped-vertical, " +
 	"hub-routed, hub-routed-with-subtag, umbrella"
 
 // Dispatch maps a stanza's blueprint string to a *domain.Domain via the
 // closed catalog. Returns an error wrapping ErrUnknownBlueprint when
-// the blueprint is not one of the 6 supported values.
+// the blueprint is not one of the 5 supported values.
 //
 // The resolveChildren callback is invoked only for umbrella stanzas;
 // the loader passes a function that resolves child Tag values to
@@ -185,10 +189,10 @@ func buildFlatList(stanza Stanza, _ func([]string) ([]*domain.Domain, error)) (*
 	return d, nil
 }
 
-// buildBucketed shares the buckets+unknown_bucket contract between
-// flat-table and grouped-vertical. safety: the factory's
-// positional args are filled BY NAME from the stanza, never by
-// arg-order coincidence.
+// buildBucketed applies the buckets+unknown_bucket contract for the
+// grouped-vertical blueprint (both canonicalization variants share it).
+// safety: the factory's positional args are filled BY NAME from the
+// stanza, never by arg-order coincidence.
 func buildBucketed(blueprint string, stanza Stanza,
 	factory func(tag, indexTitle, unknownBucket string, buckets []string) *domain.Domain,
 ) (*domain.Domain, error) {

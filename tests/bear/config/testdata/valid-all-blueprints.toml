@@ -1,6 +1,6 @@
-# Fixture exercises all 6 closed-catalog blueprints with one minimal
+# Fixture exercises all 5 closed-catalog blueprints with one minimal
 # but representative stanza each. The production catalog ships the full
-# 28-domain Roman corpus; this file only verifies that every dispatch
+# real-world Roman corpus; this file only verifies that every dispatch
 # path round-trips cleanly with no metadata.Undecoded drift.
 
 [meta]
@@ -13,25 +13,17 @@ tag         = "llm/characters"
 index_title = "✱ Characters"
 blueprint   = "flat-list"
 
-# 2. flat-table (= grouped-vertical-flat) — H2 bucket sections, no
-# sub-tag preservation.
+# 2. grouped-vertical — H2 bucket sections. This 2-level tag keeps the
+# bucket in the canonical 3rd segment (`#lib/x | [[Index]] | <bucket>`);
+# a top-level tag would instead preserve `#<top>/<bucket>` sub-tags.
 [[domain]]
 tag            = "library/aphorisms"
 index_title    = "✱ Афоризми"
-blueprint      = "flat-table"
+blueprint      = "grouped-vertical"
 unknown_bucket = "Інші"
 buckets        = ["Класика", "Сучасні"]
 
-# 3. grouped-vertical — H2 bucket sections, sub-tag preserved as
-# `#<top>/<bucket>`.
-[[domain]]
-tag            = "personal/work"
-index_title    = "✱ Work"
-blueprint      = "grouped-vertical"
-unknown_bucket = "_misc"
-buckets        = ["meeting", "review"]
-
-# 4. hub-routed — Tier-2 hubs per bucket, master backlink at hub.
+# 3. hub-routed — Tier-2 hubs per bucket, master backlink at hub.
 [[domain]]
 tag            = "library/poetry"
 index_title    = "✱ Поезія"
@@ -43,7 +35,7 @@ own_aliases    = ["Власні", "Свої"]
 legacy_author_fallback = true
 strip_legacy_author_h2 = true
 
-# 5. hub-routed-with-subtag — Tier-2 hubs titled `<top> · <bucket>`.
+# 4. hub-routed-with-subtag — Tier-2 hubs titled `<top> · <bucket>`.
 [[domain]]
 tag            = "personal/claude"
 index_title    = "✱ Claude"
@@ -51,7 +43,7 @@ blueprint      = "hub-routed-with-subtag"
 unknown_bucket = "_misc"
 buckets        = ["session", "skill"]
 
-# 6. umbrella — directory of child masters (children dispatched first).
+# 5. umbrella — directory of child masters (children dispatched first).
 [[domain]]
 tag           = "library"
 index_title   = "✱ Library"

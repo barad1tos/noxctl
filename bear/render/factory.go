@@ -15,7 +15,7 @@ import (
 // Factory functions for the recurring domain.Domain shapes. They keep the per-domain
 // config files down to the parameters that genuinely vary (tag, master title,
 // bucket data) without duplicating the boilerplate that's identical across
-// every flat-table or flat-list domain. Driven by `golangci-lint dupl` finding
+// every grouped-vertical or flat-list domain. Driven by `golangci-lint dupl` finding
 // it/vendors.go ↔ it/technologies.go and llm/{characters,rules,tips}.go as
 // 50+ token templates — the duplication was real, the right answer was a
 // factory, not a higher threshold.

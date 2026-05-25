@@ -27,21 +27,20 @@ and prints a [[domain]] block you can paste into noxctl.toml. The
 blueprint is chosen by one of two paths:
 
   - 0 notes               → flat-list (lowest-friction starter)
-  - Uniform sub-tag       → flat-table with the observed buckets
+  - Uniform sub-tag       → grouped-vertical with the observed buckets
   - Anything else         → flat-list (safe fallback)
 
 The "uniform sub-tag" check is strict: EVERY note must carry the
-same #tag/<bucket> pattern for flat-table to win. A single outlier
-(notes carrying only #tag with no sub-tag) makes the heuristic
-fall through to the next branch. Clean up outliers in Bear before
-re-running import if you expect flat-table inference.
+same #tag/<bucket> pattern for grouped-vertical to win. A single
+outlier (notes carrying only #tag with no sub-tag) makes the
+heuristic fall through to the next branch. Clean up outliers in Bear
+before re-running import if you expect grouped-vertical inference.
 
-hub-routed and the other Tier-2-hub blueprints (hub-routed-with-
-subtag, grouped-vertical, umbrella) are NOT auto-detected — their
-structural signal overlaps with flat-table at the canonical-line
-level, and atom-body H2 sections belong to the operator's content,
-not the catalog. Switch to hub-routed manually in the emitted
-stanza if you want bucket-per-hub routing.
+hub-routed is NOT auto-detected — its Tier-2 hub signal overlaps
+with grouped-vertical at the canonical-line level, and atom-body H2
+sections belong to the operator's content, not the catalog. Switch
+to hub-routed manually in the emitted stanza if you want
+bucket-per-hub routing.
 
 import never writes to noxctl.toml. After reviewing the suggested
 fields (index_title, bucket names), paste the block into your

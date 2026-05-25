@@ -411,7 +411,7 @@ func assertLoadFailureContains(t *testing.T, fixture, want string) {
 }
 
 // TestLoaderValidAllBlueprintsHappyPath: full corpus loads cleanly,
-// returns 6 *domain.Domain, no error.
+// returns 5 *domain.Domain, no error.
 func TestLoaderValidAllBlueprintsHappyPath(t *testing.T) {
 	path := fixturePath(t, "valid-all-blueprints.toml")
 	domains, cat, err := config.Load(path)
@@ -421,8 +421,8 @@ func TestLoaderValidAllBlueprintsHappyPath(t *testing.T) {
 	if cat == nil {
 		t.Fatal("Catalog should not be nil on success")
 	}
-	if len(domains) != 6 {
-		t.Errorf("expected 6 Domains, got %d", len(domains))
+	if len(domains) != 5 {
+		t.Errorf("expected 5 Domains, got %d", len(domains))
 	}
 	for i, d := range domains {
 		if d == nil {

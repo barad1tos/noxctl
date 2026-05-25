@@ -73,13 +73,13 @@ func TestSchemaRoundTripAllBlueprints(t *testing.T) {
 	if undec := meta.Undecoded(); len(undec) != 0 {
 		t.Fatalf("valid-all-blueprints: unexpected undecoded keys: %v", undec)
 	}
-	if got := len(cat.Domains); got != 6 {
-		t.Fatalf("len(Domains) = %d, want 6 (one per blueprint)", got)
+	if got := len(cat.Domains); got != 5 {
+		t.Fatalf("len(Domains) = %d, want 5 (one per blueprint)", got)
 	}
 	byBlueprint := indexByBlueprint(cat.Domains)
 	assertEveryBlueprintPresent(t, byBlueprint)
 	assertFlatListShape(t, byBlueprint["flat-list"])
-	assertFlatTableShape(t, byBlueprint["flat-table"])
+	assertGroupedVerticalShape(t, byBlueprint["grouped-vertical"])
 	assertHubRoutedShape(t, byBlueprint["hub-routed"])
 	assertUmbrellaShape(t, byBlueprint["umbrella"])
 }
@@ -95,7 +95,7 @@ func indexByBlueprint(stanzas []config.Stanza) map[string]config.Stanza {
 func assertEveryBlueprintPresent(t *testing.T, byBlueprint map[string]config.Stanza) {
 	t.Helper()
 	for _, bp := range []string{
-		"flat-list", "flat-table", "grouped-vertical",
+		"flat-list", "grouped-vertical",
 		"hub-routed", "hub-routed-with-subtag", "umbrella",
 	} {
 		if _, ok := byBlueprint[bp]; !ok {
@@ -115,16 +115,16 @@ func assertFlatListShape(t *testing.T, fl config.Stanza) {
 	}
 }
 
-func assertFlatTableShape(t *testing.T, ft config.Stanza) {
+func assertGroupedVerticalShape(t *testing.T, gv config.Stanza) {
 	t.Helper()
-	if ft.Buckets == nil || len(*ft.Buckets) != 2 {
-		t.Errorf("flat-table: Buckets = %v, want 2 entries", ft.Buckets)
+	if gv.Buckets == nil || len(*gv.Buckets) != 2 {
+		t.Errorf("grouped-vertical: Buckets = %v, want 2 entries", gv.Buckets)
 	}
-	if ft.UnknownBucket == nil || *ft.UnknownBucket != "Інші" {
-		t.Errorf("flat-table: UnknownBucket = %v, want %q", ft.UnknownBucket, "Інші")
+	if gv.UnknownBucket == nil || *gv.UnknownBucket != "Інші" {
+		t.Errorf("grouped-vertical: UnknownBucket = %v, want %q", gv.UnknownBucket, "Інші")
 	}
-	if ft.HubH2Prefix != nil || ft.OwnGroup != nil || ft.Children != nil {
-		t.Errorf("flat-table: expected nil hub_h2_prefix/own_group/children, got %+v", ft)
+	if gv.HubH2Prefix != nil || gv.OwnGroup != nil || gv.Children != nil {
+		t.Errorf("grouped-vertical: expected nil hub_h2_prefix/own_group/children, got %+v", gv)
 	}
 }
 

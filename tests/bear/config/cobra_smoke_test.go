@@ -148,7 +148,7 @@ func TestCobraInitWritesTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("template not written: %v", err)
 	}
-	for _, want := range []string{"[meta]", `version = "1"`, "[[domain]]", "flat-list", "flat-table", "hub-routed"} {
+	for _, want := range []string{"[meta]", `version = "1"`, "[[domain]]", "flat-list", "grouped-vertical", "hub-routed"} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("template missing %q; full body:\n%s", want, body)
 		}

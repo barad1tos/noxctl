@@ -1,33 +1,36 @@
 # noxctl.toml — grouped-vertical blueprint example
 #
-# Use grouped-vertical when:
-# - Same input shape as flat-table (atoms share a sub-tag bucket).
-# - You want a VERTICAL layout (one H2 section per bucket, atoms
-#   listed as bullets under each), not a horizontal table.
-# - Better for buckets with many atoms — table cells in flat-table
-#   become hard to scan past ~10 rows.
+# grouped-vertical renders one master with a vertical `## Bucket (N)`
+# H2 section per bucket, atoms listed as bullets under each. Good for
+# bucketed collections, especially when buckets hold many atoms.
+#
+# The atom-canonicalization variant is selected automatically by tag
+# depth (you do not pick it):
+#   - top-level tag (e.g. "reading")     -> buckets become real
+#     `#reading/<bucket>` sub-tags, so Bear's sidebar shows the
+#     2-level tree. (This example.)
+#   - already-2-level tag (e.g. "lib/x") -> a 3-level sub-tag is
+#     forbidden by the flatness rule, so the bucket lives in the
+#     canonical header's 3rd segment: `#lib/x | [[Index]] | <bucket>`.
+# Either way the rendered master is byte-identical.
 #
 # What it produces:
 #   ## Books (N)
 #   - [[Atom A]]
 #   - [[Atom B]]
 #
-#   ## Films (M)
+#   ## Talks (M)
 #   - [[Atom C]]
-#   - [[Atom D]]
 #
-#   ## Other (K)
-#   - [[Atom E]]
-#
-# Required: tag, index_title, blueprint, buckets, unknown_bucket
-# (same contract as flat-table — differs only in renderer choice).
+# Required: tag, index_title, blueprint, buckets, unknown_bucket.
+# Atoms whose bucket is not in `buckets` land under `unknown_bucket`.
 
 [meta]
   version = "1"
 
 [[domain]]
-  tag            = "library/quotes"
-  index_title    = "✱ Quotes"
+  tag            = "reading"
+  index_title    = "✱ Reading"
   blueprint      = "grouped-vertical"
-  buckets        = ["Books", "Films", "Talks", "Articles"]
+  buckets        = ["Books", "Articles", "Papers", "Talks"]
   unknown_bucket = "Other"

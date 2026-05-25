@@ -20,14 +20,12 @@ import (
 // the required fields, ready for a single MasterSection-shaped
 // override per test.
 func masterSectionStanza(sections []config.StanzaMasterSection) config.Stanza {
-	hubH2 := "Books"
-	unknown := "Unknown"
 	return config.Stanza{
 		Tag:            "library/test",
 		IndexTitle:     "✱ Test",
 		Blueprint:      "hub-routed",
-		UnknownBucket:  &unknown,
-		HubH2Prefix:    &hubH2,
+		UnknownBucket:  new("Unknown"),
+		HubH2Prefix:    new("Books"),
 		MasterSections: &sections,
 	}
 }
@@ -181,18 +179,17 @@ func TestDispatch_MasterSection_NilKeepsDefaultRenderer(t *testing.T) {
 // Covers all three ShowBulletCounts paths in showBulletCountsDefault:
 // nil (default true), &true (explicit true), &false (explicit false).
 func TestDispatch_MasterSection_PopulatesDomainFields(t *testing.T) {
-	showFalse, showTrue := false, true
 	stanza := masterSectionStanza([]config.StanzaMasterSection{
 		{
 			Title:            "Languages",
 			Buckets:          []string{"go", "rust"},
 			CountMode:        "buckets",
-			ShowBulletCounts: &showFalse,
+			ShowBulletCounts: new(false),
 		},
 		{
 			Title:            "Explicit",
 			Buckets:          []string{"swift"},
-			ShowBulletCounts: &showTrue,
+			ShowBulletCounts: new(true),
 		},
 		{
 			Title:  "Other",
