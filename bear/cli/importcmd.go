@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/recommend"
 )
 
@@ -32,6 +33,11 @@ type ImportOptions struct {
 // a rationale comment to opts.Stdout.
 // Never writes to noxctl.toml — the operator owns that file.
 func RunImport(ctx context.Context, opts ImportOptions) error {
+	// Standalone read command: initialize the bearcli pool before listing.
+	// The daemon does this in its startup path; one-shot commands must do it
+	// themselves (mirrors plan / lint / destroy).
+	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
+
 	notes, err := domain.ListNotesForTag(ctx, opts.Tag)
 	if err != nil {
 		return fmt.Errorf("import: list notes for tag %q: %w", opts.Tag, err)
