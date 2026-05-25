@@ -23,7 +23,7 @@ import (
 // HasPrefix match in rewriteCanonicalTag flipping every tick. So the
 // caller must skip them; see ApplyCrossDomainMoves.
 //
-// Hub-routed and flat-table domains carry richer bucket semantics that
+// Hub-routed and grouped-vertical domains carry richer bucket semantics that
 // don't translate cleanly to flat-list targets, so cross-domain moves
 // involving them are deferred to a future iteration. For now:
 // flat-list ↔ flat-list only — see domain.IsFlatList in
@@ -40,7 +40,7 @@ type flatListMasterClaim struct {
 // BuildFlatListMasterClaims scans every flat-list domain's master and
 // returns a registry mapping each bullet identifier (title or
 // bear://x-callback ID) to the domain whose master claims it. Hub-routed
-// and flat-table masters are not consulted — their bidirectional flow is
+// and grouped-vertical masters are not consulted — their bidirectional flow is
 // intra-domain only.
 //
 // When two flat-list masters claim the same identifier the last domain

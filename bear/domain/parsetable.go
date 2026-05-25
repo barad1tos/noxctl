@@ -31,7 +31,7 @@ import "strings"
 // Bear tag-tree is invariant at depth=2 per (family/sub-tag), so we
 // require the matched sub-tag to be a single segment with no
 // further `/`. No-op for non-sub-tag blueprints: the prefix
-// `d.Tag + "/"` never matches a hub-routed or flat-table domain's
+// `d.Tag + "/"` never matches a hub-routed or 2-level grouped-vertical domain's
 // single-segment family tag.
 //
 // bearcli `list --tag` and `list --location` both return tags WITH

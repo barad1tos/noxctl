@@ -97,7 +97,7 @@ type Stanza struct {
 	CanonicalTag  *string `toml:"canonical_tag"`
 	UnknownBucket *string `toml:"unknown_bucket"`
 
-	// flat-table / grouped-vertical / hub-routed-with-subtag.
+	// grouped-vertical / hub-routed-with-subtag.
 	Buckets *[]string `toml:"buckets"`
 
 	// hub-routed only.

@@ -177,7 +177,7 @@ func (d *Domain) overrideForNote(note Note, titleToBucket map[string]string) (st
 // when ParseMasterTable is unset, the master is missing, or the user hasn't
 // moved anything since the last regen.
 //
-// Master is the source of truth for flat-table domains: a user who cuts a
+// Master is the source of truth for 2-level grouped-vertical domains: a user who cuts a
 // bullet from one column and pastes it into another expects that bullet's
 // atomic to follow. The next regen sees the disagreement here and rewrites the
 // atomic's canonical header on its way through runAtomicsPass.
@@ -212,7 +212,7 @@ func (d *Domain) computeMasterOverrides(notes []Note) map[string]string {
 // bullet from one Hub note into another (or drop a freshly tagged atomic
 // into the right Hub) and the daemon catches up without the user editing
 // the canonical header by hand. No-op for domains without Tier-2 hubs
-// (RenderHub == nil) — flat-table and flat-list domains handle bidirectional
+// (RenderHub == nil) — grouped-vertical (2-level) and flat-list domains handle bidirectional
 // flow exclusively through ParseMasterTable.
 //
 // Identifier resolution mirrors computeMasterOverrides: try note ID first
@@ -375,7 +375,7 @@ func mergeOverrideLayer(into, from map[string]string, onSkip func(atomID, kept, 
 // noteID→bucket override whenever the user has dragged a whitelisted
 // `#<family>/<sub>` sub-tag onto the note in Bear's sidebar that disagrees
 // with the canonical-header bucket. Sibling to computeMasterOverrides
-// (flat-table cut/paste) and computeHubOverrides (Tier-2 hub cut/paste).
+// (grouped-vertical 2-level cut/paste) and computeHubOverrides (Tier-2 hub cut/paste).
 //
 // The sidebar drag is a single quick gesture vs the deliberate multi-step
 // master/hub cut/paste flow. Merge priority therefore puts tag overrides

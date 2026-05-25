@@ -18,7 +18,7 @@ import (
 // and paste under another, save, and the next regen rewrites the matching
 // atomic's canonical sub-tag to track the new section.
 //
-// Suited to medium domains with 3-6 sub-tags where flat-table overflows but a
+// Suited to medium domains with 3-6 sub-tags where a flat inline list overflows but a
 // per-bucket Tier-2 hub adds no navigation value (english, health, leisure,
 // humor).
 

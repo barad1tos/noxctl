@@ -180,7 +180,7 @@ func DefaultRenderMasterFlat(d *domain.Domain, groups map[string][]domain.Note) 
 //
 //	#<tag> | [[<IndexTitle>]] | <bucket>
 //
-// Used by every flat-table domain (aphorisms, prose, it/vendors,
+// Used by every 2-level grouped-vertical domain (aphorisms, prose, it/vendors,
 // it/technologies). Differs from DefaultParseMetaCanonical, which expects
 // target == bucket name (Tier-2 hub backlink) and treats the 3rd segment
 // as a section path inside that hub.
@@ -239,7 +239,7 @@ func SortTitles(items []string) {
 
 // MasterBacklink is a domain.Domain.BacklinkFor implementation that points every
 // atomic at the master `[[<IndexTitle>]]`, regardless of bucket. Use for
-// flat-table domains (aphorisms, prose, llm/characters, llm/rules,
+// 2-level grouped-vertical domains (aphorisms, prose, llm/characters, llm/rules,
 // llm/tips) where atomics have no per-bucket Tier-2 hub to backlink at.
 //
 // Round-trip stability: DefaultParseMetaCanonical drops lines whose target
@@ -258,11 +258,11 @@ func BucketAsSection(_ *domain.Domain, bucket string, _ domain.AtomicParts) stri
 	return bucket
 }
 
-// OrderFlatColumns returns the column sequence for a flat-table master:
+// OrderFlatColumns returns the column sequence for a grouped-vertical master:
 // the supplied `fixedOrder` first (always rendered, even when empty so
 // the user sees the slot), then any bucket present in `groups` that
 // isn't in fixedOrder, alphabetised via domain.CompareTitles. Used by every
-// flat-table renderer that wants a deterministic priority layout with
+// grouped-vertical renderer that wants a deterministic priority layout with
 // a graceful overflow column for new buckets.
 func OrderFlatColumns(groups map[string][]domain.Note, fixedOrder []string) []string {
 	fixed := make(map[string]struct{}, len(fixedOrder))

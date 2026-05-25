@@ -126,7 +126,7 @@ type Domain struct {
 	// master, the master wins — the daemon rewrites the atomic's canonical
 	// header to match. Lets users move atomics between buckets by cut/paste
 	// in the master itself, without ever opening the atomic note. Only
-	// meaningful for flat-table domains (prose, aphorisms, lyrics-style);
+	// meaningful for 2-level grouped-vertical domains (prose, aphorisms, lyrics-style);
 	// nil for hub-of-hubs domains (poetry, articles).
 	ParseMasterTable func(d *Domain, masterContent string) map[string]string
 
@@ -135,7 +135,7 @@ type Domain struct {
 	// `#<top>/<bucket>` replaces the static `#<top>`. Returning d.CanonicalTag
 	// (or any value not starting with `#<top>`) is acceptable for the default
 	// case. When nil, renderAtomicCanonical falls back to d.CanonicalTag for
-	// every atomic — the existing flat-table / hub-routed shape.
+	// every atomic — the existing 2-level grouped-vertical / hub-routed shape.
 	CanonicalTagFor func(d *Domain, bucket string) string
 
 	// IsHubNote, when set, replaces the default H2-prefix-based hub

@@ -33,7 +33,7 @@ func FetchMasterContent(ctx context.Context, d *Domain) (string, error) {
 // unique-by-domain by daemon construction). Uses listNotes + isHubNote
 // + the same StripNewNoteURLsFromBody treatment as the master.
 // Returns an empty map (no error) for domains without a Tier-2 hub
-// layer (flat-list, flat-table, grouped-vertical).
+// layer (flat-list, grouped-vertical).
 func FetchHubContents(ctx context.Context, d *Domain) (map[string]string, error) {
 	notes, err := d.listNotes(ctx)
 	if err != nil {

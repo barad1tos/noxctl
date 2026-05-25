@@ -17,9 +17,27 @@
 
 Declarative macOS CLI for Bear notes structure management — *Terraform for Bear notes*. Describe your Bear-vault layout (tags, hubs, masters, buckets) in a TOML file and `noxctl` keeps the vault matching that description idempotently.
 
-Brownfield — descended from a personal FSEvents-driven daemon (`regen-watchd`) that managed a 28-domain Bear corpus. The closed catalog of six rendering blueprints (`flat-list`, `flat-table`, `grouped-vertical`, `hub-routed`, `hub-routed-with-subtag`, `umbrella`) covers every shape that production used.
+Brownfield — descended from a personal FSEvents-driven daemon (`regen-watchd`) that managed a 28-domain Bear corpus. The closed catalog of five rendering blueprints (`flat-list`, `grouped-vertical`, `hub-routed`, `hub-routed-with-subtag`, `umbrella`) covers every shape that production used.
 
 **Standing on two shoulders.** The *what* comes from [Forever ✱ Notes](https://www.myforevernotes.com/) — a framework for organizing a knowledge vault around clickable master/hub notes (the `✱` master marker noxctl stamps on every index title is borrowed straight from it). The *how* comes from Terraform — declarative desired-state config plus `plan`/`apply` idempotent convergence. noxctl is Forever Notes' structure, maintained the Terraform way: describe the vault you want once, and the tool keeps it that shape.
+
+## Contents
+
+- [What noxctl does to your vault](#what-noxctl-does-to-your-vault)
+- [noxctl vs. Forever Notes](#noxctl-vs-forever-notes)
+- [Quick start](#quick-start)
+- [Safety & recovery](#safety--recovery)
+- [From existing vault](#from-existing-vault)
+- [Status & scope](#status--scope)
+- [Subcommands](#subcommands)
+- [Choosing a blueprint](#choosing-a-blueprint)
+- [Idempotency contract](#idempotency-contract)
+- [How it works](#how-it-works)
+- [Configuration shape](#configuration-shape)
+- [Build & gates](#build--gates)
+- [Deploy (maintainer's setup)](#deploy-maintainers-setup)
+- [What this is not](#what-this-is-not)
+- [License](#license)
 
 ## What noxctl does to your vault
 
@@ -146,10 +164,10 @@ Bear ships a built-in backup in **File → Backup Database…** — recommended 
 [Quick start Track B](#quick-start) covers the steps; this section explains how `noxctl import <bear-tag>` decides what to emit. It scans every note under the tag and infers a blueprint from observable structure — note count and sub-tag shape:
 
 - **0 notes** → `flat-list` (the lowest-friction starter).
-- **Every note shares one `#tag/<bucket>` sub-tag** → `flat-table` with the observed buckets.
+- **Every note shares one `#tag/<bucket>` sub-tag** → `grouped-vertical` with the observed buckets.
 - **Anything else** → `flat-list` (the safe fallback).
 
-`hub-routed` and the other Tier-2-hub blueprints are not auto-detected — their canonical-line signal overlaps with `flat-table`, so you switch to them by hand in the emitted stanza. Output sample for one tag:
+`hub-routed` and `hub-routed-with-subtag` are not auto-detected — their Tier-2 hub signal overlaps with `grouped-vertical` at the canonical-line level, so you switch to them by hand in the emitted stanza. Output sample for one tag:
 
 ```toml
 # noxctl import library/poetry — 47 notes scanned
@@ -161,7 +179,7 @@ Bear ships a built-in backup in **File → Backup Database…** — recommended 
 [[domain]]
   tag         = "library/poetry"
   index_title = "✱ Poetry"
-  blueprint   = "flat-table"
+  blueprint   = "grouped-vertical"
   buckets        = ["Frost", "Rilke", "Heaney", "Plath"]
   unknown_bucket = "Other"
 ```
@@ -198,19 +216,17 @@ noxctl version               print version + build metadata
 
 ## Choosing a blueprint
 
-Six rendering blueprints, each fitting a distinct tag shape. Pick by walking the decision tree below; consult the table for the full comparison.
+Five rendering blueprints, each fitting a distinct tag shape. Pick by walking the decision tree below; consult the table for the full comparison.
 
 **Decision tree:**
 
 - Are notes grouped under the tag at all?
   - **No** — every note is a peer, order doesn't matter → **`flat-list`**
-  - **Yes** — what drives the grouping?
-    - A pre-declared bucket name in the canonical tag-line (operator owns the bucket list) → table or vertical layout?
-      - Horizontal table (columns per bucket) → **`flat-table`**
-      - Vertical sections (H2 per bucket, bullets below) → **`grouped-vertical`**
-    - A sub-tag on each atom (`#tag/bucket`) → bucket-discovery style?
-      - Operator pre-declares the bucket set → **`hub-routed-with-subtag`**
-      - Operator authors only the tag, atom bodies drive bucket names → **`hub-routed`**
+  - **Yes** — one master, or a separate hub note per bucket?
+    - **One master**, buckets rendered as `## Bucket (N)` H2 sections → **`grouped-vertical`** (you declare the bucket list; whether buckets also become Bear sub-tags is auto-decided by tag depth — top-level tag yes, already-2-level tag no)
+    - **Separate Tier-2 hub note per bucket** — where do bucket names come from?
+      - You declare them as sub-tags (`#tag/bucket`) → **`hub-routed-with-subtag`**
+      - They're discovered from atom bodies (author / source) → **`hub-routed`**
 - Want a top-level master that aggregates several other domains? → **`umbrella`**
 
 **Comparison table:**
@@ -218,13 +234,20 @@ Six rendering blueprints, each fitting a distinct tag shape. Pick by walking the
 | Blueprint                | When to use                                                     | Required fields beyond the basics | Bucket source                            | Output shape                                      |
 |--------------------------|-----------------------------------------------------------------|-----------------------------------|------------------------------------------|---------------------------------------------------|
 | `flat-list`              | inbox / capture tags, no grouping                               | none                              | n/a                                      | one master with bullet list of every atom         |
-| `flat-table`             | bucketed collection, finite bucket set, small N                 | `buckets`, `unknown_bucket`       | operator-declared                        | one master with markdown table, columns = buckets |
-| `grouped-vertical`       | bucketed collection, large N per bucket                         | `buckets`, `unknown_bucket`       | operator-declared                        | one master with `## Bucket (N)` H2 per bucket     |
+| `grouped-vertical`       | bucketed collection in one master, operator-declared buckets    | `buckets`, `unknown_bucket`       | operator-declared (sub-tag or canonical 3rd segment, auto by tag depth) | one master with `## Bucket (N)` H2 per bucket     |
 | `hub-routed`             | author / source grouping where bucket names live in atom bodies | `unknown_bucket`, `hub_h2_prefix` | atom canonical tag-line `[[Bucket Hub]]` | Tier-2: master lists hubs, each hub lists atoms   |
 | `hub-routed-with-subtag` | hub-style layout but bucket names are sub-tags                  | `buckets`, `unknown_bucket`       | atom sub-tag `#tag/bucket`               | Tier-2: master lists hubs, each hub lists atoms   |
 | `umbrella`               | aggregate multiple existing domains under one master            | `children`, `default_child`       | n/a                                      | master lists every child domain                   |
 
 Required fields beyond the basics — every blueprint also needs `tag`, `index_title`, `blueprint`. See `examples/<blueprint>.toml` for a copy-pasteable starter per blueprint.
+
+**What each blueprint renders in Bear:**
+
+|     |     |
+| --- | --- |
+| **`flat-list`** — one master, every atom as a bullet<br><img src="docs/screenshots/blueprint-flat-list.png" alt="flat-list master: a single master note with a flat bullet list of atom wikilinks" width="100%"> | **`grouped-vertical`** — one master with a `## Bucket (N)` H2 section per bucket<br><img src="docs/screenshots/blueprint-grouped-vertical.png" alt="grouped-vertical master: an H2 section per bucket with bullets below each" width="100%"> |
+| **`hub-routed`** — Tier-2: master lists hubs, each hub lists atoms<br><img src="docs/screenshots/blueprint-hub-routed.png" alt="hub-routed master plus a Tier-2 hub note listing its atoms" width="100%"> | **`hub-routed-with-subtag`** — Tier-2, buckets from sub-tags<br><img src="docs/screenshots/blueprint-hub-routed-with-subtag.png" alt="hub-routed-with-subtag master and a hub whose bucket comes from a sub-tag" width="100%"> |
+| **`umbrella`** — master aggregating several child domains<br><img src="docs/screenshots/blueprint-umbrella.png" alt="umbrella master listing several child domains" width="100%"> |  |
 
 ## Idempotency contract
 
@@ -303,7 +326,7 @@ Every path converges on the same `cycleOnce`, and every `cycleOnce` honors the s
 [[domain]]
   tag            = "library/aphorisms"
   index_title    = "✱ Aphorisms"
-  blueprint      = "flat-table"
+  blueprint      = "grouped-vertical"
   buckets        = ["Books", "Films", "Games"]
   unknown_bucket = "Unknown"
 ```
@@ -337,7 +360,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.bear.regen-watchd.pl
 
 - Not a Bear backup tool — it MUTATES notes in place.
 - Not cross-platform — Bear, FSEvents, and `bearcli` are macOS-only.
-- Not a general note-management framework — it operates on a closed catalog of six blueprints.
+- Not a general note-management framework — it operates on a closed catalog of five blueprints.
 
 ## License
 

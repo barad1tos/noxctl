@@ -17,9 +17,9 @@ import (
 )
 
 // IsFlatList reports whether this domain is the flat-list shape
-// (no Tier-2 hubs, no flat-table master). Cross-domain promotion
+// (no Tier-2 hubs, no grouped-vertical master). Cross-domain promotion
 // only handles flat-list ↔ flat-list moves; hub-routed and
-// flat-table domains carry richer bucket semantics that don't
+// grouped-vertical domains carry richer bucket semantics that don't
 // translate cleanly to flat-list targets.
 func (d *Domain) IsFlatList() bool {
 	return d.RenderHub == nil && d.ParseMasterTable == nil
@@ -136,7 +136,7 @@ func (d *Domain) bucketFromHubTitle(title string) string {
 }
 
 // ResolveCanonicalTag resolves the per-atomic canonical tag-line. Defaults to
-// d.CanonicalTag when no callback is wired (existing flat-table / hub-routed
+// d.CanonicalTag when no callback is wired (existing 2-level grouped-vertical / hub-routed
 // behavior). Domains that preserve sub-tags (grouped-vertical,
 // hub-routed-with-subtag) wire CanonicalTagFor to return `#<top>/<bucket>`
 // so each atomic carries its sub-tag in the tag-line.

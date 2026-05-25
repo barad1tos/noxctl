@@ -226,7 +226,7 @@ func ResetBootstrapLoopForTest() {
 
 // hasCanonicalLineForLeaf reports whether `content` already carries a
 // canonical tag-line for the given leaf `tag`. Accepts two shapes:
-// - leaf form `#<tag> | …` (hub-routed, flat-list, flat-table)
+// - leaf form `#<tag> | …` (hub-routed, flat-list, grouped-vertical)
 // - sub-tag bucket form `#<tag>/<sub> | …` (grouped-vertical, where
 // Bear materializes the bucket as a sibling sub-tag)
 //
