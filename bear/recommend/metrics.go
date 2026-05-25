@@ -77,6 +77,10 @@ func subTagBucket(tag string, tags []string) string {
 
 // canonicalBucket reads the 3rd pipe-segment of a managed canonical header line
 // (`#tag | [[Index]] | bucket`), or "" if the note is unmanaged.
+// Splits on " | " (space-pipe-space) so aliased wikilinks like
+// `[[✱ Title|Alias]]` — whose pipe has no surrounding spaces — are not
+// confused for segment delimiters. Also drops a trailing new-note URL segment
+// via domain.DropTrailingNewNoteURLSegment before indexing.
 func canonicalBucket(tag, content string) string {
 	want := "#" + tag
 	for line := range strings.SplitSeq(content, "\n") {
@@ -84,7 +88,7 @@ func canonicalBucket(tag, content string) string {
 		if !strings.HasPrefix(line, want+" |") {
 			continue
 		}
-		parts := strings.Split(line, "|")
+		parts := domain.DropTrailingNewNoteURLSegment(strings.Split(line, " | "))
 		if len(parts) >= 3 {
 			if b := strings.TrimSpace(parts[2]); isPlausibleBucket(b) {
 				return b
@@ -95,10 +99,16 @@ func canonicalBucket(tag, content string) string {
 }
 
 // isPlausibleBucket rejects values that are clearly not a bucket name — a
-// markdown link or a bear:// URL (e.g. a master's "new note" placeholder that
-// slipped past atomsOnly).
+// markdown link, a bear:// URL, or bracket/pipe characters (so parser drift
+// fails loud as an empty bucket rather than creating a phantom bucket name).
 func isPlausibleBucket(s string) bool {
-	return s != "" && !strings.HasPrefix(s, "[") && !strings.Contains(s, "](") && !strings.Contains(s, "://")
+	return s != "" &&
+		!strings.HasPrefix(s, "[") &&
+		!strings.Contains(s, "](") &&
+		!strings.Contains(s, "://") &&
+		!strings.Contains(s, "]]") &&
+		!strings.Contains(s, "[[") &&
+		!strings.Contains(s, "|")
 }
 
 func sortedKeys(m map[string]int) []string {
@@ -126,18 +136,39 @@ func medianCount(counts map[string]int) int {
 // authorSignal returns the fraction of notes whose body carries at least one
 // `## ` H2 heading (an author/source section). Conservative: only counts H2,
 // not bare lead lines, to avoid over-recommending Tier-2 hubs.
+// Scans only the body zone (after the first `---` separator) and skips lines
+// inside fenced code blocks (``` … ```) so curator-zone or code-sample H2s
+// don't inflate the signal.
 func authorSignal(notes []domain.Note) float64 {
 	if len(notes) == 0 {
 		return 0
 	}
 	withH2 := 0
 	for _, n := range notes {
-		for line := range strings.SplitSeq(n.Content, "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), "## ") {
-				withH2++
-				break
-			}
+		if noteHasBodyH2(n.Content) {
+			withH2++
 		}
 	}
 	return float64(withH2) / float64(len(notes))
+}
+
+// noteHasBodyH2 reports whether the note body (after the first `---`
+// separator) contains at least one `## ` heading outside a fenced code block.
+func noteHasBodyH2(content string) bool {
+	body := content
+	if _, after, ok := strings.Cut(content, "\n---\n"); ok {
+		body = after
+	}
+	inFence := false
+	for line := range strings.SplitSeq(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inFence = !inFence
+			continue
+		}
+		if !inFence && strings.HasPrefix(trimmed, "## ") {
+			return true
+		}
+	}
+	return false
 }

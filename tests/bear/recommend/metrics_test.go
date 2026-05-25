@@ -47,6 +47,49 @@ func TestComputeMetrics_SubtagBuckets(t *testing.T) {
 	}
 }
 
+// TestComputeMetrics_AliasedBacklink_C1 pins the C1 bug: a canonical header
+// with an aliased wikilink `[[✱ IT Vendors|Vendors]]` must yield the real
+// bucket (segment 3) and NOT a phantom string containing the alias bracket.
+func TestComputeMetrics_AliasedBacklink_C1(t *testing.T) {
+	notes := []domain.Note{
+		{
+			ID: "1", Title: "AWS", Tags: []string{"#it/vendors"},
+			Content: "#it/vendors | [[✱ IT Vendors|Vendors]] | Cloud",
+		},
+		{
+			ID: "2", Title: "GCP", Tags: []string{"#it/vendors"},
+			Content: "#it/vendors | [[✱ IT Vendors|Vendors]] | Cloud",
+		},
+		{
+			ID: "3", Title: "Postgres", Tags: []string{"#it/vendors"},
+			Content: "#it/vendors | [[✱ IT Vendors|Vendors]] | Database",
+		},
+	}
+	m := recommend.ComputeMetrics("it/vendors", notes, nil)
+	if m.BucketCardinality != 2 {
+		t.Errorf("BucketCardinality = %d, want 2 (Cloud, Database); buckets=%v", m.BucketCardinality, m.Buckets)
+	}
+	for _, b := range m.Buckets {
+		if b != "Cloud" && b != "Database" {
+			t.Errorf("unexpected phantom bucket %q in %v", b, m.Buckets)
+		}
+	}
+}
+
+// TestComputeMetrics_AuthorSignal_FenceSkip_I3 pins the I3 bug: a note whose
+// only `## ` heading lives inside a fenced code block must NOT contribute to
+// BodyAuthorSignal — the scanner must skip fence content.
+func TestComputeMetrics_AuthorSignal_FenceSkip_I3(t *testing.T) {
+	fencedNote := domain.Note{
+		ID: "1", Title: "Demo",
+		Content: "#tag\n---\n```\n## inside fence\n```\nno real H2 here",
+	}
+	m := recommend.ComputeMetrics("tag", []domain.Note{fencedNote}, nil)
+	if m.BodyAuthorSignal != 0 {
+		t.Errorf("BodyAuthorSignal = %v, want 0 (H2 is inside a code fence)", m.BodyAuthorSignal)
+	}
+}
+
 // TestComputeMetrics_ExcludesManagedMaster scans a real-shaped note set that
 // includes the managed master note (titled with the index marker, whose
 // canonical line carries a "new note" bear:// link). The master must NOT be

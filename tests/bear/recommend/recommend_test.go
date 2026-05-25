@@ -98,6 +98,53 @@ func TestConfidenceString(t *testing.T) {
 	}
 }
 
+// TestRecommend_FlatMaxNotes_Edge pins the flatMaxNotes=15 boundary:
+// NoteCount=15 yields High confidence on flat-list; NoteCount=16 yields Medium.
+func TestRecommend_FlatMaxNotes_Edge(t *testing.T) {
+	at15 := recommend.Recommend(recommend.Metrics{TagDepth: 1, NoteCount: 15})
+	if at15.Blueprint != "flat-list" {
+		t.Errorf("NoteCount=15 -> blueprint %q, want flat-list", at15.Blueprint)
+	}
+	if at15.Confidence != recommend.High {
+		t.Errorf("NoteCount=15 -> confidence %v, want High", at15.Confidence)
+	}
+	at16 := recommend.Recommend(recommend.Metrics{TagDepth: 1, NoteCount: 16})
+	if at16.Blueprint != "flat-list" {
+		t.Errorf("NoteCount=16 -> blueprint %q, want flat-list", at16.Blueprint)
+	}
+	if at16.Confidence != recommend.Medium {
+		t.Errorf("NoteCount=16 -> confidence %v, want Medium", at16.Confidence)
+	}
+}
+
+// TestRecommend_HubMinPerBucket_Edge pins the hubMinPerBucket=8 boundary:
+// AtomsPerBucket=8 yields hub-routed-with-subtag; 7 yields grouped-vertical.
+func TestRecommend_HubMinPerBucket_Edge(t *testing.T) {
+	at8 := recommend.Recommend(recommend.Metrics{
+		TagDepth: 1, BucketCardinality: 4, BucketCoverage: 1, AtomsPerBucket: 8,
+	})
+	if at8.Blueprint != "hub-routed-with-subtag" {
+		t.Errorf("AtomsPerBucket=8 -> blueprint %q, want hub-routed-with-subtag", at8.Blueprint)
+	}
+	at7 := recommend.Recommend(recommend.Metrics{
+		TagDepth: 1, BucketCardinality: 4, BucketCoverage: 1, AtomsPerBucket: 7,
+	})
+	if at7.Blueprint != "grouped-vertical" {
+		t.Errorf("AtomsPerBucket=7 -> blueprint %q, want grouped-vertical", at7.Blueprint)
+	}
+}
+
+// TestRecommend_BucketMinCoverage_Edge pins the bucketMinCoverage=0.7 threshold:
+// BucketCoverage=0.7 with no author signal must yield bucketed (not flat-list).
+func TestRecommend_BucketMinCoverage_Edge(t *testing.T) {
+	r := recommend.Recommend(recommend.Metrics{
+		TagDepth: 1, BucketCardinality: 3, BucketCoverage: 0.7, BodyAuthorSignal: 0,
+	})
+	if r.Blueprint == "flat-list" {
+		t.Errorf("BucketCoverage=0.7 should be bucketed, got flat-list")
+	}
+}
+
 func TestRecommend_ReproducesPersonalCatalog(t *testing.T) {
 	type row struct {
 		name string
