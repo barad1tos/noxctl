@@ -128,10 +128,7 @@ func featuresFromCatalog(cat *config.Catalog) engine.Features {
 // the operator omitted the field — engine.Apply treats empty as
 // "auto-tag fast-pass disabled".
 func dailyDefaultTagFromCatalog(cat *config.Catalog) string {
-	if cat == nil {
-		return ""
-	}
-	return cat.Meta.DailyDefaultTag
+	return cliutil.DailyDefaultTagFromCatalog(cat)
 }
 
 // promotionRulesFromCatalog maps `[[promotion]]` stanzas onto the
@@ -142,14 +139,7 @@ func dailyDefaultTagFromCatalog(cat *config.Catalog) string {
 // TOML-to-Domain bridge lives in `cmd/noxctl/` alongside the rest
 // of the catalog wiring.
 func promotionRulesFromCatalog(cat *config.Catalog) []fastpass.PromotionRule {
-	if cat == nil || len(cat.Promotions) == 0 {
-		return nil
-	}
-	out := make([]fastpass.PromotionRule, 0, len(cat.Promotions))
-	for _, p := range cat.Promotions {
-		out = append(out, fastpass.PromotionRule{From: p.From, To: p.To, Boundary: p.Boundary})
-	}
-	return out
+	return cliutil.PromotionRulesFromCatalog(cat)
 }
 
 // resolveBearDB picks the Bear DB watch directory for the daemon.

@@ -1,27 +1,22 @@
 package main
 
 import (
+	"context"
 	"errors"
-	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/spf13/cobra"
 
 	"github.com/barad1tos/noxctl/bear/cli"
-	"github.com/barad1tos/noxctl/bear/domain"
-	"github.com/barad1tos/noxctl/bear/engine"
-	"github.com/barad1tos/noxctl/bear/state"
 )
 
 // errInterrupted is the sentinel that cmd/noxctl/main.go maps to
 // POSIX exit code 130 (128 + SIGINT).
 var errInterrupted = errors.New("noxctl: interrupted")
 
-// errApplyFailures is returned when engine.Apply completed without a
+// errApplyFailures is returned when apply completed without a
 // top-level error but at least one pre-pass or per-domain row had
-// `Failed > 0`. Maps to exit 1 in main.go.
+// Failed > 0. Maps to exit 1 in main.go.
 var errApplyFailures = errors.New("noxctl: one or more domains failed")
 
 // CLI-state for apply-specific flags. Declared at package scope so
@@ -33,10 +28,9 @@ var (
 	applyBearDBFlag  string // --bear-db override (reserved for completeness; one-shot apply doesn't watch)
 )
 
-// applyCmd is the real `noxctl apply` subcommand. Replaces the
-// stub. Loads noxctl.toml, runs `engine.Apply`, renders the PLAY RECAP
-// via `renderRecap` (cmd/noxctl/recap.go, text/tabwriter), and maps
-// SIGINT/SIGTERM cancellation to errInterrupted (exit 130).
+// applyCmd is the real `noxctl apply` subcommand. Loads noxctl.toml,
+// delegates apply orchestration to bear/cli, and maps SIGINT/SIGTERM
+// cancellation to errInterrupted (exit 130).
 var applyCmd = &cobra.Command{
 	Use:   "apply",
 	Short: "Apply noxctl.toml to Bear (one-shot regen)",
@@ -66,47 +60,24 @@ func runApply(cmd *cobra.Command, _ []string) error {
 		return loadErr
 	}
 
-	// Pin registry — best-effort load (nil-safe registry per bear/pins.go).
-	pins, _ := domain.LoadPinRegistry(target)
-
-	// Resume detection — single stderr warning, no prompt.
-	if st, stErr := state.Load("./.noxctl/state.json"); stErr == nil && st.InProgress.Verb == "apply" {
-		_, _ = fmt.Fprintf(os.Stderr, "noxctl: resuming after interrupted apply (started %s)\n",
-			st.InProgress.StartedAt.UTC().Format("2006-01-02T15:04:05Z"))
-	}
-
-	// SIGINT/SIGTERM bridging: signal.NotifyContext cancels ctx,
-	// engine.Apply persists InProgress state, main maps to exit 130.
-	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	opts := engine.ApplyOpts{
-		Domains:         domains,
-		Pins:            pins,
-		StatePath:       "./.noxctl/state.json",
-		LockPath:        "./.noxctl/.lock",
-		Features:        featuresFromCatalog(cat),
-		NoWait:          applyNoWait,
-		AuditEnabled:    false,
-		Stderr:          os.Stderr,
-		DailyDefaultTag: dailyDefaultTagFromCatalog(cat),
-		PromotionRules:  promotionRulesFromCatalog(cat),
-	}
-
-	result, runErr := engine.Apply(ctx, opts)
-	if result != nil {
-		cli.RenderRecap(os.Stdout, result, quiet)
-	}
-	if runErr != nil {
-		return runErr
-	}
-	if result != nil && result.Interrupted {
+	runErr := runWithSignalContext(cmd, func(ctx context.Context) error {
+		return cli.RunApply(ctx, cli.ApplyOptions{
+			Domains:   domains,
+			Catalog:   cat,
+			PinTarget: target,
+			NoWait:    applyNoWait,
+			Quiet:     quiet,
+			Stdout:    os.Stdout,
+			Stderr:    os.Stderr,
+		})
+	})
+	switch {
+	case errors.Is(runErr, cli.ErrApplyInterrupted):
 		return errInterrupted
-	}
-	if result != nil && result.AnyFailed() {
+	case errors.Is(runErr, cli.ErrApplyFailures):
 		return errApplyFailures
 	}
-	return nil
+	return runErr
 }
 
 func init() {
