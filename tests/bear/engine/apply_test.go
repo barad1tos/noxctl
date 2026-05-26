@@ -3,10 +3,12 @@ package engine_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/state"
 )
@@ -83,6 +85,44 @@ func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 		if _, ok := result.PrePasses[name]; !ok {
 			t.Errorf("pre-pass %q missing from result.PrePasses", name)
 		}
+	}
+}
+
+type failingApplyBackend struct{}
+
+func (failingApplyBackend) Run(_ context.Context, _ []string, _ string) ([]byte, error) {
+	return nil, errors.New("bearcli unavailable")
+}
+
+func TestApply_DomainListFailureSurfacesInResult(t *testing.T) {
+	dir := t.TempDir()
+	d := &domain.Domain{
+		Tag:          "test/failing",
+		CanonicalTag: "#test/failing",
+		IndexTitle:   "Test Failing",
+		ParseMeta: func(_ *domain.Domain, _ string) domain.AtomicMeta {
+			return domain.AtomicMeta{}
+		},
+		RenderMaster: func(_ *domain.Domain, _ map[string][]domain.Note) string {
+			return ""
+		},
+	}
+	ctx := domain.ContextWithBackend(context.Background(), failingApplyBackend{})
+	opts := engine.ApplyOpts{
+		Domains:   []*domain.Domain{d},
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{},
+	}
+	result, err := engine.Apply(ctx, opts)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if !result.AnyFailed() {
+		t.Fatal("AnyFailed = false, want true for per-domain list failure")
+	}
+	if got := result.Domains[d.Tag].Failed; got != 1 {
+		t.Errorf("Failed = %d, want 1", got)
 	}
 }
 

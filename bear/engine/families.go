@@ -112,7 +112,7 @@ func runDomainAndSave(
 		return err
 	}
 	start := time.Now()
-	d.RunRegen(ctx)
+	regenResult := d.RunRegen(ctx)
 	elapsed := time.Since(start)
 	if opts.DomainTimingHook != nil {
 		opts.DomainTimingHook(d.Tag, elapsed)
@@ -127,7 +127,7 @@ func runDomainAndSave(
 	if hash != "" {
 		st.Domains[d.Tag] = state.DomainState{ContentHash: hash}
 	}
-	result.Domains[d.Tag] = DomainCounts{Unchanged: 1}
+	result.Domains[d.Tag] = DomainCountsFromRegen(regenResult)
 	if err := st.Save(opts.StatePath); err != nil {
 		log.Printf("apply: state.Save(domain=%s) failed: %v (continuing)", d.Tag, err)
 	}

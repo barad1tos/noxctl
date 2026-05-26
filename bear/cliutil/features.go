@@ -8,6 +8,7 @@ package cliutil
 import (
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/engine"
+	"github.com/barad1tos/noxctl/bear/fastpass"
 )
 
 // FeaturesFromCatalog copies `*config.Catalog.Features` (pointer fields,
@@ -46,6 +47,32 @@ func FeaturesFromCatalog(cat *config.Catalog) engine.Features {
 		f.DomainBootstrap = *cat.Features.DomainBootstrap
 	}
 	return f
+}
+
+// DailyDefaultTagFromCatalog returns the operator-chosen default tag for
+// untagged notes, if the catalog defines one.
+func DailyDefaultTagFromCatalog(cat *config.Catalog) string {
+	if cat == nil {
+		return ""
+	}
+	return cat.Meta.DailyDefaultTag
+}
+
+// PromotionRulesFromCatalog maps catalog promotion stanzas onto the runtime
+// fast-pass rule shape.
+func PromotionRulesFromCatalog(cat *config.Catalog) []fastpass.PromotionRule {
+	if cat == nil || len(cat.Promotions) == 0 {
+		return nil
+	}
+	out := make([]fastpass.PromotionRule, 0, len(cat.Promotions))
+	for _, promotion := range cat.Promotions {
+		out = append(out, fastpass.PromotionRule{
+			From:     promotion.From,
+			To:       promotion.To,
+			Boundary: promotion.Boundary,
+		})
+	}
+	return out
 }
 
 // ResolveFeatures applies the operator-override step on top of the
