@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Have an idea? Please describe the use case before the
-        implementation — the closed catalog of six blueprints is
+        implementation — the closed catalog of five blueprints is
         deliberately small, so additions need to clear a high bar.
 
   - type: textarea
