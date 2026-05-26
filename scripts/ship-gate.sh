@@ -26,6 +26,11 @@ cd "$(git rev-parse --show-toplevel)"
 # Future operators / forks should override via `NOXCTL_CONFIG=<path>`
 # to point at their own catalog file before running this gate.
 CONFIG="${NOXCTL_CONFIG:-examples/personal.toml}"
+# Keep Go and golangci-lint caches writable even under sandboxed runners
+# whose default ~/Library cache paths are read-only.
+export GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/noxctl-ship-gate-gocache}"
+export GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-${TMPDIR:-/tmp}/noxctl-ship-gate-golangci-cache}"
+mkdir -p "$GOCACHE" "$GOLANGCI_LINT_CACHE"
 # Per-invocation step log — `mktemp` keeps concurrent ship-gate runs
 # (different repos, parallel scripts) from clobbering each other.
 # Cleaned on EXIT; survives only when a step failed and tail-ed.

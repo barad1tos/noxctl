@@ -72,6 +72,8 @@ repos:
 
       - id: go-test
         name: go test
+        # Includes the production Cyrillic identifier/string-literal guard in
+        # tests/bear/xcallback_regex_test.go.
         entry: go test ./...
         language: system
         pass_filenames: false

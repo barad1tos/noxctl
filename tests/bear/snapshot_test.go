@@ -4,27 +4,25 @@
 //
 //  1. domain.SnapshotDomainRenderInputs returns (RenderInputs{Groups:
 //     non-nil empty map}, nil) for a Domain whose tag matches zero notes
-//     in the live Bear corpus. Empty-but-non-nil is the contract the
+//     from the bearcli list boundary. Empty-but-non-nil is the contract the
 //     engine.Plan core and the residue scanner both depend on — they
 //     range over .Groups without nil-checks.
 //  2. audit.LintUntracked exposes the wire value "untracked" — the
 //     constant the residue emitter and the diff renderer both serialize
 //     against.
 //
-// The empty-tag case exercises the live bearcli boundary by design: it
-// is the smallest end-to-end shape that proves the facade calls
+// The empty-tag case exercises the bearcli boundary through a fake backend:
+// it is the smallest hermetic shape that proves the facade calls
 // listNotes → computeMasterOverrides → computeHubOverrides → groupAtomics
 // in the same order Apply does (bear/domain/regen.go::RunRegen).
-// On hosts without bearcli installed (CI containers, non-darwin) the
-// test skips with a clear marker rather than spuriously failing.
 package bear_test
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
-	"runtime"
+	"fmt"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -32,23 +30,6 @@ import (
 	"github.com/barad1tos/noxctl/bear/audit"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
-
-// bearcliPath mirrors the hardcoded binary location used by
-// bearcli.Run (declared inside bear/bearcli/client.go). Tests that
-// invoke any facade that ultimately exec's bearcli must skip when
-// this path is missing — keeps the tests/bear/ suite green on hosts
-// that don't have Bear.app installed.
-const bearcliPath = "/Applications/Bear.app/Contents/MacOS/bearcli"
-
-func skipIfNoBearcli(t *testing.T) {
-	t.Helper()
-	if runtime.GOOS != "darwin" {
-		t.Skipf("SnapshotDomainRenderInputs invokes bearcli (macOS-only); GOOS=%s", runtime.GOOS)
-	}
-	if _, err := os.Stat(bearcliPath); err != nil {
-		t.Skipf("bearcli not installed at %s; skipping live-corpus snapshot test", bearcliPath)
-	}
-}
 
 // TestSnapshotDomainRenderInputs locks the facade's empty-tag contract:
 // a Domain whose tag yields zero notes from bearcli must produce
@@ -60,8 +41,6 @@ func skipIfNoBearcli(t *testing.T) {
 // gives a deterministic zero-row result whose shape doesn't depend on
 // the operator's vault contents.
 func TestSnapshotDomainRenderInputs(t *testing.T) {
-	skipIfNoBearcli(t)
-
 	// Deliberately-unused synthetic tag — no human would create
 	// `noxctl/snapshot-empty-fixture-do-not-use` in their vault.
 	d := &domain.Domain{
@@ -72,7 +51,12 @@ func TestSnapshotDomainRenderInputs(t *testing.T) {
 		// tags never reach DetectAuthor or RenderMaster on this path.
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	domain.ResetBearcliPoolForTest(1)
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+
+	backend := snapshotBackend{t: t, tag: d.Tag}
+	ctx := domain.ContextWithBackend(context.Background(), backend)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	snap, err := domain.SnapshotDomainRenderInputs(ctx, d)
@@ -88,6 +72,31 @@ func TestSnapshotDomainRenderInputs(t *testing.T) {
 	if got := len(snap.Notes); got != 0 {
 		t.Fatalf("Notes must be empty for a tag with zero notes; got %d notes", got)
 	}
+}
+
+type snapshotBackend struct {
+	t   *testing.T
+	tag string
+}
+
+func (s snapshotBackend) Run(_ context.Context, arguments []string, standardInput string) ([]byte, error) {
+	s.t.Helper()
+	if standardInput != "" {
+		return nil, fmt.Errorf("snapshot backend received stdin %q, want empty", standardInput)
+	}
+	wantArguments := []string{
+		"list",
+		"--tag",
+		s.tag,
+		"--format",
+		"json",
+		"--fields",
+		"id,title,content,tags,created",
+	}
+	if !slices.Equal(arguments, wantArguments) {
+		return nil, fmt.Errorf("snapshot backend args = %v, want %v", arguments, wantArguments)
+	}
+	return []byte("[]"), nil
 }
 
 // TestSnapshotDomainRenderInputs_LintUntrackedConstant locks the

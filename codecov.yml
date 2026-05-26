@@ -20,8 +20,6 @@ ignore:
   # for the migration window. Trivial passthrough, exercised end-to-end
   # via integration tests.
   - "registry/**/*.go"
-  # Test fixtures (analyzer testdata).
-  - "tools/cyrillic-lint/cyrillic/testdata/**"
   # CLI entry points: `package main` cannot be externally unit-tested
   # (Go forbids importing a main package as a library), and the project
   # rule forbids `*_test.go` inside production package directories.
