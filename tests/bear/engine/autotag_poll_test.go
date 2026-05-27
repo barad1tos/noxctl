@@ -57,6 +57,7 @@ type fakeAutoTagBackend struct {
 	listPayload []byte // canned response for "list"
 	onRun       func([]string)
 	failList    atomic.Int64
+	failWrite   atomic.Int64
 
 	mu    sync.Mutex
 	calls []fakeAutoTagCall
@@ -104,6 +105,9 @@ func (f *fakeAutoTagBackend) Run(_ context.Context, args []string, stdin string)
 		// downstream "overwrite" call proceeds and the test can observe it.
 		return []byte(`{"hash":"deadbeef"}`), nil
 	case "overwrite":
+		if f.failWrite.Load() > 0 && f.failWrite.Add(-1) >= 0 {
+			return nil, errors.New("overwrite failed")
+		}
 		return []byte(`{"ok":true}`), nil
 	}
 	return []byte("{}"), nil
@@ -117,6 +121,10 @@ func (f *fakeAutoTagBackend) SetListPayload(notes []byte) {
 
 func (f *fakeAutoTagBackend) FailNextList() {
 	f.failList.Add(1)
+}
+
+func (f *fakeAutoTagBackend) FailNextOverwrite() {
+	f.failWrite.Add(1)
 }
 
 func (f *fakeAutoTagBackend) TotalCalls() int64 {
@@ -313,6 +321,21 @@ func TestDaemonAutoTagPoll_FastPassFailureRetriesSameToken(t *testing.T) {
 		if cycles := countCycles(run.Buf); cycles != 0 {
 			t.Errorf("cycle count = %d, want 0 (no-write retry should not trigger follow-up apply)\nlog:\n%s",
 				cycles, run.Buf.String())
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_PerNoteFailureRetriesSameToken(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend(untaggedListPayload(t))
+		fake.FailNextOverwrite()
+		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(250 * time.Millisecond)
+
+		if got := fake.CountKind("overwrite"); got < 2 {
+			t.Errorf("overwrite count = %d, want >= 2 (per-note fast-pass failure must retry the pending DB token)\nlog:\n%s",
+				got, run.Buf.String())
 		}
 	})
 }

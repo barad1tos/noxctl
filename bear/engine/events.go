@@ -91,7 +91,7 @@ func (d *Daemon) handlePollTick(quietTimer, maxTimer *time.Timer, burstActive *b
 type autoTagPass struct {
 	name    string
 	enabled bool
-	fn      func(context.Context) (int, error)
+	fn      func(context.Context) (fastpass.PassResult, error)
 }
 
 func (d *Daemon) handleCycleTimer(
@@ -232,18 +232,26 @@ func (d *Daemon) handleAutoTagTick(ctx context.Context) (int, bool, bool) {
 	// without setting `[meta].daily_default_tag`.
 	dailyTagOn := d.opts.Features.AutoTagDefault && d.opts.DailyDefaultTag != ""
 	feats := d.opts.Features
-	mkPass := func(name string, enabled bool, fn func(context.Context) (int, error)) autoTagPass {
+	mkPass := func(name string, enabled bool, fn func(context.Context) (fastpass.PassResult, error)) autoTagPass {
 		return autoTagPass{name: name, enabled: enabled, fn: fn}
 	}
 	passes := []autoTagPass{
 		mkPass("foreign-tag escape", feats.ForeignTagEscape,
-			func(c context.Context) (int, error) { return fastpass.ApplyForeignTagEscape(c, domainsByTag) }),
+			func(c context.Context) (fastpass.PassResult, error) {
+				return fastpass.ApplyForeignTagEscapeResult(c, domainsByTag)
+			}),
 		mkPass("daily-default", dailyTagOn,
-			func(c context.Context) (int, error) { return fastpass.ApplyDailyDefaultTag(c, dailyDomain) }),
+			func(c context.Context) (fastpass.PassResult, error) {
+				return fastpass.ApplyDailyDefaultTagResult(c, dailyDomain)
+			}),
 		mkPass("domain-bootstrap", feats.DomainBootstrap,
-			func(c context.Context) (int, error) { return fastpass.ApplyDomainBootstrap(c, domainsByTag) }),
+			func(c context.Context) (fastpass.PassResult, error) {
+				return fastpass.ApplyDomainBootstrapResult(c, domainsByTag)
+			}),
 		mkPass("placeholder-refresh", feats.AutoTagDefault,
-			func(c context.Context) (int, error) { return fastpass.ApplyPlaceholderRefresh(c, domainsByTag) }),
+			func(c context.Context) (fastpass.PassResult, error) {
+				return fastpass.ApplyPlaceholderRefreshResult(c, domainsByTag)
+			}),
 	}
 	wrote := 0
 	failed := false
@@ -251,12 +259,15 @@ func (d *Daemon) handleAutoTagTick(ctx context.Context) (int, bool, bool) {
 		if !p.enabled {
 			continue
 		}
-		n, err := p.fn(ctx)
+		result, err := p.fn(ctx)
 		if err != nil {
 			failed = true
 			log.Printf("auto-tag fast-pass: %s failed: %v (continuing)", p.name, err)
 		}
-		wrote += n
+		if result.Failed > 0 {
+			failed = true
+		}
+		wrote += result.Changed
 	}
 
 	d.regenMu.Lock()
@@ -357,10 +368,6 @@ func (d *Daemon) cycleOnce(ctx context.Context, reason string) bool {
 	result, applyErr := Apply(ctx, applyOpts)
 	if applyErr != nil {
 		log.Printf("daemon cycle: %v", applyErr)
-		return false
-	}
-	if result == nil {
-		log.Printf("daemon cycle returned no result; preserving database baseline for retry")
 		return false
 	}
 	if result.Interrupted {
