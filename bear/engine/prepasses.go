@@ -7,6 +7,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"log"
 
 	"github.com/barad1tos/noxctl/bear/audit"
@@ -96,7 +97,8 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			name:    "cross_domain",
 			label:   "cross-domain moves",
 			fn: func() (PrePassCounts, error) {
-				return PrePassCounts{OK: 1}, fastpass.ApplyCrossDomainMoves(ctx, opts.Domains, opts.Pins)
+				passResult, err := fastpass.ApplyCrossDomainMovesResult(ctx, opts.Domains, opts.Pins)
+				return prePassCountsFromFastPass(passResult), err
 			},
 		},
 		{
@@ -142,8 +144,15 @@ func runPrePass(spec prePassSpec, result *ApplyResult) {
 	}
 	counts, err := spec.fn()
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			result.Interrupted = true
+			result.PrePasses[spec.name] = counts
+			return
+		}
 		log.Printf("%s failed: %v (continuing per-domain regen)", spec.label, err)
-		counts.Failed++
+		if counts.Failed == 0 {
+			counts.Failed = 1
+		}
 		result.PrePasses[spec.name] = counts
 		return
 	}

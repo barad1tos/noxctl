@@ -11,6 +11,7 @@ import (
 
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
+	"github.com/barad1tos/noxctl/bear/render"
 	"github.com/barad1tos/noxctl/bear/state"
 )
 
@@ -129,6 +130,76 @@ func (emptyApplyBackend) Run(_ context.Context, args []string, _ string) ([]byte
 	}
 }
 
+type crossDomainApplyBackend struct {
+	overwriteErr error
+}
+
+func (b crossDomainApplyBackend) Run(_ context.Context, args []string, stdin string) ([]byte, error) {
+	if len(args) == 0 {
+		return []byte(`[]`), nil
+	}
+	switch args[0] {
+	case "list":
+		return b.list(args)
+	case "cat":
+		return b.cat(args)
+	case "show":
+		return []byte(`{"hash":"deadbeef"}`), nil
+	case "create":
+		return []byte(`{"id":"created","title":"created","content":"","tags":[]}`), nil
+	case "overwrite":
+		if b.overwriteErr != nil {
+			return nil, b.overwriteErr
+		}
+		_ = stdin
+		return []byte(`{"ok":true}`), nil
+	default:
+		return []byte(`[]`), nil
+	}
+}
+
+func (b crossDomainApplyBackend) list(args []string) ([]byte, error) {
+	tag := valueAfter(args, "--tag")
+	if valueAfter(args, "--fields") == "id,title" {
+		switch tag {
+		case "inbox/a":
+			return []byte(`[{"id":"master-a","title":"Inbox A"}]`), nil
+		case "inbox/b":
+			return []byte(`[{"id":"master-b","title":"Inbox B"}]`), nil
+		}
+	}
+	if tag == "inbox/a" {
+		return []byte(`[` +
+			`{"id":"atom-1","title":"Moved","tags":["#inbox/a"],` +
+			`"content":"# Moved\n#inbox/a | [[Inbox A]]\n---\nbody\n"}` +
+			`]`), nil
+	}
+	return []byte(`[]`), nil
+}
+
+func (b crossDomainApplyBackend) cat(args []string) ([]byte, error) {
+	if len(args) < 2 {
+		return nil, errors.New("cat missing id")
+	}
+	switch args[1] {
+	case "master-a":
+		return []byte(`{"id":"master-a","title":"Inbox A","content":"# Inbox A\n"}`), nil
+	case "master-b":
+		return []byte(`{"id":"master-b","title":"Inbox B","content":"# Inbox B\n- [[Moved]]\n"}`), nil
+	default:
+		return []byte(`{"id":"unknown","title":"unknown","content":""}`), nil
+	}
+}
+
+func valueAfter(args []string, key string) string {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == key {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
 func minimalApplyDomain(tag, indexTitle string) *domain.Domain {
 	return &domain.Domain{
 		Tag:          tag,
@@ -203,6 +274,52 @@ func TestApply_MasterCreateSurfacesInDomainCounts(t *testing.T) {
 	}
 	if counts.Unchanged != 0 {
 		t.Errorf("Unchanged = %d, want 0 when master was created", counts.Unchanged)
+	}
+}
+
+func TestApply_CrossDomainMoveSurfacesChangedPrePassCount(t *testing.T) {
+	dir := t.TempDir()
+	domains := []*domain.Domain{
+		render.NewFlatListDomain("inbox/a", "Inbox A"),
+		render.NewFlatListDomain("inbox/b", "Inbox B"),
+	}
+	ctx := domain.ContextWithBackend(context.Background(), crossDomainApplyBackend{})
+	result, err := engine.Apply(ctx, engine.ApplyOpts{
+		Domains:   domains,
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{CrossDomainMoves: true},
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	counts := result.PrePasses["cross_domain"]
+	if counts.Changed != 1 || counts.Failed != 0 {
+		t.Fatalf("cross_domain counts = %+v, want changed=1 failed=0", counts)
+	}
+}
+
+func TestApply_CrossDomainMoveSurfacesFailedPrePassCount(t *testing.T) {
+	dir := t.TempDir()
+	domains := []*domain.Domain{
+		render.NewFlatListDomain("inbox/a", "Inbox A"),
+		render.NewFlatListDomain("inbox/b", "Inbox B"),
+	}
+	ctx := domain.ContextWithBackend(context.Background(), crossDomainApplyBackend{
+		overwriteErr: errors.New("overwrite failed"),
+	})
+	result, err := engine.Apply(ctx, engine.ApplyOpts{
+		Domains:   domains,
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{CrossDomainMoves: true},
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	counts := result.PrePasses["cross_domain"]
+	if counts.Changed != 0 || counts.Failed != 1 {
+		t.Fatalf("cross_domain counts = %+v, want changed=0 failed=1", counts)
 	}
 }
 

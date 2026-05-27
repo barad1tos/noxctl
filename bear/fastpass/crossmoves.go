@@ -90,36 +90,42 @@ func readDomainMaster(ctx context.Context, d *domain.Domain) (string, error) {
 	return existing.Content, nil
 }
 
-// ApplyCrossDomainMoves reads every flat-list domain's master, detects
-// atomics whose current tag puts them in domain A but whose bullet now
-// lives in domain B's master, and rewrites those atomics' canonical
-// tag-lines from `#A` to `#B`. Bear's tag-tracking metadata follows the
-// body tag automatically — the next per-domain regen sees the atomic in
-// its new domain.
+// ApplyCrossDomainMovesResult reads every flat-list domain's master,
+// detects atomics whose current tag puts them in domain A but whose
+// bullet now lives in domain B's master, and rewrites those atomics'
+// canonical tag-lines from `#A` to `#B`. Bear's tag-tracking metadata
+// follows the body tag automatically — the next per-domain regen sees
+// the atomic in its new domain.
 //
 // Runs once before the per-domain regen loop in runAllRegens. Failures
 // are non-fatal: the orchestrator logs and continues with per-domain
-// regens.
-func ApplyCrossDomainMoves(ctx context.Context, domains []*domain.Domain, pins *domain.PinRegistry) error {
+// regens. Returns structured per-note counts for apply recaps and verify
+// idempotency checks.
+func ApplyCrossDomainMovesResult(
+	ctx context.Context,
+	domains []*domain.Domain,
+	pins *domain.PinRegistry,
+) (PassResult, error) {
 	claims, err := BuildFlatListMasterClaims(ctx, domains)
 	if err != nil {
-		return err
+		return PassResult{}, err
 	}
 	if len(claims) == 0 {
-		return nil
+		return PassResult{}, nil
 	}
+	result := PassResult{}
 	for _, source := range domains {
 		if err = domain.CheckCtx(ctx); err != nil {
-			return err
+			return result, err
 		}
 		if !source.IsFlatList() || source.SkipAtomicsPass {
 			continue
 		}
-		if err = applyCrossDomainMovesFor(ctx, source, claims, pins); err != nil {
-			return err
+		if err = applyCrossDomainMovesFor(ctx, source, claims, pins, &result); err != nil {
+			return result, err
 		}
 	}
-	return nil
+	return result, nil
 }
 
 // applyCrossDomainMovesFor handles one source domain: walks its atomics,
@@ -130,9 +136,11 @@ func applyCrossDomainMovesFor(
 	source *domain.Domain,
 	claims map[string]flatListMasterClaim,
 	pins *domain.PinRegistry,
+	result *PassResult,
 ) error {
 	notes, err := bearcli.ListNotesForTag(ctx, source.Tag)
 	if err != nil {
+		result.Failed++
 		return fmt.Errorf("ApplyCrossDomainMoves(%s) list: %w", source.Tag, err)
 	}
 	for _, atom := range notes {
@@ -146,8 +154,13 @@ func applyCrossDomainMovesFor(
 		if !ok || target == source {
 			continue
 		}
-		if err = rewriteAtomTag(ctx, atom, source, target, pins); err != nil {
-			return err
+		changed, rewriteErr := rewriteAtomTag(ctx, atom, source, target, pins)
+		if rewriteErr != nil {
+			result.Failed++
+			return rewriteErr
+		}
+		if changed {
+			result.Changed++
 		}
 	}
 	return nil
@@ -173,19 +186,22 @@ func lookupClaim(claims map[string]flatListMasterClaim, atom domain.Note) (*doma
 // source tag-line was found — the bool short-circuits the no-op gate.
 // equalIgnoringNewNoteLinkStrict still runs for the "tag found but URL
 // drift only" case.
-//
-//nolint:lll
-func rewriteAtomTag(ctx context.Context, atom domain.Note, source, target *domain.Domain, pins *domain.PinRegistry) error {
+func rewriteAtomTag(
+	ctx context.Context,
+	atom domain.Note,
+	source, target *domain.Domain,
+	pins *domain.PinRegistry,
+) (bool, error) {
 	newContent, rewrote := rewriteCanonicalTag(atom.Content, source.CanonicalTag, target)
 	if !rewrote || domain.EqualIgnoringNewNoteLinkStrict(newContent, atom.Content) {
-		return nil
+		return false, nil
 	}
 	if err := bearcli.OverwriteWithRetry(ctx, atom.ID, newContent); err != nil {
-		return fmt.Errorf("ApplyCrossDomainMoves(%s→%s) %q: %w", source.Tag, target.Tag, atom.Title, err)
+		return false, fmt.Errorf("ApplyCrossDomainMoves(%s→%s) %q: %w", source.Tag, target.Tag, atom.Title, err)
 	}
 	pins.RecordPin(atom.ID, target.Tag)
 	target.Logf("cross-domain move: %s ← %s", atom.Title, source.Tag)
-	return nil
+	return true, nil
 }
 
 // rewriteCanonicalTag replaces the source domain's canonical tag-line

@@ -166,7 +166,12 @@ func boundaryStart(boundary string, now time.Time) time.Time {
 // catalog means time-promotion is disabled.
 //
 //nolint:lll
-func ApplyTimeBasedPromotion(ctx context.Context, domains []*domain.Domain, pins *domain.PinRegistry, rules []PromotionRule) error {
+func ApplyTimeBasedPromotion(
+	ctx context.Context,
+	domains []*domain.Domain,
+	pins *domain.PinRegistry,
+	rules []PromotionRule,
+) error {
 	_, err := ApplyTimeBasedPromotionResult(ctx, domains, pins, rules)
 	return err
 }
@@ -218,6 +223,7 @@ func ApplyTimeBasedPromotionResult(
 			return result, err
 		}
 		switch processAtomForPromotion(ctx, item.atom, item.source, domainByTag, pins, now, ruleIndex) {
+		case passSkipped:
 		case passChanged:
 			result.Changed++
 		case passFailed:
@@ -259,9 +265,13 @@ func processAtomForPromotion(
 		log.Printf("time-promotion: %q would move to %q but no domain registered", atom.Title, newTag)
 		return passSkipped
 	}
-	if err := promoteAtomToDomain(ctx, atom, source, target); err != nil {
+	changed, err := promoteAtomToDomain(ctx, atom, source, target)
+	if err != nil {
 		log.Printf("time-promotion: %q failed: %v", atom.Title, err)
 		return passFailed
+	}
+	if !changed {
+		return passSkipped
 	}
 	return passChanged
 }
@@ -298,15 +308,15 @@ func indexPromotionDomains(all []*domain.Domain, rules []PromotionRule) map[stri
 // for the no-op gate. Asymmetry vs rewriteAtomTag: time-promotion is a
 // soft move, so the non-strict predicate is used here (rewriteAtomTag
 // uses the strict variant).
-func promoteAtomToDomain(ctx context.Context, atom domain.Note, source, target *domain.Domain) error {
+func promoteAtomToDomain(ctx context.Context, atom domain.Note, source, target *domain.Domain) (bool, error) {
 	newContent, rewrote := rewriteCanonicalTag(atom.Content, source.CanonicalTag, target)
 	if !rewrote || domain.EqualIgnoringNewNoteLink(newContent, atom.Content) {
-		return nil
+		return false, nil
 	}
 	err := bearcli.OverwriteWithRetry(ctx, atom.ID, newContent)
 	if err != nil {
-		return fmt.Errorf("time-promotion(%s→%s) %q: %w", source.Tag, target.Tag, atom.Title, err)
+		return false, fmt.Errorf("time-promotion(%s→%s) %q: %w", source.Tag, target.Tag, atom.Title, err)
 	}
 	target.Logf("time-promoted: %s ← %s", atom.Title, source.Tag)
-	return nil
+	return true, nil
 }

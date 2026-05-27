@@ -7,11 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/render"
+	"github.com/barad1tos/noxctl/bear/state"
 )
 
 type failingBackend struct{}
@@ -81,6 +83,35 @@ func TestRunApply_DomainFailureReturnsFailureSentinel(t *testing.T) {
 	}
 }
 
+func TestRunApply_WarnsWhenPreviousApplyWasInProgress(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	startedAt := time.Date(2026, 5, 27, 7, 30, 0, 0, time.UTC)
+	if err := (&state.State{
+		Version:    state.SchemaVersion,
+		InProgress: state.InProgress{Verb: "apply", StartedAt: startedAt},
+	}).Save(statePath); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := cli.RunApply(context.Background(), cli.ApplyOptions{
+		Catalog:   disabledFeatureCatalog(),
+		StatePath: statePath,
+		LockPath:  filepath.Join(dir, ".lock"),
+		Quiet:     true,
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+	})
+	if err != nil {
+		t.Fatalf("RunApply: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "resuming after interrupted apply") {
+		t.Fatalf("stderr = %q, want interrupted apply warning", stderr.String())
+	}
+}
+
 type promotionOverwriteFailBackend struct{}
 
 func (promotionOverwriteFailBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
@@ -91,7 +122,11 @@ func (promotionOverwriteFailBackend) Run(_ context.Context, args []string, _ str
 	case "list":
 		for i := 0; i+1 < len(args); i++ {
 			if args[i] == "--tag" && args[i+1] == "test/daily" {
-				return []byte(`[{"id":"atom-1","title":"Aged","tags":["#test/daily"],"content":"# Aged\n#test/daily | [[Daily]]\n---\nbody\n","created":"2020-01-01T00:00:00Z"}]`), nil
+				return []byte(`[` +
+					`{"id":"atom-1","title":"Aged","tags":["#test/daily"],` +
+					`"content":"# Aged\n#test/daily | [[Daily]]\n---\nbody\n",` +
+					`"created":"2020-01-01T00:00:00Z"}` +
+					`]`), nil
 			}
 		}
 		return []byte(`[]`), nil

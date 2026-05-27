@@ -23,11 +23,7 @@ import (
 // rewritten, the marker is gone, so the next tick skips the same
 // note. Returns the number of notes actually rewritten.
 func ApplyPlaceholderRefresh(ctx context.Context, domainsByTag map[string]*domain.Domain) (int, error) {
-	result, err := ApplyPlaceholderRefreshResult(ctx, domainsByTag)
-	if err != nil {
-		return 0, err
-	}
-	return result.Changed, nil
+	return changedCount(ApplyPlaceholderRefreshResult(ctx, domainsByTag))
 }
 
 // ApplyPlaceholderRefreshResult is ApplyPlaceholderRefresh with per-note
@@ -65,6 +61,7 @@ func ApplyPlaceholderRefreshResult(ctx context.Context, domainsByTag map[string]
 			return result, err
 		}
 		switch refreshOnePlaceholder(ctx, note, placeholderToDomains, stamp) {
+		case passSkipped:
 		case passChanged:
 			result.Changed++
 		case passFailed:

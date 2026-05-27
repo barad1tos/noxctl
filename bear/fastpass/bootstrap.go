@@ -61,6 +61,7 @@ func ApplyDomainBootstrapResult(ctx context.Context, domainsByTag map[string]*do
 			return result, err
 		}
 		switch applyDomainBootstrapOne(ctx, note, domainsByTag, warned) {
+		case passSkipped:
 		case passChanged:
 			result.Changed++
 		case passFailed:

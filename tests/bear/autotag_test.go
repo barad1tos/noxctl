@@ -13,6 +13,7 @@ package bear_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -182,6 +183,30 @@ func TestApplyForeignTagEscape_UnknownDestinationFallsBackToStripOnly(t *testing
 	}
 }
 
+func TestApplyForeignTagEscapeResult_ReportsChangedRewrite(t *testing.T) {
+	backend, ctx := setupRefreshFixture(t, fakeNote{
+		ID:      "note-foreign",
+		Title:   "Escaped",
+		Tags:    []string{"quicknote/daily", "library/poetry"},
+		Content: "# Escaped\n#quicknote/daily | [[Daily]]\n#library/poetry\nbody\n",
+	})
+	domainsByTag := domain.DomainsByTag([]*domain.Domain{testutil.Domain(t, "library/poetry")})
+
+	result, err := fastpass.ApplyForeignTagEscapeResult(ctx, domainsByTag)
+	if err != nil {
+		t.Fatalf("ApplyForeignTagEscapeResult: %v", err)
+	}
+	if result.Changed != 1 || result.Failed != 0 {
+		t.Fatalf("result = %+v, want changed=1 failed=0", result)
+	}
+	if len(backend.overwriteCalls) != 1 {
+		t.Fatalf("overwrite calls = %d, want 1", len(backend.overwriteCalls))
+	}
+	if !strings.Contains(backend.overwriteCalls[0].Content, "#library/poetry | [[") {
+		t.Fatalf("overwrite content missing library canonical line:\n%s", backend.overwriteCalls[0].Content)
+	}
+}
+
 // TestRefreshQuicknotePlaceholder_MarkerPresent locks the rewrite contract:
 // when content starts with the literal `# Quicknote\n` H1, replace just that
 // line with `# <stamp>\n` and leave the rest of the body byte-identical.
@@ -242,6 +267,7 @@ type fakeRefreshBackend struct {
 	listPayload     []byte
 	overwriteCalls  []fakeOverwriteCall
 	listArgsCapture []string
+	afterOverwrite  func()
 }
 
 type fakeOverwriteCall struct {
@@ -265,6 +291,9 @@ func (f *fakeRefreshBackend) Run(_ context.Context, args []string, stdin string)
 			noteID = args[1]
 		}
 		f.overwriteCalls = append(f.overwriteCalls, fakeOverwriteCall{NoteID: noteID, Content: stdin})
+		if f.afterOverwrite != nil {
+			f.afterOverwrite()
+		}
 		return []byte(`{"ok":true}`), nil
 	case "show":
 		// overwriteWithRetry calls show first for hash; return a minimal stub.
@@ -428,6 +457,38 @@ func TestApplyPlaceholderRefresh_DispatchesToDomainByTitleAndTag(t *testing.T) {
 	if !strings.HasPrefix(backend.overwriteCalls[0].Content, wantHead) {
 		t.Errorf("overwrite content head = %q, want prefix %q",
 			strings.SplitN(backend.overwriteCalls[0].Content, "\n", 2)[0]+"\n", wantHead)
+	}
+}
+
+func TestApplyPlaceholderRefresh_ReturnsPartialChangedOnContextCancel(t *testing.T) {
+	setFixedNowForTest(t, time.Date(2026, 5, 16, 0, 35, 0, 0, time.Local))
+	backend, baseCtx := setupRefreshFixture(t,
+		fakeNote{
+			ID:      "note-ok",
+			Title:   "Quicknote",
+			Tags:    []string{"quicknote/daily"},
+			Content: "# Quicknote\n#quicknote/daily | [[✱ Daily]]\n---\n\n",
+		},
+		fakeNote{
+			ID:      "note-skipped",
+			Title:   "Quicknote",
+			Tags:    []string{"quicknote/daily"},
+			Content: "# Quicknote\n#quicknote/daily | [[✱ Daily]]\n---\n\n",
+		},
+	)
+	ctx, cancel := context.WithCancel(baseCtx)
+	backend.afterOverwrite = cancel
+
+	domainsByTag := domain.DomainsByTag([]*domain.Domain{testutil.Domain(t, "quicknote/daily")})
+	refreshed, err := fastpass.ApplyPlaceholderRefresh(ctx, domainsByTag)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("ApplyPlaceholderRefresh err = %v, want context.Canceled", err)
+	}
+	if refreshed != 1 {
+		t.Fatalf("refreshed = %d, want partial changed count 1", refreshed)
+	}
+	if len(backend.overwriteCalls) != 1 {
+		t.Fatalf("overwrite calls = %d, want 1 before cancellation", len(backend.overwriteCalls))
 	}
 }
 

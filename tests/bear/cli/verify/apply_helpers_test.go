@@ -18,6 +18,9 @@ import (
 // (a domain joined/left the list) not noise (random reshuffle).
 func TestNonIdempotentDomains_SortedAlphabetically(t *testing.T) {
 	res := &engine.ApplyResult{
+		PrePasses: map[string]engine.PrePassCounts{
+			"foreign_tag": {Changed: 2},
+		},
 		Domains: map[string]engine.DomainCounts{
 			"library/poetry":  {Changed: 1},
 			"llm/agents":      {Created: 1},
@@ -29,6 +32,7 @@ func TestNonIdempotentDomains_SortedAlphabetically(t *testing.T) {
 	}
 	got := verify.NonIdempotentDomainsForTest(res)
 	want := []string{
+		"foreign_tag (pre-pass changed=2)",
 		"it/vendors (created=1 changed=2)",
 		"library/poetry (created=0 changed=1)",
 		"library/quotes (created=1 changed=0)",

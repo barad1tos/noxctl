@@ -128,14 +128,48 @@ func TestApplyTimeBasedPromotion_PromotesAgedAtom_AndRewritesCanonical(t *testin
 	backend := &fastpassApplyBackend{byTag: map[string]string{"inbox/daily": atom, "inbox/weekly": "[]"}}
 	ctx := domain.ContextWithBackend(context.Background(), backend)
 
-	if err := fastpass.ApplyTimeBasedPromotion(ctx, []*domain.Domain{daily, weekly}, nil, rules); err != nil {
-		t.Fatalf("ApplyTimeBasedPromotion: %v", err)
+	result, err := fastpass.ApplyTimeBasedPromotionResult(ctx, []*domain.Domain{daily, weekly}, nil, rules)
+	if err != nil {
+		t.Fatalf("ApplyTimeBasedPromotionResult: %v", err)
+	}
+	if result.Changed != 1 || result.Failed != 0 {
+		t.Fatalf("result = %+v, want changed=1 failed=0", result)
 	}
 	if len(backend.overwrites) != 1 {
 		t.Fatalf("overwrite calls = %d, want 1 (aged atom must be promoted)", len(backend.overwrites))
 	}
 	if !strings.Contains(backend.overwrites[0].Content, "#inbox/weekly | [[") {
 		t.Errorf("promoted atom canonical not rewritten to inbox/weekly; got:\n%s", backend.overwrites[0].Content)
+	}
+}
+
+func TestApplyTimeBasedPromotionResult_DoesNotCountNoopCandidateAsChanged(t *testing.T) {
+	domain.ResetBearcliPoolForTest(4)
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+
+	daily := render.NewFlatListDomain("inbox/daily", "✱ Daily")
+	weekly := render.NewFlatListDomain("inbox/weekly", "✱ Weekly")
+	rules := []fastpass.PromotionRule{{From: "inbox/daily", To: "inbox/weekly", Boundary: "day"}}
+
+	atom := notesJSON(t, map[string]any{
+		"id":      "atom-aged",
+		"title":   "Старий запис",
+		"tags":    []string{"#inbox/daily"},
+		"content": "# Старий запис\nтіло без canonical tag-line\n",
+		"created": "2020-01-01T09:00:00Z",
+	})
+	backend := &fastpassApplyBackend{byTag: map[string]string{"inbox/daily": atom, "inbox/weekly": "[]"}}
+	ctx := domain.ContextWithBackend(context.Background(), backend)
+
+	result, err := fastpass.ApplyTimeBasedPromotionResult(ctx, []*domain.Domain{daily, weekly}, nil, rules)
+	if err != nil {
+		t.Fatalf("ApplyTimeBasedPromotionResult: %v", err)
+	}
+	if result.Changed != 0 || result.Failed != 0 {
+		t.Fatalf("result = %+v, want changed=0 failed=0 for no-op candidate", result)
+	}
+	if len(backend.overwrites) != 0 {
+		t.Fatalf("overwrite calls = %d, want 0 for no-op candidate", len(backend.overwrites))
 	}
 }
 
@@ -171,27 +205,27 @@ func TestApplyTimeBasedPromotion_SkipsAtom_WhenCreationDateMissing(t *testing.T)
 	}
 }
 
-// TestApplyCrossDomainMoves_RewritesTag_WhenAtomClaimedByOtherMaster pins the
-// drag-between-masters journey: an atom tagged inbox/a whose bullet now lives
-// in inbox/b's master gets its canonical tag rewritten to inbox/b. User-facing
-// bug if this regresses: dragging a bullet between flat-list masters does
-// nothing and the atom snaps back to its old domain next regen.
-//
-//cyrillic:permit
-func TestApplyCrossDomainMoves_RewritesTag_WhenAtomClaimedByOtherMaster(t *testing.T) {
+type crossDomainMoveFixture struct {
+	domains []*domain.Domain
+	backend *fastpassApplyBackend
+	pins    *domain.PinRegistry
+}
+
+func newCrossDomainMoveFixture(t *testing.T, overwriteErr error) crossDomainMoveFixture {
+	t.Helper()
 	domain.ResetBearcliPoolForTest(4)
 	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
 
 	a := render.NewFlatListDomain("inbox/a", "✱ Inbox A")
 	b := render.NewFlatListDomain("inbox/b", "✱ Inbox B")
-	const atomTitle = "Перенесена нотатка"
+	const atomTitle = "Moved note"
 
 	listA := notesJSON(
 		t,
 		map[string]any{"id": "master-a", "title": "✱ Inbox A", "tags": []string{"#inbox/a"}, "content": ""},
 		map[string]any{
 			"id": "atom-1", "title": atomTitle, "tags": []string{"#inbox/a"},
-			"content": "# " + atomTitle + "\n#inbox/a | [[✱ Inbox A]]\n---\nтіло\n",
+			"content": "# " + atomTitle + "\n#inbox/a | [[✱ Inbox A]]\n---\nbody\n",
 		},
 	)
 	listB := notesJSON(
@@ -201,27 +235,48 @@ func TestApplyCrossDomainMoves_RewritesTag_WhenAtomClaimedByOtherMaster(t *testi
 	backend := &fastpassApplyBackend{
 		byTag: map[string]string{"inbox/a": listA, "inbox/b": listB},
 		masters: map[string]string{
-			"master-a": "# ✱ Inbox A\n",                          // claims nothing
-			"master-b": "# ✱ Inbox B\n- [[" + atomTitle + "]]\n", // claims the atom by title
+			"master-a": "# ✱ Inbox A\n",
+			"master-b": "# ✱ Inbox B\n- [[" + atomTitle + "]]\n",
 		},
+		overwriteErr: overwriteErr,
 	}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
 	pins, err := domain.LoadPinRegistry(filepath.Join(t.TempDir(), "pins.json"))
 	if err != nil {
 		t.Fatalf("LoadPinRegistry: %v", err)
 	}
+	return crossDomainMoveFixture{
+		domains: []*domain.Domain{a, b},
+		backend: backend,
+		pins:    pins,
+	}
+}
 
-	if err = fastpass.ApplyCrossDomainMoves(ctx, []*domain.Domain{a, b}, pins); err != nil {
-		t.Fatalf("ApplyCrossDomainMoves: %v", err)
+// TestApplyCrossDomainMoves_RewritesTag_WhenAtomClaimedByOtherMaster pins the
+// drag-between-masters journey: an atom tagged inbox/a whose bullet now lives
+// in inbox/b's master gets its canonical tag rewritten to inbox/b. User-facing
+// bug if this regresses: dragging a bullet between flat-list masters does
+// nothing and the atom snaps back to its old domain next regen.
+//
+//cyrillic:permit
+func TestApplyCrossDomainMoves_RewritesTag_WhenAtomClaimedByOtherMaster(t *testing.T) {
+	fixture := newCrossDomainMoveFixture(t, nil)
+	ctx := domain.ContextWithBackend(context.Background(), fixture.backend)
+
+	result, err := fastpass.ApplyCrossDomainMovesResult(ctx, fixture.domains, fixture.pins)
+	if err != nil {
+		t.Fatalf("ApplyCrossDomainMovesResult: %v", err)
 	}
-	if len(backend.overwrites) != 1 {
-		t.Fatalf("overwrite calls = %d, want 1 (claimed atom must move to B)", len(backend.overwrites))
+	if result.Changed != 1 || result.Failed != 0 {
+		t.Fatalf("result = %+v, want changed=1 failed=0", result)
 	}
-	if backend.overwrites[0].NoteID != "atom-1" {
-		t.Errorf("overwrote wrong note: %q, want atom-1", backend.overwrites[0].NoteID)
+	if len(fixture.backend.overwrites) != 1 {
+		t.Fatalf("overwrite calls = %d, want 1 (claimed atom must move to B)", len(fixture.backend.overwrites))
 	}
-	if !strings.Contains(backend.overwrites[0].Content, "#inbox/b | [[") {
-		t.Errorf("atom canonical not rewritten to target inbox/b; got:\n%s", backend.overwrites[0].Content)
+	if fixture.backend.overwrites[0].NoteID != "atom-1" {
+		t.Errorf("overwrote wrong note: %q, want atom-1", fixture.backend.overwrites[0].NoteID)
+	}
+	if !strings.Contains(fixture.backend.overwrites[0].Content, "#inbox/b | [[") {
+		t.Errorf("atom canonical not rewritten to target inbox/b; got:\n%s", fixture.backend.overwrites[0].Content)
 	}
 }
 
@@ -230,7 +285,7 @@ func TestApplyCrossDomainMoves_RewritesTag_WhenAtomClaimedByOtherMaster(t *testi
 // promotion sweep must keep going and still return nil (one bad atom does not
 // stall the whole pass). With two aged atoms and a failing overwrite, both are
 // attempted. User-facing bug if this regresses: a single rejected write aborts
-// the sweep and the remaining aged quicknotes never roll forward.
+// the sweep and the remaining aged quick notes never roll forward.
 //
 //cyrillic:permit
 func TestApplyTimeBasedPromotion_ContinuesSweep_WhenOverwriteFails(t *testing.T) {
@@ -273,43 +328,12 @@ func TestApplyTimeBasedPromotion_ContinuesSweep_WhenOverwriteFails(t *testing.T)
 // so the orchestrator logs it and falls back to per-domain regen. User-facing
 // bug if this regresses: a failed cross-move is swallowed and the atom is left
 // half-moved with no signal.
-//
-//cyrillic:permit
 func TestApplyCrossDomainMoves_ReturnsError_WhenOverwriteFails(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	fixture := newCrossDomainMoveFixture(t, errors.New("bearcli overwrite: simulated rejection"))
+	ctx := domain.ContextWithBackend(context.Background(), fixture.backend)
 
-	a := render.NewFlatListDomain("inbox/a", "✱ Inbox A")
-	b := render.NewFlatListDomain("inbox/b", "✱ Inbox B")
-	const atomTitle = "Перенесена нотатка"
-
-	listA := notesJSON(
-		t,
-		map[string]any{"id": "master-a", "title": "✱ Inbox A", "tags": []string{"#inbox/a"}, "content": ""},
-		map[string]any{
-			"id": "atom-1", "title": atomTitle, "tags": []string{"#inbox/a"},
-			"content": "# " + atomTitle + "\n#inbox/a | [[✱ Inbox A]]\n---\nтіло\n",
-		},
-	)
-	listB := notesJSON(
-		t,
-		map[string]any{"id": "master-b", "title": "✱ Inbox B", "tags": []string{"#inbox/b"}, "content": ""},
-	)
-	backend := &fastpassApplyBackend{
-		byTag: map[string]string{"inbox/a": listA, "inbox/b": listB},
-		masters: map[string]string{
-			"master-a": "# ✱ Inbox A\n",
-			"master-b": "# ✱ Inbox B\n- [[" + atomTitle + "]]\n",
-		},
-		overwriteErr: errors.New("bearcli overwrite: simulated rejection"),
-	}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
-	pins, err := domain.LoadPinRegistry(filepath.Join(t.TempDir(), "pins.json"))
-	if err != nil {
-		t.Fatalf("LoadPinRegistry: %v", err)
-	}
-
-	if err = fastpass.ApplyCrossDomainMoves(ctx, []*domain.Domain{a, b}, pins); err == nil {
-		t.Fatalf("ApplyCrossDomainMoves returned nil despite a failed rewrite; want a propagated error")
+	_, err := fastpass.ApplyCrossDomainMovesResult(ctx, fixture.domains, fixture.pins)
+	if err == nil {
+		t.Fatalf("ApplyCrossDomainMovesResult returned nil despite a failed rewrite; want a propagated error")
 	}
 }

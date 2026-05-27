@@ -151,8 +151,8 @@ func firstForeignTagFromTags(tags []string) string {
 // pre-pass produced bearcli writes that need to be self-gated downstream
 // (fast-pass gate fix).
 func ApplyForeignTagEscape(ctx context.Context, domainsByTag map[string]*domain.Domain) (int, error) {
-	result, err := ApplyForeignTagEscapeResult(ctx, domainsByTag)
-	return result.Changed, err
+	passResult, err := ApplyForeignTagEscapeResult(ctx, domainsByTag)
+	return changedCount(passResult, err)
 }
 
 // ApplyForeignTagEscapeResult is ApplyForeignTagEscape with per-note failure
@@ -176,6 +176,7 @@ func ApplyForeignTagEscapeResult(ctx context.Context, domainsByTag map[string]*d
 			return result, err
 		}
 		switch processForeignTagEscape(ctx, note, domainsByTag) {
+		case passSkipped:
 		case passChanged:
 			result.Changed++
 		case passFailed:
