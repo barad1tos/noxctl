@@ -150,6 +150,42 @@ func TestScanDuplicateTitles_MarksManagedAuxNotesNonFixable(t *testing.T) {
 	}
 }
 
+func TestScanDuplicateTitles_MarksManagedSubtagAuxNotesNonFixable(t *testing.T) {
+	fake := &orphanFakeBearcli{listPayload: mustMarshalNotes(t, []duplicateFixture{
+		{
+			ID:    "note-atom",
+			Title: "claude · sessions",
+			Tags:  []string{"#personal/notes"},
+		},
+		{
+			ID:      "note-hub",
+			Title:   "claude · sessions",
+			Content: "# claude · sessions\n#claude/sessions | [[✱ Claude]]\n---\n- [[Atom]]\n",
+			Tags:    []string{"#claude/sessions"},
+		},
+	})}
+	ctx := armOrphanFakeBearcli(t, fake)
+	d := render.NewHubRoutedSubTagDomain("claude", "✱ Claude", "general", []string{"sessions"})
+
+	findings, err := audit.ScanDuplicateTitles(ctx, []*domain.Domain{d})
+	if err != nil {
+		t.Fatalf("ScanDuplicateTitles: %v", err)
+	}
+	if got, want := len(findings), 2; got != want {
+		t.Fatalf("findings len = %d, want %d (%v)", got, want, findings)
+	}
+	fixableByID := map[string]bool{}
+	for _, finding := range findings {
+		fixableByID[finding.NoteID] = finding.Fixable
+	}
+	if !fixableByID["note-atom"] {
+		t.Fatalf("subtag atom Fixable = false, want true")
+	}
+	if fixableByID["note-hub"] {
+		t.Fatalf("subtag managed hub Fixable = true, want false")
+	}
+}
+
 func TestApplyDuplicateTitles_ContextCanceledStopsCleanly(t *testing.T) {
 	fake := &orphanFakeBearcli{}
 	parent := armOrphanFakeBearcli(t, fake)

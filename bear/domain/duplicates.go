@@ -141,27 +141,6 @@ func AtomicWikilink(d *Domain, note Note) string {
 	return "[[" + note.Title + "]]"
 }
 
-// HealGeneratedAtomicLink normalizes a daemon-generated atomic link to the
-// exact form AtomicWikilink would emit for the expected note. It is intentionally
-// narrow: callers should use it only for generated master/hub bullets, not
-// arbitrary prose.
-func HealGeneratedAtomicLink(d *Domain, current string, note Note) (string, bool) {
-	desired := AtomicWikilink(d, note)
-	if current == desired {
-		return current, false
-	}
-	trimmed := strings.TrimSpace(current)
-	if ExtractWikilinkTarget(trimmed) == note.Title {
-		return desired, true
-	}
-	for _, id := range extractCellNoteIDs(trimmed) {
-		if id != note.ID {
-			return desired, true
-		}
-	}
-	return current, false
-}
-
 // escapeMarkdownLabel escapes characters that break a `[label](url)` markdown
 // link's label. Backslashes are doubled first so the subsequent bracket
 // substitutions don't double-escape themselves. Bear renders `\[` and `\]`

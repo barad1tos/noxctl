@@ -1,7 +1,6 @@
 package bear_test
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -220,60 +219,5 @@ func TestAtomicWikilink_NonEmptyTitleStaysWikilink(t *testing.T) {
 	got := domain.AtomicWikilink(nil, note)
 	if got != "[[Paranova]]" {
 		t.Errorf("unique-title atom should render as `[[Title]]`; got %q", got)
-	}
-}
-
-type duplicateRegistryBackend struct{}
-
-func (duplicateRegistryBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
-	if len(args) > 0 && args[0] == "list" {
-		return []byte(`[
-			{"id":"note-a","title":"Same Title","content":"","tags":["#test/notes"]},
-			{"id":"note-b","title":"Same Title","content":"","tags":["#other/tag"]}
-		]`), nil
-	}
-	return []byte(`[]`), nil
-}
-
-func duplicateAwareDomain(t *testing.T) *domain.Domain {
-	t.Helper()
-	domain.ResetBearcliPoolForTest(2)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
-	d := &domain.Domain{Tag: "test/notes", IndexTitle: "Index"}
-	ctx := domain.ContextWithBackend(t.Context(), duplicateRegistryBackend{})
-	registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
-	if err != nil {
-		t.Fatalf("BuildCorpusDuplicateRegistry: %v", err)
-	}
-	d.Duplicates = registry
-	return d
-}
-
-func TestHealGeneratedAtomicLink_AmbiguousWikilinkUsesExpectedID(t *testing.T) {
-	d := duplicateAwareDomain(t)
-	note := domain.Note{ID: "note-a", Title: "Same Title"}
-
-	got, changed := domain.HealGeneratedAtomicLink(d, "[[Same Title]]", note)
-
-	if !changed {
-		t.Fatalf("HealGeneratedAtomicLink changed=false, want true for ambiguous wikilink")
-	}
-	if !strings.Contains(got, "bear://x-callback-url/open-note?id=note-a") {
-		t.Fatalf("healed link = %q, want expected note ID URL form", got)
-	}
-}
-
-func TestHealGeneratedAtomicLink_WrongURLIDUsesExpectedID(t *testing.T) {
-	d := duplicateAwareDomain(t)
-	note := domain.Note{ID: "note-a", Title: "Same Title"}
-	current := "[Same Title](bear://x-callback-url/open-note?id=note-b)"
-
-	got, changed := domain.HealGeneratedAtomicLink(d, current, note)
-
-	if !changed {
-		t.Fatalf("HealGeneratedAtomicLink changed=false, want true for wrong URL ID")
-	}
-	if strings.Contains(got, "id=note-b") || !strings.Contains(got, "id=note-a") {
-		t.Fatalf("healed link = %q, want note-a and no stale note-b", got)
 	}
 }

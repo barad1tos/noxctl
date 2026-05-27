@@ -110,7 +110,7 @@ func isManagedAuxNote(note domain.Note, domains []*domain.Domain) bool {
 func hasDomainTag(tags []string, domainTag string) bool {
 	for _, tag := range tags {
 		normalized := strings.TrimPrefix(strings.TrimSpace(tag), "#")
-		if normalized == domainTag {
+		if normalized == domainTag || strings.HasPrefix(normalized, domainTag+"/") {
 			return true
 		}
 	}

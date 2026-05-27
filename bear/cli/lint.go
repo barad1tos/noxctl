@@ -69,13 +69,32 @@ func RunLint(ctx context.Context, stdout io.Writer, domains []*domain.Domain, ap
 			return orphanErr
 		}
 		duplicateErr := runApplyDuplicatePass(ctx, domains)
-		return errors.Join(orphanErr, duplicateErr)
+		return joinApplyErrors(orphanErr, duplicateErr)
 	}
 	findings := audit.Scan(ctx, domains)
 	findings, orphanErr := appendOrphanFindings(ctx, findings, domains)
 	findings, duplicateErr := appendDuplicateFindings(ctx, findings, domains)
 	audit.PrintFindings(stdout, findings, len(domains))
 	return errors.Join(orphanErr, duplicateErr)
+}
+
+func joinApplyErrors(orphanErr, duplicateErr error) error {
+	var runtimeErrs []error
+	var lintErrs []error
+	for _, err := range []error{orphanErr, duplicateErr} {
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, ErrLintFailed) {
+			lintErrs = append(lintErrs, err)
+			continue
+		}
+		runtimeErrs = append(runtimeErrs, err)
+	}
+	if len(runtimeErrs) > 0 {
+		return errors.Join(runtimeErrs...)
+	}
+	return errors.Join(lintErrs...)
 }
 
 // runApplyOrphanPass invokes the corpus orphan scan + tag-add chain.

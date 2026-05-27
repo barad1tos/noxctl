@@ -516,6 +516,37 @@ func TestRun_ApplyMode_OrphanPartialFailure_StillTagsDuplicateTitles(t *testing.
 	}
 }
 
+func TestRun_ApplyMode_RuntimeErrorTakesPrecedenceOverLintFailure(t *testing.T) {
+	armBearcliPool(t)
+	runtimeErr := errors.New("duplicate-title corpus boom")
+	fake := &secondCorpusListFailFakeBearcli{
+		partialTagAddFailFakeBearcli: &partialTagAddFailFakeBearcli{
+			fakeBearcli: newFakeBearcli(duplicateOrphanListPayload(t)),
+		},
+		corpusErr: runtimeErr,
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+
+	if err == nil {
+		t.Fatalf("RunLint err = nil, want duplicate-title runtime error")
+	}
+	if errors.Is(err, cli.ErrLintFailed) {
+		t.Fatalf("RunLint err wraps ErrLintFailed, want runtime error precedence: %v", err)
+	}
+	if !errors.Is(err, runtimeErr) || !strings.Contains(err.Error(), "duplicate-title scan") {
+		t.Fatalf("RunLint err = %v, want wrapped duplicate-title scan runtime error", err)
+	}
+	if got := fake.countTagValue("orphans"); got != 2 {
+		t.Fatalf("orphan tag calls = %d, want 2 before duplicate scan failure", got)
+	}
+	if got := fake.countTagValue("orphans/duplicate-title"); got != 0 {
+		t.Fatalf("duplicate-title tag calls = %d, want 0 after scan failure", got)
+	}
+}
+
 // TestRun_ApplyMode_PoolInitializedFromCold pins the production path
 // (RunLint) MUST arm the bearcli concurrency pool itself — earlier
 // tests pre-armed via armBearcliPool, so dropping the SetConcurrency
@@ -817,6 +848,21 @@ func (f *partialTagAddFailFakeBearcli) Run(ctx context.Context, args []string, s
 		return []byte(`{"ok":true}`), nil
 	}
 	return f.fakeBearcli.Run(ctx, args, stdin)
+}
+
+type secondCorpusListFailFakeBearcli struct {
+	*partialTagAddFailFakeBearcli
+	corpusErr   error
+	corpusCalls atomic.Int64
+}
+
+func (f *secondCorpusListFailFakeBearcli) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	if len(args) >= 3 && args[0] == "list" && args[1] == "--location" && args[2] == "notes" {
+		if f.corpusCalls.Add(1) == 2 {
+			return nil, f.corpusErr
+		}
+	}
+	return f.partialTagAddFailFakeBearcli.Run(ctx, args, stdin)
 }
 
 // assertWrappedErr fails the test when err is nil, does not wrap
