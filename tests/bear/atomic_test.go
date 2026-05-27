@@ -1,6 +1,7 @@
 package bear_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -220,4 +221,33 @@ func TestAtomicWikilink_NonEmptyTitleStaysWikilink(t *testing.T) {
 	if got != "[[Paranova]]" {
 		t.Errorf("unique-title atom should render as `[[Title]]`; got %q", got)
 	}
+}
+
+func TestAtomicWikilink_UnmanagedCorpusCollisionUsesURL(t *testing.T) {
+	domain.ResetBearcliPoolForTest(2)
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	ctx := domain.ContextWithBackend(t.Context(), unmanagedDuplicateRegistryBackend{})
+	registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+	if err != nil {
+		t.Fatalf("BuildCorpusDuplicateRegistry: %v", err)
+	}
+	d := &domain.Domain{Tag: "test/notes", IndexTitle: "Index", Duplicates: registry}
+
+	got := domain.AtomicWikilink(d, domain.Note{ID: "managed-note", Title: "Same Title"})
+
+	if !strings.Contains(got, "bear://x-callback-url/open-note?id=managed-note") {
+		t.Fatalf("AtomicWikilink = %q, want URL form for unmanaged corpus collision", got)
+	}
+}
+
+type unmanagedDuplicateRegistryBackend struct{}
+
+func (unmanagedDuplicateRegistryBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) > 0 && args[0] == "list" {
+		return []byte(`[
+			{"id":"managed-note","title":"Same Title","content":"","tags":["#test/notes"]},
+			{"id":"unmanaged-note","title":"Same Title","content":"","tags":["#personal/archive"]}
+		]`), nil
+	}
+	return []byte(`[]`), nil
 }

@@ -309,6 +309,37 @@ func duplicateTitleListPayload(t *testing.T) []byte {
 	return raw
 }
 
+func threeDuplicateTitleListPayload(t *testing.T) []byte {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{
+		{
+			"id":      "note-dup-a",
+			"title":   "Triplicated",
+			"content": "",
+			"tags":    []string{"#test/notes"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+		{
+			"id":      "note-dup-b",
+			"title":   "Triplicated",
+			"content": "",
+			"tags":    []string{"#test/archive"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+		{
+			"id":      "note-dup-c",
+			"title":   "Triplicated",
+			"content": "",
+			"tags":    []string{"#personal/archive"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal triplicate-title payload: %v", err)
+	}
+	return raw
+}
+
 func duplicateOrphanListPayload(t *testing.T) []byte {
 	t.Helper()
 	raw, err := json.Marshal([]map[string]any{
@@ -357,6 +388,30 @@ func duplicateTaggedOrphanRetryListPayload(t *testing.T) []byte {
 	})
 	if err != nil {
 		t.Fatalf("marshal duplicate-tagged orphan-retry payload: %v", err)
+	}
+	return raw
+}
+
+func alreadyDuplicateTaggedListPayload(t *testing.T) []byte {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{
+		{
+			"id":      "note-dup-only-a",
+			"title":   "Duplicate Only",
+			"content": "",
+			"tags":    []string{"#test/notes", "#orphans/duplicate-title"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+		{
+			"id":      "note-dup-only-b",
+			"title":   "Duplicate Only",
+			"content": "",
+			"tags":    []string{"#test/archive", "#orphans/duplicate-title"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal already-duplicate-tagged payload: %v", err)
 	}
 	return raw
 }
@@ -561,6 +616,23 @@ func TestRun_ApplyMode_DuplicateTitleTagDoesNotSuppressOrphanRetry(t *testing.T)
 	}
 }
 
+func TestRun_ApplyMode_DuplicateTitleTagDoesNotBecomeOrphanTag(t *testing.T) {
+	armBearcliPool(t)
+	fake := newFakeBearcli(alreadyDuplicateTaggedListPayload(t))
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true,
+		"apply-mode duplicate-title tag is not orphan-family triage")
+
+	if got := fake.countTagValue("orphans"); got != 0 {
+		t.Fatalf("orphan tag calls = %d, want 0 for duplicate-title-only audit tags", got)
+	}
+	if got := fake.countTagValue("orphans/duplicate-title"); got != 0 {
+		t.Fatalf("duplicate-title tag calls = %d, want 0 for already duplicate-tagged notes", got)
+	}
+}
+
 func TestRun_ApplyMode_RuntimeErrorTakesPrecedenceOverLintFailure(t *testing.T) {
 	armBearcliPool(t)
 	runtimeErr := errors.New("duplicate-title corpus boom")
@@ -589,6 +661,39 @@ func TestRun_ApplyMode_RuntimeErrorTakesPrecedenceOverLintFailure(t *testing.T) 
 	}
 	if got := fake.countTagValue("orphans/duplicate-title"); got != 0 {
 		t.Fatalf("duplicate-title tag calls = %d, want 0 after scan failure", got)
+	}
+}
+
+func TestRun_ApplyMode_DuplicatePass_TotalTagFailure(t *testing.T) {
+	armBearcliPool(t)
+	fake := &duplicateTagAddFailFakeBearcli{
+		fakeBearcli: newFakeBearcli(threeDuplicateTitleListPayload(t)),
+		tagAddErr:   errors.New("bearcli duplicate tag add: simulated total failure"),
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+	assertWrappedErr(t, "duplicate total tag failure", err,
+		audit.ErrApplyAllFailed, "duplicate-title tag-add")
+	if got := fake.countTagValue("orphans/duplicate-title"); got != 3 {
+		t.Fatalf("duplicate-title tag calls = %d, want 3 before total-failure abort", got)
+	}
+}
+
+func TestRun_ApplyMode_DuplicatePass_PartialTagFailure(t *testing.T) {
+	armBearcliPool(t)
+	fake := &duplicatePartialTagAddFailFakeBearcli{
+		fakeBearcli: newFakeBearcli(duplicateTitleListPayload(t)),
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+	assertWrappedErr(t, "duplicate partial tag failure", err,
+		cli.ErrLintFailed, "duplicate-title tag-add failed for 1")
+	if got := fake.countTagValue("orphans/duplicate-title"); got != 2 {
+		t.Fatalf("duplicate-title tag calls = %d, want 2", got)
 	}
 }
 
@@ -908,6 +1013,42 @@ func (f *secondCorpusListFailFakeBearcli) Run(ctx context.Context, args []string
 		}
 	}
 	return f.partialTagAddFailFakeBearcli.Run(ctx, args, stdin)
+}
+
+type duplicateTagAddFailFakeBearcli struct {
+	*fakeBearcli
+	tagAddErr error
+}
+
+func (f *duplicateTagAddFailFakeBearcli) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	if isDuplicateTagAdd(args) {
+		_, _ = f.fakeBearcli.Run(ctx, args, stdin)
+		return nil, f.tagAddErr
+	}
+	return f.fakeBearcli.Run(ctx, args, stdin)
+}
+
+type duplicatePartialTagAddFailFakeBearcli struct {
+	*fakeBearcli
+	firstDuplicateCallDone atomic.Bool
+}
+
+func (f *duplicatePartialTagAddFailFakeBearcli) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	if isDuplicateTagAdd(args) {
+		_, _ = f.fakeBearcli.Run(ctx, args, stdin)
+		if f.firstDuplicateCallDone.CompareAndSwap(false, true) {
+			return nil, errors.New("bearcli duplicate tags add: simulated transient")
+		}
+		return []byte(`{"ok":true}`), nil
+	}
+	return f.fakeBearcli.Run(ctx, args, stdin)
+}
+
+func isDuplicateTagAdd(args []string) bool {
+	return len(args) >= 4 &&
+		args[0] == "tags" &&
+		args[1] == "add" &&
+		args[3] == "orphans/duplicate-title"
 }
 
 // assertWrappedErr fails the test when err is nil, does not wrap

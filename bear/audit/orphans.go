@@ -121,6 +121,9 @@ func strayFamilyTags(note domain.AutoTagNote, managed map[string]struct{}) []str
 		if tag == "" {
 			continue
 		}
+		if isDuplicateTitleAuditTag(tag) {
+			continue
+		}
 		if isOrphansTag(tag) {
 			return nil // idempotency skip — already triaged
 		}
@@ -143,11 +146,16 @@ func strayFamilyTags(note domain.AutoTagNote, managed map[string]struct{}) []str
 // atom. Normalizing here keeps both write-side (apply) and read-side
 // (scan) consistent.
 func isOrphansTag(tag string) bool {
-	normalized := strings.TrimSpace(strings.ToLower(tag))
-	if normalized == "#"+duplicateTitleTag {
-		return false
-	}
+	normalized := normalizeAuditTag(tag)
 	return normalized == orphansTag || strings.HasPrefix(normalized, orphansTagPrefix)
+}
+
+func isDuplicateTitleAuditTag(tag string) bool {
+	return normalizeAuditTag(tag) == "#"+duplicateTitleTag
+}
+
+func normalizeAuditTag(tag string) string {
+	return strings.TrimSpace(strings.ToLower(tag))
 }
 
 // formatStrayDetail composes the operator-facing Detail message for an

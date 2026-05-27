@@ -236,6 +236,27 @@ func TestAggregateOrphanFamilies_DuplicateTitleTagDoesNotSkip(t *testing.T) {
 			got, want, findings)
 	}
 	assertDetailContains(t, findings[0].NoteID, findings[0].Detail, []string{"#quicknotes/daily", "quicknotes"})
+	if strings.Contains(findings[0].Detail, "#orphans/duplicate-title") {
+		t.Fatalf("duplicate-title audit tag leaked into orphan detail: %q", findings[0].Detail)
+	}
+}
+
+func TestAggregateOrphanFamilies_DuplicateTitleOnlyTagIgnored(t *testing.T) {
+	notes := []orphanFixture{{
+		ID:    "note-dup-only",
+		Title: "Duplicate triage only",
+		Tags:  []string{"#llm/tips", "#orphans/duplicate-title"},
+	}}
+	findings, err := audit.AggregateOrphanFamiliesFromJSON(
+		mustMarshalNotes(t, notes), managedSet("llm"),
+	)
+	if err != nil {
+		t.Fatalf("AggregateOrphanFamiliesFromJSON: %v", err)
+	}
+	if got := len(findings); got != 0 {
+		t.Fatalf("findings len = %d, want 0 (#orphans/duplicate-title is not a stray family); got %v",
+			got, findings)
+	}
 }
 
 // TestAggregateOrphanFamilies_ManagedFamiliesOnly_NoFindings: when

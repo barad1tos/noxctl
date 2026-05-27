@@ -187,3 +187,51 @@ func TestPlan_ReportsClean_WhenMasterMatchesRender(t *testing.T) {
 		}
 	})
 }
+
+func TestPlan_ReportsClean_WhenDuplicateMasterUsesURLLinks(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		resetPoolForApply(t)
+		fake := newFakeWorkBackend()
+		first := duplicatePlanAtomRow("plan-dup-a", "#work | [[✱ Робота]] | tasks")
+		second := duplicatePlanAtomRow("plan-dup-b", "#work | [[✱ Робота]] | tasks")
+		fake.StageList(t, []map[string]any{first, second})
+		fake.StageNote(t, "plan-dup-a", first)
+		fake.StageNote(t, "plan-dup-b", second)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
+		d := buildWorkDomainForIntegration()
+		registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+		if err != nil {
+			t.Fatalf("BuildCorpusDuplicateRegistry: %v", err)
+		}
+		d.Duplicates = registry
+
+		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		if err != nil {
+			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
+		}
+		rendered := d.RenderMaster(d, inputs.Groups)
+		if !strings.Contains(rendered, "id=plan-dup-a") || !strings.Contains(rendered, "id=plan-dup-b") {
+			t.Fatalf("rendered master lacks duplicate URL links:\n%s", rendered)
+		}
+		masterRow := map[string]any{"id": masterNoteID, "title": "✱ Робота", "tags": []string{"#work"}, "content": rendered}
+		fake.StageList(t, []map[string]any{first, second, masterRow})
+		fake.StageNote(t, masterNoteID, masterRow)
+
+		res, err := engine.Plan(ctx, engine.PlanOpts{Domains: []*domain.Domain{d}, Verbose: true})
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if res.HasDrift() {
+			t.Fatalf("Plan reported duplicate URL-link false drift; want clean. domain=%+v", res.Domains[0])
+		}
+	})
+}
+
+func duplicatePlanAtomRow(id, canonicalLine string) map[string]any {
+	return map[string]any{
+		"id":      id,
+		"title":   "Same Title",
+		"tags":    []string{"#work", "#work/tasks"},
+		"content": "# Same Title\n" + canonicalLine + "\n---\n",
+	}
+}

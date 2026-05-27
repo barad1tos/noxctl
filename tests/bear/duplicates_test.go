@@ -77,6 +77,7 @@ func TestApplyDuplicateTitles_AddsDuplicateTitleOrphanSubtag(t *testing.T) {
 	findings := []audit.Finding{
 		{NoteID: "note-a", Title: "Same Title", Category: audit.LintDuplicateTitle, Fixable: true},
 		{NoteID: "note-b", Title: "Same Title", Category: audit.LintDuplicateTitle, Fixable: true},
+		{NoteID: "note-hub", Title: "Same Title", Category: audit.LintDuplicateTitle, Fixable: false},
 		{NoteID: "note-c", Title: "Other", Category: audit.LintOrphanFamily, Fixable: true},
 	}
 
@@ -92,6 +93,11 @@ func TestApplyDuplicateTitles_AddsDuplicateTitleOrphanSubtag(t *testing.T) {
 	}
 	assertTagCall(t, "first duplicate", fake.callsTag[0], "note-a", "orphans/duplicate-title")
 	assertTagCall(t, "second duplicate", fake.callsTag[1], "note-b", "orphans/duplicate-title")
+	for _, call := range fake.callsTag {
+		if call.NoteID == "note-hub" {
+			t.Fatalf("non-fixable managed aux note was tagged: %v", fake.callsTag)
+		}
+	}
 }
 
 func TestScanDuplicateTitles_WrapsBearcliFailure(t *testing.T) {
