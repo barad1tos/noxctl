@@ -2,6 +2,7 @@ package engine
 
 import (
 	"crypto/sha256"
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,26 +12,10 @@ import (
 const (
 	sqliteFieldSeparator = "\x1f"
 	sqliteRowSeparator   = "\x1e"
-
-	sqliteNoteChangeTokenQuery = `
-begin;
-select 'notes';
-select Z_PK, Z_OPT, ZVERSION, coalesce(ZMODIFICATIONDATE, 0),
-       ZTRASHED, ZARCHIVED, ZPERMANENTLYDELETED
-from ZSFNOTE
-order by Z_PK;
-select 'tags';
-select Z_PK, Z_OPT, coalesce(ZMODIFICATIONDATE, 0),
-       coalesce(ZTITLE, ''), coalesce(ZTAGCON, '')
-from ZSFNOTETAG
-order by Z_PK;
-select 'links';
-select Z_5NOTES, Z_13TAGS
-from Z_5TAGS
-order by Z_5NOTES, Z_13TAGS;
-commit;
-`
 )
+
+//go:embed sqlite_note_change_token.sql
+var sqliteNoteChangeTokenQuery string
 
 // SQLiteNoteChangeToken returns a stable token for Bear note, tag, and
 // note-tag relationship rows without mutating database.sqlite. It opens the
