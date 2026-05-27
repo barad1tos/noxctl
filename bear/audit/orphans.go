@@ -17,9 +17,11 @@ package audit
 //     skipped wholesale — that is the idempotency contract. Match is
 //     case-insensitive and trims whitespace (see isOrphansTag), so
 //     operator-typed `#Orphans` or `#orphans ` still triggers the
-//     skip. The apply step issues `bearcli tags add <noteID> orphans`
-//     per finding, so re-running the lint sweep on an already-triaged
-//     atom must produce zero findings.
+//     skip. `#orphans/duplicate-title` is deliberately not an
+//     orphan-family marker; that sibling audit tag must not mask
+//     stray-family findings. The apply step issues `bearcli tags add
+//     <noteID> orphans` per finding, so re-running the lint sweep on
+//     an already-triaged atom must produce zero findings.
 //
 // Finding shape:
 //   - DomainTag is the empty string — orphan-family is a corpus-level
@@ -142,6 +144,9 @@ func strayFamilyTags(note domain.AutoTagNote, managed map[string]struct{}) []str
 // (scan) consistent.
 func isOrphansTag(tag string) bool {
 	normalized := strings.TrimSpace(strings.ToLower(tag))
+	if normalized == "#"+duplicateTitleTag {
+		return false
+	}
 	return normalized == orphansTag || strings.HasPrefix(normalized, orphansTagPrefix)
 }
 

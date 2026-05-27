@@ -333,6 +333,34 @@ func duplicateOrphanListPayload(t *testing.T) []byte {
 	return raw
 }
 
+func duplicateTaggedOrphanRetryListPayload(t *testing.T) []byte {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{
+		{
+			"id":      "note-retry-a",
+			"title":   "Duplicated Retry",
+			"content": "",
+			"tags": []string{
+				"#test/notes", "#strayfamily/a", "#orphans/duplicate-title",
+			},
+			"created": "2026-05-23T12:00:00Z",
+		},
+		{
+			"id":      "note-retry-b",
+			"title":   "Duplicated Retry",
+			"content": "",
+			"tags": []string{
+				"#test/notes", "#strayfamily/b", "#orphans", "#orphans/duplicate-title",
+			},
+			"created": "2026-05-23T12:00:00Z",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal duplicate-tagged orphan-retry payload: %v", err)
+	}
+	return raw
+}
+
 // TestRun_AuditMode_OrphanFamilyAppearsInOutput verifies the read-only
 // composition: the corpus orphan scan runs alongside the per-domain
 // audit scan, the stray-family finding lands in the printed report,
@@ -513,6 +541,23 @@ func TestRun_ApplyMode_OrphanPartialFailure_StillTagsDuplicateTitles(t *testing.
 	}
 	if got := fake.countTagValue("orphans/duplicate-title"); got != 2 {
 		t.Fatalf("duplicate-title tag calls = %d, want 2", got)
+	}
+}
+
+func TestRun_ApplyMode_DuplicateTitleTagDoesNotSuppressOrphanRetry(t *testing.T) {
+	armBearcliPool(t)
+	fake := newFakeBearcli(duplicateTaggedOrphanRetryListPayload(t))
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true,
+		"apply-mode duplicate-title triage does not suppress orphan retry")
+
+	if got := fake.countTagValue("orphans"); got != 1 {
+		t.Fatalf("orphan tag calls = %d, want 1 retry for note missing #orphans", got)
+	}
+	if got := fake.countTagValue("orphans/duplicate-title"); got != 0 {
+		t.Fatalf("duplicate-title tag calls = %d, want 0 for already duplicate-tagged notes", got)
 	}
 }
 

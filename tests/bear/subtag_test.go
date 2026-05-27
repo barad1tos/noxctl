@@ -1,6 +1,7 @@
 package bear_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -76,6 +77,59 @@ func TestRenderHubFlatSubTag(t *testing.T) {
 	if strings.Index(out, "Alpha") > strings.Index(out, "Beta") {
 		t.Error("hub bullets not alphabetised")
 	}
+}
+
+func TestRenderHubFlatSubTagPreservesDuplicateURLOrder(t *testing.T) {
+	d := &domain.Domain{
+		Tag: "claude", CanonicalTag: "#claude", IndexTitle: "✱ Claude",
+		HubTitleFor:     render.HubTitleSubTag,
+		CanonicalTagFor: render.SubTagCanonical,
+	}
+	seedSubtagDuplicateRegistry(t, d)
+	notes := []domain.Note{
+		{ID: "note-a", Title: "Same Title"},
+		{ID: "note-b", Title: "Same Title"},
+	}
+
+	out := render.HubFlatSubTag(d, "sessions", notes, map[string][]string{
+		"": {"note-b", "note-a"},
+	})
+
+	noteB := strings.Index(out, "id=note-b")
+	noteA := strings.Index(out, "id=note-a")
+	if noteB < 0 || noteA < 0 {
+		t.Fatalf("duplicate URL links missing from hub body:\n%s", out)
+	}
+	if noteB > noteA {
+		t.Fatalf("existing order not preserved: note-b appears after note-a:\n%s", out)
+	}
+	if strings.Contains(out, "[[Same Title]]") {
+		t.Fatalf("duplicate title rendered as ambiguous wikilink:\n%s", out)
+	}
+}
+
+type subtagDuplicateRegistryBackend struct{}
+
+func (subtagDuplicateRegistryBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) > 0 && args[0] == "list" {
+		return []byte(`[
+			{"id":"note-a","title":"Same Title","content":"","tags":["#claude/sessions"]},
+			{"id":"note-b","title":"Same Title","content":"","tags":["#claude/sessions"]}
+		]`), nil
+	}
+	return []byte(`[]`), nil
+}
+
+func seedSubtagDuplicateRegistry(t *testing.T, d *domain.Domain) {
+	t.Helper()
+	domain.ResetBearcliPoolForTest(2)
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	ctx := domain.ContextWithBackend(t.Context(), subtagDuplicateRegistryBackend{})
+	registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+	if err != nil {
+		t.Fatalf("BuildCorpusDuplicateRegistry: %v", err)
+	}
+	d.Duplicates = registry
 }
 
 func TestRenderMasterHubList(t *testing.T) {

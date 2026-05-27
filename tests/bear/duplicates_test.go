@@ -135,6 +135,9 @@ func TestScanDuplicateTitles_MarksManagedAuxNotesNonFixable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanDuplicateTitles: %v", err)
 	}
+	if !fake.sawListFields("id,title,content,tags") {
+		t.Fatalf("ScanDuplicateTitles did not request content needed for aux classification")
+	}
 	if got, want := len(findings), 2; got != want {
 		t.Fatalf("findings len = %d, want %d (%v)", got, want, findings)
 	}
@@ -170,6 +173,9 @@ func TestScanDuplicateTitles_MarksManagedSubtagAuxNotesNonFixable(t *testing.T) 
 	findings, err := audit.ScanDuplicateTitles(ctx, []*domain.Domain{d})
 	if err != nil {
 		t.Fatalf("ScanDuplicateTitles: %v", err)
+	}
+	if !fake.sawListFields("id,title,content,tags") {
+		t.Fatalf("ScanDuplicateTitles did not request content needed for subtag aux classification")
 	}
 	if got, want := len(findings), 2; got != want {
 		t.Fatalf("findings len = %d, want %d (%v)", got, want, findings)

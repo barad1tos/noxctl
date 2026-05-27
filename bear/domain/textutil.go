@@ -227,6 +227,11 @@ func CompareTitles(a, b string) int {
 // ByTitle sorts notes by title with UA/RU-aware comparator (CompareTitles).
 type ByTitle []Note
 
-func (t ByTitle) Len() int           { return len(t) }
-func (t ByTitle) Swap(i, j int)      { t[i], t[j] = t[j], t[i] }
-func (t ByTitle) Less(i, j int) bool { return CompareTitles(t[i].Title, t[j].Title) < 0 }
+func (t ByTitle) Len() int      { return len(t) }
+func (t ByTitle) Swap(i, j int) { t[i], t[j] = t[j], t[i] }
+func (t ByTitle) Less(i, j int) bool {
+	if cmp := CompareTitles(t[i].Title, t[j].Title); cmp != 0 {
+		return cmp < 0
+	}
+	return t[i].ID < t[j].ID
+}

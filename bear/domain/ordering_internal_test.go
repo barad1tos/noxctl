@@ -1,6 +1,9 @@
 package domain
 
-import "testing"
+import (
+	"sort"
+	"testing"
+)
 
 func TestParseHubOrderExtractsURLFormNoteIDs(t *testing.T) {
 	autoZone := "# Hub\n#test/notes | [[Index]]\n---\n" +
@@ -21,6 +24,17 @@ func TestReorderForOutputMatchesDuplicateURLIDs(t *testing.T) {
 	got := reorderForOutput(notes, []string{"note-b", "note-a"})
 
 	assertNoteIDs(t, noteIDs(got), []string{"note-b", "note-a"})
+}
+
+func TestByTitleUsesNoteIDTieBreak(t *testing.T) {
+	notes := []Note{
+		{ID: "note-b", Title: "Same Title"},
+		{ID: "note-a", Title: "Same Title"},
+	}
+
+	sort.Sort(ByTitle(notes))
+
+	assertNoteIDs(t, noteIDs(notes), []string{"note-a", "note-b"})
 }
 
 func assertNoteIDs(t *testing.T, got, want []string) {

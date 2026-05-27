@@ -75,11 +75,16 @@ func HubBacklinkSubTag(d *domain.Domain, bucket string) string {
 //	---
 //	- [[atom1]]
 //	- [[atom2]]
-func HubFlatSubTag(d *domain.Domain, bucket string, notes []domain.Note, _ map[string][]string) string {
+func HubFlatSubTag(d *domain.Domain, bucket string, notes []domain.Note, existingOrder map[string][]string) string {
 	hubTitle := d.HubTitle(bucket)
 	canonicalTag := d.ResolveCanonicalTag(bucket)
 	sorted := append([]domain.Note(nil), notes...)
 	sort.Sort(domain.ByTitle(sorted))
+	if existingOrder != nil {
+		bySection := map[string][]domain.Note{"": sorted}
+		domain.ApplyOrder(bySection, existingOrder)
+		sorted = bySection[""]
+	}
 
 	var body strings.Builder
 	_, _ = fmt.Fprintf(&body, "# %s\n", hubTitle)
