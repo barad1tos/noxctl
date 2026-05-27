@@ -54,10 +54,11 @@ import (
 // spirit; trimmed for this test's needs (no inflight peak counting —
 // the BearcliPool semaphore itself is exercised by TestApplyParallel_*).
 type fakeAutoTagBackend struct {
-	listPayload []byte // canned response for "list"
-	onRun       func([]string)
-	failList    atomic.Int64
-	failWrite   atomic.Int64
+	listPayload    []byte // canned response for "list"
+	onRun          func([]string)
+	failList       atomic.Int64
+	failDomainList atomic.Int64
+	failWrite      atomic.Int64
 
 	mu    sync.Mutex
 	calls []fakeAutoTagCall
@@ -93,6 +94,9 @@ func (f *fakeAutoTagBackend) Run(_ context.Context, args []string, stdin string)
 		if f.failList.Load() > 0 && f.failList.Add(-1) >= 0 {
 			return nil, errors.New("list failed")
 		}
+		if valueAfter(args, "--tag") != "" && f.failDomainList.Load() > 0 && f.failDomainList.Add(-1) >= 0 {
+			return nil, errors.New("domain list failed")
+		}
 		f.mu.Lock()
 		payload := append([]byte(nil), f.listPayload...)
 		f.mu.Unlock()
@@ -123,6 +127,10 @@ func (f *fakeAutoTagBackend) FailNextList() {
 	f.failList.Add(1)
 }
 
+func (f *fakeAutoTagBackend) FailNextDomainList() {
+	f.failDomainList.Add(1)
+}
+
 func (f *fakeAutoTagBackend) FailNextOverwrite() {
 	f.failWrite.Add(1)
 }
@@ -147,12 +155,21 @@ func (f *fakeAutoTagBackend) CountKind(kind string) int {
 // untagged quicknote. Matches autoTagNote shape in bear/autotag.go.
 func untaggedListPayload(t *testing.T) []byte {
 	t.Helper()
-	raw, err := json.Marshal([]map[string]any{{
-		"id":      "abc123",
-		"title":   "Нова нотатка",
-		"tags":    []string{}, // empty → ApplyDailyDefaultTag stamps
-		"content": "Body of a brand new quicknote\n",
-	}})
+	return untaggedListPayloadWithIDs(t, "abc123")
+}
+
+func untaggedListPayloadWithIDs(t *testing.T, ids ...string) []byte {
+	t.Helper()
+	notes := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		notes = append(notes, map[string]any{
+			"id":      id,
+			"title":   "Нова нотатка",
+			"tags":    []string{}, // empty → ApplyDailyDefaultTag stamps
+			"content": "Body of a brand new quicknote\n",
+		})
+	}
+	raw, err := json.Marshal(notes)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -340,6 +357,56 @@ func TestDaemonAutoTagPoll_PerNoteFailureRetriesSameToken(t *testing.T) {
 
 		if got := fake.CountKind("overwrite"); got != 2 {
 			t.Errorf("overwrite count = %d, want 2 (failed write + one successful retry, then pending clears)\nlog:\n%s",
+				got, run.Buf.String())
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_MixedWriteFailureRetriesFailedNote(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend(untaggedListPayloadWithIDs(t, "failed-note", "ok-note"))
+		fake.FailNextOverwrite()
+		fake.onRun = func(args []string) {
+			if len(args) == 0 || args[0] != "overwrite" {
+				return
+			}
+			switch fake.CountKind("overwrite") {
+			case 2:
+				fake.SetListPayload(untaggedListPayloadWithIDs(t, "failed-note"))
+			case 3:
+				fake.SetListPayload([]byte("[]"))
+			}
+		}
+		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(450 * time.Millisecond)
+
+		if got := fake.CountKind("overwrite"); got != 3 {
+			t.Errorf("overwrite count = %d, want 3 (failed note must retry after sibling write succeeds)\nlog:\n%s",
+				got, run.Buf.String())
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_FollowUpApplyFailureRetriesCycle(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend(untaggedListPayload(t))
+		fake.FailNextDomainList()
+		fake.onRun = func(args []string) {
+			if len(args) > 0 && args[0] == "overwrite" {
+				fake.SetListPayload([]byte("[]"))
+			}
+		}
+		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(350 * time.Millisecond)
+
+		if cycles := countCycles(run.Buf); cycles != 2 {
+			t.Errorf("cycle count = %d, want 2 (failed follow-up apply must retry before baseline commit)\nlog:\n%s",
+				cycles, run.Buf.String())
+		}
+		if got := fake.CountKind("overwrite"); got != 1 {
+			t.Errorf("overwrite count = %d, want 1 (retry should rerun apply, not the already-successful fast-pass)\nlog:\n%s",
 				got, run.Buf.String())
 		}
 	})

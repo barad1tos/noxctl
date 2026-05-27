@@ -22,6 +22,7 @@ type databaseBaseline struct {
 	token         string
 	pending       bool
 	pendingChange databaseCandidate
+	pendingCycle  bool
 }
 
 type databaseCandidate struct {
@@ -47,6 +48,17 @@ func (b *databaseBaseline) commit(candidate databaseCandidate) {
 	b.token = candidate.token
 	b.pending = false
 	b.pendingChange = databaseCandidate{}
+	b.pendingCycle = false
+}
+
+func (b *databaseBaseline) markPendingCycle() {
+	if b.pending {
+		b.pendingCycle = true
+	}
+}
+
+func (b *databaseBaseline) clearPendingCycle() {
+	b.pendingCycle = false
 }
 
 func (d *Daemon) handleEvent(event fsnotify.Event, quietTimer, maxTimer *time.Timer, burstActive *bool) {
@@ -92,6 +104,12 @@ type autoTagPass struct {
 	name    string
 	enabled bool
 	fn      func(context.Context) (fastpass.PassResult, error)
+}
+
+type autoTagTickResult struct {
+	candidate databaseCandidate
+	wrote     int
+	failed    bool
 }
 
 func (d *Daemon) handleCycleTimer(
@@ -147,19 +165,11 @@ func (d *Daemon) handleAutoTagLoopTick(
 	burstActive *bool,
 	pollBaseline, autoTagBaseline *databaseBaseline,
 ) {
-	dbPath := filepath.Join(d.opts.BearDBDir, dbFilename)
-	if *burstActive || d.isRegenInProgress() {
-		return
-	}
-	candidate, changed, _, err := d.nextDatabaseCandidate(dbPath, autoTagBaseline)
-	if err != nil {
-		log.Printf("auto-tag poll: %s failed: %v", dbPath, err)
-		return
-	}
+	candidate, changed := d.nextAutoTagCandidate(burstActive, autoTagBaseline)
 	if !changed {
 		return
 	}
-	wrote, ran, failed := d.handleAutoTagTick(ctx)
+	result, ran := d.runAutoTagFastPass(ctx, candidate, autoTagBaseline)
 	if !ran {
 		return
 	}
@@ -167,19 +177,92 @@ func (d *Daemon) handleAutoTagLoopTick(
 	if closed || *burstActive {
 		return
 	}
-	if wrote == 0 {
-		if failed {
-			return
-		}
-		autoTagBaseline.commit(candidate)
+	d.finishAutoTagTick(ctx, pollBaseline, autoTagBaseline, result)
+}
+
+func (d *Daemon) nextAutoTagCandidate(
+	burstActive *bool,
+	autoTagBaseline *databaseBaseline,
+) (databaseCandidate, bool) {
+	if *burstActive || d.isRegenInProgress() {
+		return databaseCandidate{}, false
+	}
+	dbPath := filepath.Join(d.opts.BearDBDir, dbFilename)
+	candidate, changed, _, err := d.nextDatabaseCandidate(dbPath, autoTagBaseline)
+	if err != nil {
+		log.Printf("auto-tag poll: %s failed: %v", dbPath, err)
+		return databaseCandidate{}, false
+	}
+	return candidate, changed
+}
+
+func (d *Daemon) runAutoTagFastPass(
+	ctx context.Context,
+	candidate databaseCandidate,
+	autoTagBaseline *databaseBaseline,
+) (autoTagTickResult, bool) {
+	wrote, ran, failed := d.handleAutoTagTick(ctx)
+	result := autoTagTickResult{candidate: candidate, wrote: wrote, failed: failed}
+	if !ran {
+		return result, false
+	}
+	if wrote > 0 {
+		autoTagBaseline.markPendingCycle()
+	}
+	return result, true
+}
+
+func (d *Daemon) finishAutoTagTick(
+	ctx context.Context,
+	pollBaseline, autoTagBaseline *databaseBaseline,
+	result autoTagTickResult,
+) {
+	if result.wrote == 0 {
+		d.finishNoWriteAutoTagTick(ctx, pollBaseline, autoTagBaseline, result)
 		return
 	}
 	if d.cycleOnce(ctx, "auto-tag fast-pass wrote changes") {
-		if d.opts.MtimePollInterval > 0 {
-			d.updateDatabaseBaseline(pollBaseline)
-		}
-		d.updateDatabaseBaseline(autoTagBaseline)
+		d.finishAutoTagCycle(pollBaseline, autoTagBaseline, result.failed)
 	}
+}
+
+func (d *Daemon) finishNoWriteAutoTagTick(
+	ctx context.Context,
+	pollBaseline, autoTagBaseline *databaseBaseline,
+	result autoTagTickResult,
+) {
+	if result.failed {
+		return
+	}
+	if autoTagBaseline.pendingCycle {
+		d.retryAutoTagPendingCycle(ctx, pollBaseline, autoTagBaseline)
+		return
+	}
+	autoTagBaseline.commit(result.candidate)
+}
+
+func (d *Daemon) retryAutoTagPendingCycle(
+	ctx context.Context,
+	pollBaseline, autoTagBaseline *databaseBaseline,
+) {
+	if !d.cycleOnce(ctx, "auto-tag fast-pass retry") {
+		return
+	}
+	d.finishAutoTagCycle(pollBaseline, autoTagBaseline, false)
+}
+
+func (d *Daemon) finishAutoTagCycle(
+	pollBaseline, autoTagBaseline *databaseBaseline,
+	retryAutoTag bool,
+) {
+	if d.opts.MtimePollInterval > 0 {
+		d.updateDatabaseBaseline(pollBaseline)
+	}
+	if retryAutoTag {
+		autoTagBaseline.clearPendingCycle()
+		return
+	}
+	d.updateDatabaseBaseline(autoTagBaseline)
 }
 
 func (d *Daemon) isRegenInProgress() bool {
@@ -296,22 +379,37 @@ func (d *Daemon) nextDatabaseCandidate(
 	dbPath string,
 	baseline *databaseBaseline,
 ) (databaseCandidate, bool, bool, error) {
-	if candidate, ok := baseline.pendingCandidate(); ok {
-		return candidate, true, true, nil
-	}
+	pending, hasPending := baseline.pendingCandidate()
 	info, err := d.opts.StatFn(dbPath)
 	if err != nil {
+		if hasPending {
+			return pending, true, true, nil
+		}
 		return databaseCandidate{}, false, false, fmt.Errorf("stat: %w", err)
 	}
 	mt := info.ModTime()
 	if !mt.After(baseline.modTime) {
+		if hasPending {
+			return pending, true, true, nil
+		}
 		return databaseCandidate{}, false, false, nil
 	}
 	token, err := d.databaseChangeToken(dbPath, info)
 	if err != nil {
+		if hasPending {
+			return pending, true, true, nil
+		}
 		return databaseCandidate{}, false, false, fmt.Errorf("token: %w", err)
 	}
 	candidate := databaseCandidate{modTime: mt, token: token}
+	if hasPending {
+		if token == baseline.token {
+			baseline.commit(candidate)
+			return databaseCandidate{}, false, false, nil
+		}
+		baseline.markPending(candidate)
+		return candidate, true, token == pending.token, nil
+	}
 	if token == baseline.token {
 		baseline.commit(candidate)
 		return databaseCandidate{}, false, false, nil

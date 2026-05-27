@@ -311,7 +311,8 @@ func TestDaemonPoll_ZeroDisables(t *testing.T) {
 // - Tick 2 (T=2s, stat call 3 → base+500ms): records a pending candidate,
 // then handleEvent → isSelfTriggered ⇒ true ⇒ suppressed, NO cycle.
 // - Ticks 3-5 (T=3-5s): retry the same pending candidate while the gate
-// stays closed, with no extra StatFn reads.
+// stays closed. StatFn may still observe newer mtimes, but the unchanged
+// pending token must not reset debounce while the burst is active.
 // - Tick 6 (T=6s): replays the pending candidate after the original gate
 // closes ⇒ quietTimer.Reset(50ms) → cycle 2 at ~T=6050ms.
 //
@@ -524,6 +525,46 @@ func TestDaemonPoll_DebounceReset(t *testing.T) {
 		if got := countCycles(run.Buf); got != 1 {
 			t.Errorf("cycle count = %d, want 1 (FSEvent + 2 poll ticks should all reset the SAME quietTimer)\nlog:\n%s",
 				got, run.Buf.String())
+		}
+	})
+}
+
+func TestDaemonPoll_PendingTokenChangeResetsActiveBurst(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		base := time.Now()
+		stat := &fakeStat{mtimes: []time.Time{
+			base,                      // tick 1: first poll-only token change
+			base.Add(1 * time.Second), // tick 2: second poll-only token change inside debounce
+		}}
+		opts := pollOptsFor(t, stat, 100*time.Millisecond, 300*time.Millisecond)
+		var tokenCalls atomic.Int64
+		opts.DatabaseChangeTokenFn = func(string, os.FileInfo) (string, error) {
+			if tokenCalls.Add(1) == 1 {
+				return "v1", nil
+			}
+			return "v2", nil
+		}
+		var cycles atomic.Int64
+		opts.Domains = []*domain.Domain{minimalApplyDomain("test/pending", "Test Pending")}
+		opts.DomainTimingHook = func(string, time.Duration) {
+			cycles.Add(1)
+		}
+		resetPoolForApply(t)
+		run := startPollDaemonRun(t, opts, func(ctx context.Context) context.Context {
+			return domain.ContextWithBackend(ctx, emptyApplyBackend{})
+		})
+
+		time.Sleep(450 * time.Millisecond)
+		if got := cycles.Load(); got != 0 {
+			t.Fatalf("cycle count at 450ms = %d, want 0 (second poll token should reset debounce)\nlog:\n%s",
+				got, run.Buf.String())
+		}
+		time.Sleep(150 * time.Millisecond)
+		run.cancel()
+		<-run.errCh
+
+		if got := cycles.Load(); got != 1 {
+			t.Errorf("cycle count after debounce settle = %d, want 1\nlog:\n%s", got, run.Buf.String())
 		}
 	})
 }
