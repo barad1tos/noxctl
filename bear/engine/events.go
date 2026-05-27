@@ -5,6 +5,8 @@ package engine
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
 	"log"
 	"path/filepath"
 	"time"
@@ -14,6 +16,11 @@ import (
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/fastpass"
 )
+
+type databaseBaseline struct {
+	modTime time.Time
+	token   string
+}
 
 func (d *Daemon) handleEvent(event fsnotify.Event, quietTimer, maxTimer *time.Timer, burstActive *bool) {
 	if !d.isWatchedDBEvent(event) {
@@ -31,14 +38,11 @@ func (d *Daemon) handleEvent(event fsnotify.Event, quietTimer, maxTimer *time.Ti
 	)
 }
 
-// handlePollTick is the 6th-case body of Daemon.Run. Stats
-// database.sqlite via opts.StatFn; on mtime advance, routes a
-// synthetic fsnotify.Event through handleEvent so the debounce +
-// max-burst + self-write-gate path is uniform with the real FSEvent
-// trigger. Stat errors are non-fatal — they typically mean Bear
-// rotated the file mid-flush, and the next tick recovers. Extracted
-// from Run to keep gocognit ≤15.
-func (d *Daemon) handlePollTick(quietTimer, maxTimer *time.Timer, burstActive *bool, lastMtime *time.Time) {
+// handlePollTick is the 6th-case body of Daemon.Run. database.sqlite mtime is
+// only the cheap wake-up signal; a content-level token decides whether the
+// daemon should route a synthetic event. This filters Bear/bearcli read
+// housekeeping that advances the SQLite file mtime without changing notes.
+func (d *Daemon) handlePollTick(quietTimer, maxTimer *time.Timer, burstActive *bool, baseline *databaseBaseline) {
 	dbPath := filepath.Join(d.opts.BearDBDir, dbFilename)
 	info, err := d.opts.StatFn(dbPath)
 	if err != nil {
@@ -46,10 +50,18 @@ func (d *Daemon) handlePollTick(quietTimer, maxTimer *time.Timer, burstActive *b
 		return
 	}
 	mt := info.ModTime()
-	if !mt.After(*lastMtime) {
+	if !mt.After(baseline.modTime) {
 		return
 	}
-	*lastMtime = mt
+	baseline.modTime = mt
+	changed, tokenErr := d.advanceDatabaseTokenIfChanged(dbPath, info, baseline)
+	if tokenErr != nil {
+		log.Printf("poll: token %s failed: %v", dbPath, tokenErr)
+		return
+	}
+	if !changed {
+		return
+	}
 	d.handleEvent(fsnotify.Event{Op: fsnotify.Write, Name: dbPath}, quietTimer, maxTimer, burstActive)
 }
 
@@ -74,72 +86,93 @@ type autoTagPass struct {
 // marker on notes the daily pass just produced via x-callback
 // bootstrap.
 //
-// Gate: if a regen cycle is in progress, skip the tick silently — the
-// next AutoTagPollInterval tick retries. No coalescing, no DEBUG log
-// noise.
-//
-// Self-write gate: markRegenStart/markRegenEnd wrap the entire tick
-// so the effectiveSelfWriteEpsilon absorbs the fast-pass's own
-// writes. Accepts a brief FSEvent blackout window (~100-300ms per
-// tick) — the next user keystroke arms the debounce timer normally.
+// The select-case wrapper first routes already-queued watcher events
+// through the normal debounce path. Only an otherwise idle tick whose
+// database mtime advanced runs the fast-pass, which prevents read-only
+// bearcli polling while the vault is idle.
 //
 // Error policy: all pre-passes run regardless of any prior pass's
 // outcome; log-and-continue. Mirrors apply.go::runPrePass.
 //
 // Bearcli semaphore: all pre-pass calls route through
 // domain.runBearcli → SetBearcliConcurrency pool. No bypass.
-//
-// Best-effort error contract: per-pass failures are logged with a
-// `(continuing)` suffix and the tick keeps going. There is no return
-// value because the daemon select loop has no consumer for it —
-// fast-pass failure is not a user-visible event, the operator sees
-// it in the daemon log. Use `noxctl verify --check daemon-log` to
-// gate on the post-startup error rate.
+func (d *Daemon) handleCycleTimer(
+	ctx context.Context,
+	reason string,
+	pollBaseline, autoTagBaseline *databaseBaseline,
+	burstActive *bool,
+	stopTimer *time.Timer,
+) {
+	if d.cycleOnce(ctx, reason) {
+		if d.opts.MtimePollInterval > 0 {
+			d.updateDatabaseBaseline(pollBaseline)
+		}
+		if d.opts.AutoTagPollInterval > 0 {
+			d.updateDatabaseBaseline(autoTagBaseline)
+		}
+	}
+	*burstActive = false
+	stopTimer.Stop()
+}
+
 func (d *Daemon) handleAutoTagSelectTick(
 	ctx context.Context,
 	quietTimer, maxTimer *time.Timer,
 	burstActive *bool,
-	lastMtime *time.Time,
+	pollBaseline, autoTagBaseline *databaseBaseline,
 ) bool {
-	handled, closed := d.handleQueuedWatcherEvent(quietTimer, maxTimer, burstActive)
+	closed := d.handleQueuedWatcherEvents(quietTimer, maxTimer, burstActive)
 	if closed {
 		return true
 	}
-	if handled {
-		return false
-	}
-	d.handleAutoTagLoopTick(ctx, *burstActive, lastMtime)
+	d.handleAutoTagLoopTick(ctx, quietTimer, maxTimer, burstActive, pollBaseline, autoTagBaseline)
 	return false
 }
 
-func (d *Daemon) handleQueuedWatcherEvent(quietTimer, maxTimer *time.Timer, burstActive *bool) (bool, bool) {
-	select {
-	case event, ok := <-d.watcher.Events():
-		if !ok {
-			return false, true
+func (d *Daemon) handleQueuedWatcherEvents(quietTimer, maxTimer *time.Timer, burstActive *bool) bool {
+	for {
+		select {
+		case event, ok := <-d.watcher.Events():
+			if !ok {
+				return true
+			}
+			d.handleEvent(event, quietTimer, maxTimer, burstActive)
+		default:
+			return false
 		}
-		d.handleEvent(event, quietTimer, maxTimer, burstActive)
-		return true, false
-	default:
-		return false, false
 	}
 }
 
-func (d *Daemon) handleAutoTagLoopTick(ctx context.Context, burstActive bool, lastMtime *time.Time) {
-	if burstActive {
+func (d *Daemon) handleAutoTagLoopTick(
+	ctx context.Context,
+	quietTimer, maxTimer *time.Timer,
+	burstActive *bool,
+	pollBaseline, autoTagBaseline *databaseBaseline,
+) {
+	dbPath := filepath.Join(d.opts.BearDBDir, dbFilename)
+	if *burstActive || d.isRegenInProgress() || !d.advanceDatabaseBaselineIfChanged(dbPath, autoTagBaseline) {
 		return
 	}
 	wrote, ran := d.handleAutoTagTick(ctx)
 	if !ran {
 		return
 	}
-	d.drainQueuedWatcherEvents()
-	d.updatePollBaseline(lastMtime)
-	if wrote == 0 {
+	closed := d.handleQueuedWatcherEvents(quietTimer, maxTimer, burstActive)
+	if closed || *burstActive || wrote == 0 {
 		return
 	}
-	d.cycleOnce(ctx, "auto-tag fast-pass wrote changes")
-	d.updatePollBaseline(lastMtime)
+	if d.cycleOnce(ctx, "auto-tag fast-pass wrote changes") {
+		if d.opts.MtimePollInterval > 0 {
+			d.updateDatabaseBaseline(pollBaseline)
+		}
+		d.updateDatabaseBaseline(autoTagBaseline)
+	}
+}
+
+func (d *Daemon) isRegenInProgress() bool {
+	d.regenMu.Lock()
+	defer d.regenMu.Unlock()
+	return d.regenInProgress
 }
 
 func (d *Daemon) handleAutoTagTick(ctx context.Context) (int, bool) {
@@ -211,43 +244,63 @@ func (d *Daemon) handleAutoTagTick(ctx context.Context) (int, bool) {
 	return wrote, true
 }
 
-func (d *Daemon) drainQueuedWatcherEvents() {
-	for {
-		select {
-		case _, ok := <-d.watcher.Events():
-			if !ok {
-				return
-			}
-		default:
-			return
-		}
-	}
-}
-
-// updatePollBaseline re-stats database.sqlite immediately after cycleOnce
-// completes and locks lastMtime to the resulting ModTime. Without this
-// reset the next poll tick (~MtimePollInterval after cycle end) sees the
-// daemon's OWN bearcli writes as a fresh mtime advance and triggers a
-// redundant cycle — an empirical cycle-storm observable as 7 cycles in
-// 6 minutes of idle daemon (database.sqlite mtime advances ~4s after
-// every cycleOnce, the 5s poll catches it, and SelfWriteEpsilon=2s has
-// already closed). Resetting the baseline post-cycle aligns lastMtime with reality
-// the daemon already knows about, so only EXTERNAL (user) writes after
-// cycle-end can re-trigger.
-//
-// No-op when MtimePollInterval == 0 (polling disabled, lastMtime is
-// unread anyway). Stat errors are non-fatal — a stale baseline just
-// means the next poll re-stats and may catch up on a transient.
-func (d *Daemon) updatePollBaseline(lastMtime *time.Time) {
-	if d.opts.MtimePollInterval == 0 {
-		return
-	}
+func (d *Daemon) updateDatabaseBaseline(baseline *databaseBaseline) {
 	dbPath := filepath.Join(d.opts.BearDBDir, dbFilename)
 	info, err := d.opts.StatFn(dbPath)
 	if err != nil {
 		return
 	}
-	*lastMtime = info.ModTime()
+	baseline.modTime = info.ModTime()
+	token, tokenErr := d.databaseChangeToken(dbPath, info)
+	if tokenErr != nil {
+		return
+	}
+	baseline.token = token
+}
+
+func (d *Daemon) advanceDatabaseBaselineIfChanged(dbPath string, baseline *databaseBaseline) bool {
+	info, err := d.opts.StatFn(dbPath)
+	if err != nil {
+		return false
+	}
+	mt := info.ModTime()
+	if !mt.After(baseline.modTime) {
+		return false
+	}
+	baseline.modTime = mt
+	changed, tokenErr := d.advanceDatabaseTokenIfChanged(dbPath, info, baseline)
+	if tokenErr != nil {
+		log.Printf("poll: token %s failed: %v", dbPath, tokenErr)
+		return false
+	}
+	return changed
+}
+
+func (d *Daemon) advanceDatabaseTokenIfChanged(
+	dbPath string,
+	info fs.FileInfo,
+	baseline *databaseBaseline,
+) (bool, error) {
+	token, err := d.databaseChangeToken(dbPath, info)
+	if err != nil {
+		return false, err
+	}
+	if token == baseline.token {
+		return false, nil
+	}
+	baseline.token = token
+	return true, nil
+}
+
+func (d *Daemon) databaseChangeToken(dbPath string, info fs.FileInfo) (string, error) {
+	token, err := d.opts.DatabaseChangeTokenFn(dbPath, info)
+	if err != nil {
+		return "", err
+	}
+	if token == "" {
+		return "", fmt.Errorf("empty database change token")
+	}
+	return token, nil
 }
 
 // cycleOnce runs one regen cycle: sentinel skip-check (priority yield
@@ -264,16 +317,16 @@ func (d *Daemon) updatePollBaseline(lastMtime *time.Time) {
 // engine.Apply to bypass BOTH AcquireApply AND the .apply-pending
 // sentinel write (semantic correctness — daemon's internal Apply is
 // not "external apply requesting priority").
-func (d *Daemon) cycleOnce(ctx context.Context, reason string) {
+func (d *Daemon) cycleOnce(ctx context.Context, reason string) bool {
 	log.Printf("regen trigger: %s", reason)
 	if IsApplyPending(d.opts.LockPath) {
 		log.Printf("apply-pending sentinel present; skipping cycle (apply will run)")
-		return
+		return false
 	}
 	release, err := AcquireDaemon(ctx, d.opts.LockPath)
 	if err != nil {
 		log.Printf("daemon flock failed: %v", err)
-		return
+		return false
 	}
 	defer release()
 
@@ -286,7 +339,9 @@ func (d *Daemon) cycleOnce(ctx context.Context, reason string) {
 	applyOpts.SkipFlock = true
 	if _, applyErr := Apply(ctx, applyOpts); applyErr != nil {
 		log.Printf("daemon cycle: %v", applyErr)
+		return false
 	}
+	return true
 }
 
 func (d *Daemon) markRegenStart() {
@@ -326,29 +381,16 @@ func (d *Daemon) isSelfTriggered() bool {
 	if d.regenInProgress {
 		return true
 	}
-	now := time.Now()
-	if !now.Before(d.regenEndTime.Add(d.effectiveSelfWriteEpsilon())) {
-		return false
-	}
-	// A gated DB event proves Bear is still flushing work caused by this
-	// daemon. Slide the watermark forward so later delivery of the same
-	// delayed SQLite activity does not escape the original gate window.
-	d.regenEndTime = now
-	return true
+	return time.Now().Before(d.regenEndTime.Add(d.effectiveSelfWriteEpsilon()))
 }
 
-// effectiveSelfWriteEpsilon widens the self-write gate when polling is
-// active so the post-cycle window covers one full poll-tick-plus-debounce
-// roundtrip. Without this, the daemon's own bearcli writes still propagate
-// to disk for several seconds after cycleOnce returns (Bear flushes the
-// SQLite commit asynchronously), and the next poll tick (~MtimePollInterval
-// after cycle end) sees an mtime advance that the static 2s
-// SelfWriteEpsilon has already stopped gating. Empirically the trailing
-// flush window is 3-5s; budget +3s past the poll tick + debounce sum
-// covers it without leaning on a magic constant.
+// effectiveSelfWriteEpsilon widens the fixed self-write gate when polling is
+// active so one poll-tick-plus-debounce roundtrip still lands inside the same
+// daemon-originated write window. Incoming events never slide this window
+// forward; only known daemon writes move regenEndTime.
 //
 // Returns the operator-configured SelfWriteEpsilon when polling is off
-// (MtimePollInterval == 0) — no need to widen if there's no poll-tick
+// (MtimePollInterval == 0) — no need to widen if there is no poll-tick
 // stream chasing the daemon's own writes.
 func (d *Daemon) effectiveSelfWriteEpsilon() time.Duration {
 	if d.opts.MtimePollInterval == 0 {

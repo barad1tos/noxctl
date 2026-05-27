@@ -132,6 +132,14 @@ type DaemonOpts struct {
 	// seam pattern at bear/new_note.go::nowForNewNoteLink.
 	StatFn func(path string) (os.FileInfo, error)
 
+	// DatabaseChangeTokenFn returns a content-level token for database.sqlite
+	// after StatFn observes an mtime advance. The mtime remains the cheap
+	// wake-up signal, but this token decides whether the daemon should treat
+	// the wake-up as meaningful Bear content/tag change or SQLite housekeeping.
+	// Production CLI wires SQLiteNoteChangeToken; tests can inject a scripted
+	// token source. Nil defaults to a file-metadata token for library callers.
+	DatabaseChangeTokenFn func(path string, info os.FileInfo) (string, error)
+
 	// AutoTagPollInterval is the period between fast-pass ticks that run
 	// ONLY fastpass.ApplyForeignTagEscape + fastpass.ApplyDailyDefaultTag —
 	// independent of the full per-domain regen cycle. When > 0,
@@ -231,6 +239,13 @@ func applyDaemonDefaults(opts *DaemonOpts) {
 	if opts.StatFn == nil {
 		opts.StatFn = os.Stat
 	}
+	if opts.DatabaseChangeTokenFn == nil {
+		opts.DatabaseChangeTokenFn = fileMetadataChangeToken
+	}
+}
+
+func fileMetadataChangeToken(_ string, info os.FileInfo) (string, error) {
+	return fmt.Sprintf("%d:%d", info.ModTime().UnixNano(), info.Size()), nil
 }
 
 // formatPollInterval renders a poll-loop interval for the startup log
