@@ -36,29 +36,7 @@ func TestSQLiteNoteChangeToken_ReadOnlyAndSemantic(t *testing.T) {
 		t.Fatalf("sqlite3 not installed: %v", err)
 	}
 	dbPath := filepath.Join(t.TempDir(), "database.sqlite")
-	runSQLiteForTokenTest(t, dbPath, `
-create table ZSFNOTE (
-	Z_PK integer primary key,
-	Z_OPT integer,
-	ZVERSION integer,
-	ZMODIFICATIONDATE real,
-	ZTRASHED integer,
-	ZARCHIVED integer,
-	ZPERMANENTLYDELETED integer
-);
-create table ZSFNOTETAG (
-	Z_PK integer primary key,
-	Z_OPT integer,
-	ZMODIFICATIONDATE real,
-	ZTITLE text,
-	ZTAGCON text
-);
-create table Z_5TAGS (Z_5NOTES integer, Z_13TAGS integer);
-insert into ZSFNOTE values (1, 1, 1, 10.0, 0, 0, 0);
-insert into ZSFNOTETAG values (1, 1, 10.0, 'quicknote', 'quicknote');
-insert into ZSFNOTETAG values (2, 1, 10.0, 'ideas', 'ideas');
-insert into Z_5TAGS values (1, 1);
-`)
+	runSQLiteFixtureForTokenTest(t, dbPath, "sqlite_note_token_setup.fixture")
 
 	beforeInfo, err := os.Stat(dbPath)
 	if err != nil {
@@ -77,7 +55,7 @@ insert into Z_5TAGS values (1, 1);
 			beforeInfo.ModTime(), afterInfo.ModTime())
 	}
 
-	runSQLiteForTokenTest(t, dbPath, `update ZSFNOTE set ZMODIFICATIONDATE = 20.0 where Z_PK = 1;`)
+	runSQLiteFixtureForTokenTest(t, dbPath, "sqlite_note_token_note_update.fixture")
 	updatedInfo, err := os.Stat(dbPath)
 	if err != nil {
 		t.Fatalf("stat after update: %v", err)
@@ -90,7 +68,7 @@ insert into Z_5TAGS values (1, 1);
 		t.Fatalf("token did not change after semantic note update: %q", token1)
 	}
 
-	runSQLiteForTokenTest(t, dbPath, `update ZSFNOTETAG set ZMODIFICATIONDATE = 30.0, ZTITLE = 'daily' where Z_PK = 2;`)
+	runSQLiteFixtureForTokenTest(t, dbPath, "sqlite_note_token_tag_update.fixture")
 	tagInfo, err := os.Stat(dbPath)
 	if err != nil {
 		t.Fatalf("stat after tag update: %v", err)
@@ -103,7 +81,7 @@ insert into Z_5TAGS values (1, 1);
 		t.Fatalf("token did not change after semantic tag update: %q", token2)
 	}
 
-	runSQLiteForTokenTest(t, dbPath, `insert into Z_5TAGS values (1, 2);`)
+	runSQLiteFixtureForTokenTest(t, dbPath, "sqlite_note_token_link_insert.fixture")
 	linkInfo, err := os.Stat(dbPath)
 	if err != nil {
 		t.Fatalf("stat after link update: %v", err)
@@ -123,6 +101,15 @@ func runSQLiteForTokenTest(t *testing.T, dbPath, sql string) {
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("sqlite3 failed: %v: %s", err, strings.TrimSpace(string(output)))
 	}
+}
+
+func runSQLiteFixtureForTokenTest(t *testing.T, dbPath, fixture string) {
+	t.Helper()
+	sql, err := os.ReadFile(filepath.Join("testdata", fixture))
+	if err != nil {
+		t.Fatalf("read sqlite fixture %s: %v", fixture, err)
+	}
+	runSQLiteForTokenTest(t, dbPath, string(sql))
 }
 
 // fakeStat returns scripted os.FileInfo values per call. The mtimes
@@ -190,7 +177,7 @@ func pollOptsFor(t *testing.T, stat *fakeStat, pollInterval, debounce time.Durat
 // pattern in tests/bear/config/daemon_test.go::
 // TestLoadDaemon_BearcliConcurrency_SoftCap. Also serves the
 // tag-override integration tests that assert on `d.Logf` content
-// (suppression WARNs, conflict rollups). Prefix save/restore is
+// (suppression WARNs, conflict summaries). Prefix save/restore is
 // defensive — production never calls log.SetPrefix, but a sibling
 // test in the same binary might, and an unrestored prefix would leak
 // into the captured buffer of the next test that uses this helper.
@@ -221,6 +208,42 @@ func countCycles(buf *bytes.Buffer) int {
 	return strings.Count(buf.String(), "regen trigger:")
 }
 
+type pollDaemonRun struct {
+	Daemon  *engine.Daemon
+	Watcher *fakeWatcher
+	Buf     *bytes.Buffer
+	cancel  context.CancelFunc
+	errCh   <-chan error
+}
+
+func startPollDaemonRun(
+	t *testing.T,
+	opts engine.DaemonOpts,
+	contextFn func(context.Context) context.Context,
+) *pollDaemonRun {
+	t.Helper()
+	fw := newFakeWatcher()
+	d := engine.NewDaemonWithWatcher(opts, fw)
+	t.Cleanup(func() { _ = d.Close() })
+
+	buf := captureLog(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	if contextFn != nil {
+		ctx = contextFn(ctx)
+	}
+	t.Cleanup(cancel)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- d.Run(ctx) }()
+	return &pollDaemonRun{Daemon: d, Watcher: fw, Buf: buf, cancel: cancel, errCh: errCh}
+}
+
+func (r *pollDaemonRun) WaitFor(dur time.Duration) {
+	time.Sleep(dur)
+	r.cancel()
+	<-r.errCh
+}
+
 // TestDaemonPoll_StatAndTrigger asserts: a poll-detected mtime change
 // resets the debounce timer and the loop fires at least the
 // initial-record + change-detect stat sequence under virtual time.
@@ -229,24 +252,14 @@ func TestDaemonPoll_StatAndTrigger(t *testing.T) {
 		base := time.Now()
 		stat := &fakeStat{mtimes: []time.Time{base, base.Add(1 * time.Second)}}
 		opts := pollOptsFor(t, stat, 100*time.Millisecond, 50*time.Millisecond)
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
-
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
+		run := startPollDaemonRun(t, opts, nil)
 
 		// Virtual-time advance: tick 1 records the initial mtime; tick 2
 		// observes the advanced mtime and routes through handleEvent
 		// (debounce armed); a subsequent quietTimer fire would invoke
 		// cycleOnce. 500ms of virtual time covers all three timers
 		// (poll 100ms x N + debounce 50ms) generously.
-		time.Sleep(500 * time.Millisecond)
-		cancel()
-		<-errCh
+		run.WaitFor(500 * time.Millisecond)
 
 		if got := stat.calls.Load(); got < 2 {
 			t.Errorf("fakeStat.calls = %d, want >= 2 (at least one initial-record + one change-detect)", got)
@@ -260,22 +273,12 @@ func TestDaemonPoll_ZeroDisables(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		stat := &fakeStat{mtimes: []time.Time{time.Now()}}
 		opts := pollOptsFor(t, stat, 0 /* disabled */, 50*time.Millisecond)
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
-
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
+		run := startPollDaemonRun(t, opts, nil)
 
 		// 5 virtual seconds is enough that a 1s ticker would have fired
 		// 5 times. With MtimePollInterval=0 the nil-channel idiom keeps
 		// `case <-pollTick:` unreachable and the poll loop never runs.
-		time.Sleep(5 * time.Second)
-		cancel()
-		<-errCh
+		run.WaitFor(5 * time.Second)
 
 		if got := stat.calls.Load(); got != 0 {
 			t.Errorf("fakeStat.calls = %d, want 0 (MtimePollInterval=0 must not start a ticker)", got)
@@ -324,25 +327,15 @@ func TestDaemonPoll_SelfWriteGate(t *testing.T) {
 		}}
 		opts := pollOptsFor(t, stat, 1*time.Second, 50*time.Millisecond)
 		opts.SelfWriteEpsilon = 100 * time.Millisecond
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
-
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
+		run := startPollDaemonRun(t, opts, nil)
 
 		// 7s covers all 6 poll ticks plus cycle 2's debounce settle.
-		time.Sleep(7 * time.Second)
-		cancel()
-		<-errCh
+		run.WaitFor(7 * time.Second)
 
-		if got := countCycles(buf); got != 2 {
+		if got := countCycles(run.Buf); got != 2 {
 			t.Errorf("cycle count = %d, want 2 (cycle 1 from tick 1;"+
 				" tick 2 within effective gate window must suppress;"+
-				" tick 6 past gate must fire cycle 2)\nlog:\n%s", got, buf.String())
+				" tick 6 past gate must fire cycle 2)\nlog:\n%s", got, run.Buf.String())
 		}
 	})
 }
@@ -364,23 +357,13 @@ func TestDaemonPoll_MtimeNoiseWithoutTokenChangeSkipsCycle(t *testing.T) {
 		opts.DatabaseChangeTokenFn = func(string, os.FileInfo) (string, error) {
 			return "stable", nil
 		}
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
+		run := startPollDaemonRun(t, opts, nil)
 
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
+		run.WaitFor(7 * time.Second)
 
-		time.Sleep(7 * time.Second)
-		cancel()
-		<-errCh
-
-		if got := countCycles(buf); got != 1 {
+		if got := countCycles(run.Buf); got != 1 {
 			t.Errorf("cycle count = %d, want 1 (mtime-only noise must not trigger cycle 2)\nlog:\n%s",
-				got, buf.String())
+				got, run.Buf.String())
 		}
 	})
 }
@@ -406,23 +389,13 @@ func TestDaemonPoll_TokenChangeAfterGateTriggersCycle(t *testing.T) {
 			}
 			return "v2", nil
 		}
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
+		run := startPollDaemonRun(t, opts, nil)
 
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
+		run.WaitFor(7 * time.Second)
 
-		time.Sleep(7 * time.Second)
-		cancel()
-		<-errCh
-
-		if got := countCycles(buf); got != 2 {
+		if got := countCycles(run.Buf); got != 2 {
 			t.Errorf("cycle count = %d, want 2 (token change after gate must trigger cycle 2)\nlog:\n%s",
-				got, buf.String())
+				got, run.Buf.String())
 		}
 	})
 }
@@ -448,23 +421,13 @@ func TestDaemonPoll_TokenReadFailureRetriesSameMtime(t *testing.T) {
 				return "v2", nil
 			}
 		}
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
+		run := startPollDaemonRun(t, opts, nil)
 
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
+		run.WaitFor(7 * time.Second)
 
-		time.Sleep(7 * time.Second)
-		cancel()
-		<-errCh
-
-		if got := countCycles(buf); got != 2 {
+		if got := countCycles(run.Buf); got != 2 {
 			t.Errorf("cycle count = %d, want 2 (failed token read must not consume the mtime advance)\nlog:\n%s",
-				got, buf.String())
+				got, run.Buf.String())
 		}
 	})
 }
@@ -486,23 +449,13 @@ func TestDaemonPoll_GatedTokenChangeRetriesAfterGate(t *testing.T) {
 			}
 			return "v2", nil
 		}
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
+		run := startPollDaemonRun(t, opts, nil)
 
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
+		run.WaitFor(7 * time.Second)
 
-		time.Sleep(7 * time.Second)
-		cancel()
-		<-errCh
-
-		if got := countCycles(buf); got != 2 {
+		if got := countCycles(run.Buf); got != 2 {
 			t.Errorf("cycle count = %d, want 2 (gated token change must stay pending until the gate closes)\nlog:\n%s",
-				got, buf.String())
+				got, run.Buf.String())
 		}
 	})
 }
@@ -518,24 +471,15 @@ func TestDaemonPoll_FailedCycleRetriesSameToken(t *testing.T) {
 			return "v1", nil
 		}
 		resetPoolForApply(t)
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
+		run := startPollDaemonRun(t, opts, func(ctx context.Context) context.Context {
+			return domain.ContextWithBackend(ctx, failingApplyBackend{})
+		})
 
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		ctx = domain.ContextWithBackend(ctx, failingApplyBackend{})
-		t.Cleanup(cancel)
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
+		run.WaitFor(7 * time.Second)
 
-		time.Sleep(7 * time.Second)
-		cancel()
-		<-errCh
-
-		if got := countCycles(buf); got != 2 {
+		if got := countCycles(run.Buf); got != 2 {
 			t.Errorf("cycle count = %d, want 2 (failed apply must leave the pending DB token retryable)\nlog:\n%s",
-				got, buf.String())
+				got, run.Buf.String())
 		}
 	})
 }
@@ -563,33 +507,23 @@ func TestDaemonPoll_DebounceReset(t *testing.T) {
 		base := time.Now()
 		stat := &fakeStat{mtimes: []time.Time{base, base.Add(1 * time.Second)}}
 		opts := pollOptsFor(t, stat, 100*time.Millisecond, 200*time.Millisecond)
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
-
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
+		run := startPollDaemonRun(t, opts, nil)
 
 		// Inject the seed FSEvent. The fakeWatcher in daemon_test.go
 		// exposes the events channel as `events` (buffered 16); we
 		// reuse the same fake to keep the test surface small.
-		fw.events <- fsnotify.Event{
+		run.Watcher.events <- fsnotify.Event{
 			Op:   fsnotify.Write,
 			Name: filepath.Join(opts.BearDBDir, "database.sqlite"),
 		}
 
 		// 1 second of virtual time covers FSEvent (T=0) + 2 poll-ticks
 		// (T=100, T=200) + the final debounce settle (T=400) + slack.
-		time.Sleep(1 * time.Second)
-		cancel()
-		<-errCh
+		run.WaitFor(1 * time.Second)
 
-		if got := countCycles(buf); got != 1 {
+		if got := countCycles(run.Buf); got != 1 {
 			t.Errorf("cycle count = %d, want 1 (FSEvent + 2 poll ticks should all reset the SAME quietTimer)\nlog:\n%s",
-				got, buf.String())
+				got, run.Buf.String())
 		}
 	})
 }
@@ -607,29 +541,19 @@ func TestDaemonPoll_SelfWriteGateDoesNotSlideOnSuppressedEvents(t *testing.T) {
 		}}
 		opts := pollOptsFor(t, stat, 1*time.Second, 50*time.Millisecond)
 		opts.SelfWriteEpsilon = 100 * time.Millisecond
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
-
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
+		run := startPollDaemonRun(t, opts, nil)
 
 		dbPath := filepath.Join(opts.BearDBDir, "database.sqlite")
-		fw.events <- fsnotify.Event{Op: fsnotify.Write, Name: dbPath}
+		run.Watcher.events <- fsnotify.Event{Op: fsnotify.Write, Name: dbPath}
 
 		time.Sleep(4500 * time.Millisecond)
-		fw.events <- fsnotify.Event{Op: fsnotify.Write, Name: dbPath}
+		run.Watcher.events <- fsnotify.Event{Op: fsnotify.Write, Name: dbPath}
 
-		time.Sleep(1 * time.Second)
-		cancel()
-		<-errCh
+		run.WaitFor(1 * time.Second)
 
-		if got := countCycles(buf); got != 2 {
+		if got := countCycles(run.Buf); got != 2 {
 			t.Errorf("cycle count = %d, want 2 (suppressed mtime must not extend self-write gate)\nlog:\n%s",
-				got, buf.String())
+				got, run.Buf.String())
 		}
 	})
 }
@@ -670,26 +594,16 @@ func TestDaemonPoll_CycleEndResetBaseline(t *testing.T) {
 		}}
 		opts := pollOptsFor(t, stat, 200*time.Millisecond, 50*time.Millisecond)
 		opts.SelfWriteEpsilon = 50 * time.Millisecond
-		fw := newFakeWatcher()
-		d := engine.NewDaemonWithWatcher(opts, fw)
-		t.Cleanup(func() { _ = d.Close() })
-
-		buf := captureLog(t)
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		errCh := make(chan error, 1)
-		go func() { errCh <- d.Run(ctx) }()
+		run := startPollDaemonRun(t, opts, nil)
 
 		// 1.5s = 7 poll ticks + plenty of debounce headroom. If the
 		// baseline reset is broken (storm), cycle count will be 7+.
-		time.Sleep(1500 * time.Millisecond)
-		cancel()
-		<-errCh
+		run.WaitFor(1500 * time.Millisecond)
 
-		if got := countCycles(buf); got != 1 {
+		if got := countCycles(run.Buf); got != 1 {
 			t.Errorf("cycle count = %d, want 1 (cycle 1 should reset baseline;"+
 				" subsequent poll ticks should see no advance and skip)\nlog:\n%s",
-				got, buf.String())
+				got, run.Buf.String())
 		}
 	})
 }

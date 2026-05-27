@@ -1,0 +1,27 @@
+create table ZSFNOTE (
+	Z_PK integer primary key,
+	Z_OPT integer,
+	ZVERSION integer,
+	ZMODIFICATIONDATE real,
+	ZTRASHED integer,
+	ZARCHIVED integer,
+	ZPERMANENTLYDELETED integer
+);
+
+create table ZSFNOTETAG (
+	Z_PK integer primary key,
+	Z_OPT integer,
+	ZMODIFICATIONDATE real,
+	ZTITLE text,
+	ZTAGCON text
+);
+
+create table Z_5TAGS (
+	Z_5NOTES integer,
+	Z_13TAGS integer
+);
+
+insert into ZSFNOTE values (1, 1, 1, 10.0, 0, 0, 0);
+insert into ZSFNOTETAG values (1, 1, 10.0, 'quicknote', 'quicknote');
+insert into ZSFNOTETAG values (2, 1, 10.0, 'ideas', 'ideas');
+insert into Z_5TAGS values (1, 1);
