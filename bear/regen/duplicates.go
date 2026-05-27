@@ -14,7 +14,7 @@ import (
 // with managed atom titles, and Bear's [[Title]] resolver does not know which
 // corpus slice noxctl owns.
 func BuildCorpusDuplicateRegistry(ctx context.Context) (*domain.DuplicateRegistry, error) {
-	notes, err := bearcli.ListCorpusNotes(ctx)
+	notes, err := bearcli.ListCorpusNoteTitles(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("BuildCorpusDuplicateRegistry: %w", err)
 	}

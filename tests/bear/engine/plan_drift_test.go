@@ -13,6 +13,7 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -37,6 +38,28 @@ func planAtomRow() map[string]any {
 		"tags":    []string{"#work", "#work/tasks"},
 		"content": canonicalAtomBody(),
 	}
+}
+
+type catEmptyIDFailsBackend struct {
+	*fakeWorkBackend
+}
+
+func (b catEmptyIDFailsBackend) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	if len(args) >= 2 && args[0] == "cat" && args[1] == "" {
+		return nil, errors.New("cat empty note ID")
+	}
+	return b.fakeWorkBackend.Run(ctx, args, stdin)
+}
+
+type duplicateRegistryFailurePlanBackend struct {
+	*fakeWorkBackend
+}
+
+func (b duplicateRegistryFailurePlanBackend) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	if len(args) >= 3 && args[0] == "list" && args[1] == "--location" && args[2] == "notes" {
+		return nil, errors.New("duplicate registry corpus read failed")
+	}
+	return b.fakeWorkBackend.Run(ctx, args, stdin)
 }
 
 // firstMasterDiff returns the first master-targeted Diff in a domain plan, or
@@ -86,7 +109,7 @@ func TestPlan_ReportsDriftCreate_WhenMasterMissing(t *testing.T) {
 		// nothing → empty current master → create drift.
 		fake.StageList(t, []map[string]any{planAtomRow()})
 		fake.StageNote(t, atomNoteID, planAtomRow())
-		ctx := bearcli.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), catEmptyIDFailsBackend{fakeWorkBackend: fake})
 
 		res, err := engine.Plan(ctx, engine.PlanOpts{Domains: []*domain.Domain{buildWorkDomainForIntegration()}})
 		if err != nil {
@@ -101,6 +124,28 @@ func TestPlan_ReportsDriftCreate_WhenMasterMissing(t *testing.T) {
 		}
 		if diff.Kind != engine.DiffCreate {
 			t.Errorf("master diff kind = %q, want %q (missing master is a create)", diff.Kind, engine.DiffCreate)
+		}
+	})
+}
+
+func TestPlan_RecordsError_WhenDuplicateRegistryFails(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		resetPoolForApply(t)
+		fake := newFakeWorkBackend()
+		fake.StageList(t, []map[string]any{planAtomRow()})
+		fake.StageNote(t, atomNoteID, planAtomRow())
+		ctx := bearcli.ContextWithBackend(context.Background(),
+			duplicateRegistryFailurePlanBackend{fakeWorkBackend: fake})
+
+		res, err := engine.Plan(ctx, engine.PlanOpts{Domains: []*domain.Domain{buildWorkDomainForIntegration()}})
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if len(res.Errors) == 0 {
+			t.Fatal("PlanResult.Errors is empty after duplicate registry failure; JSON consumers need this error")
+		}
+		if !strings.Contains(res.Errors[0].Msg, "duplicate registry corpus read failed") {
+			t.Fatalf("PlanResult.Errors[0] = %+v, want duplicate registry failure", res.Errors[0])
 		}
 	})
 }

@@ -39,20 +39,30 @@ func ListNotesForTag(ctx context.Context, tag string) ([]note.Note, error) {
 // ListCorpusNotes reads every Bear note in the notes location using the field
 // set needed by duplicate-title scanners and structural-note classifiers.
 func ListCorpusNotes(ctx context.Context) ([]note.Note, error) {
+	return listCorpusNotesWithFields(ctx, "id,title,content,tags", "ListCorpusNotes")
+}
+
+// ListCorpusNoteTitles reads only the fields needed by duplicate-title
+// disambiguation across the full Bear notes corpus.
+func ListCorpusNoteTitles(ctx context.Context) ([]note.Note, error) {
+	return listCorpusNotesWithFields(ctx, "id,title", "ListCorpusNoteTitles")
+}
+
+func listCorpusNotesWithFields(ctx context.Context, fields, label string) ([]note.Note, error) {
 	out, err := Run(ctx,
 		[]string{
 			"list", "--location", "notes",
 			FlagFormat, FormatJSON,
-			FlagFields, "id,title,content,tags",
+			FlagFields, fields,
 		},
 		"",
 	)
 	if err != nil {
-		return nil, fmt.Errorf("ListCorpusNotes list: %w", err)
+		return nil, fmt.Errorf("%s list: %w", label, err)
 	}
 	var notes []note.Note
 	if parseErr := json.Unmarshal(out, &notes); parseErr != nil {
-		return nil, fmt.Errorf("ListCorpusNotes parse: %w", parseErr)
+		return nil, fmt.Errorf("%s parse: %w", label, parseErr)
 	}
 	return notes, nil
 }

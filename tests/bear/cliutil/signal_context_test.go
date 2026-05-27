@@ -10,11 +10,10 @@ import (
 )
 
 func TestRunWithSignalContext_MapsWrappedContextCancel(t *testing.T) {
-	interrupted := errors.New("interrupted")
-	err := cliutil.RunWithSignalContext(context.Background(), interrupted, func(_ context.Context) error {
+	err := cliutil.RunWithSignalContext(context.Background(), cliutil.ErrInterrupted, func(_ context.Context) error {
 		return fmt.Errorf("wrapped: %w", context.Canceled)
 	})
-	if !errors.Is(err, interrupted) {
-		t.Fatalf("err = %v, want interrupted", err)
+	if !errors.Is(err, cliutil.ErrInterrupted) {
+		t.Fatalf("err = %v, want shared interrupted sentinel", err)
 	}
 }

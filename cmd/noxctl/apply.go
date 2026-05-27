@@ -8,11 +8,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/barad1tos/noxctl/bear/cli"
+	"github.com/barad1tos/noxctl/bear/cliutil"
 )
 
 // errInterrupted is the sentinel that cmd/noxctl/main.go maps to
 // POSIX exit code 130 (128 + SIGINT).
-var errInterrupted = errors.New("noxctl: interrupted")
+var errInterrupted = cliutil.ErrInterrupted
 
 // errApplyFailures is returned when apply completed without a
 // top-level error but at least one pre-pass or per-domain row had

@@ -69,12 +69,8 @@ func planSinglePath(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
 		opts.Stderr = os.Stderr
 	}
 	features := planFeatures(opts)
-	if features.DuplicateRegistry {
-		seedDuplicateRegistry(ctx, opts.Domains, opts.Stderr)
-	} else {
-		clearDuplicateRegistries(opts.Domains)
-	}
 	result := newEmptyPlanResult(len(opts.Domains))
+	preparePlanDuplicateRegistry(ctx, opts, features, result)
 	for _, d := range opts.Domains {
 		if ctx.Err() != nil {
 			result.Interrupted = true
@@ -132,6 +128,21 @@ func planFeatures(opts PlanOpts) Features {
 	return *opts.Features
 }
 
+func preparePlanDuplicateRegistry(
+	ctx context.Context,
+	opts PlanOpts,
+	features Features,
+	result *PlanResult,
+) {
+	if !features.DuplicateRegistry {
+		clearDuplicateRegistries(opts.Domains)
+		return
+	}
+	if err := seedDuplicateRegistry(ctx, opts.Domains, opts.Stderr); err != nil {
+		result.Errors = append(result.Errors, PlanError{Tag: "", Msg: err.Error()})
+	}
+}
+
 // seedDuplicateRegistry primes `Domain.Duplicates` on every domain so
 // `AtomicWikilink` emits the `[Title](bear://x-callback-url/open-note?id=X)`
 // disambiguation form for cross-corpus duplicate titles. Without it
@@ -140,9 +151,9 @@ func planFeatures(opts PlanOpts) Features {
 // drift. Build-failure is non-fatal: log to stderr and fall back to
 // plain wikilinks (matches the apply-side log-and-continue pattern at
 // `bear/engine/apply.go`).
-func seedDuplicateRegistry(ctx context.Context, domains []*domain.Domain, stderr io.Writer) {
+func seedDuplicateRegistry(ctx context.Context, domains []*domain.Domain, stderr io.Writer) error {
 	if len(domains) == 0 {
-		return
+		return nil
 	}
 	clearDuplicateRegistries(domains)
 	registry, err := regen.BuildCorpusDuplicateRegistry(ctx)
@@ -156,11 +167,12 @@ func seedDuplicateRegistry(ctx context.Context, domains []*domain.Domain, stderr
 		}
 		_, _ = fmt.Fprintf(stderr,
 			"duplicates: registry build failed: %v (continuing with plain wikilinks)\n", err)
-		return
+		return err
 	}
 	for _, d := range domains {
 		d.Duplicates = registry
 	}
+	return nil
 }
 
 func clearDuplicateRegistries(domains []*domain.Domain) {

@@ -191,12 +191,36 @@ func (b *duplicateLinkApplyBackend) Run(_ context.Context, args []string, stdin 
 
 func (b *duplicateLinkApplyBackend) list(args []string) ([]byte, error) {
 	if valueAfter(args, "--location") == "notes" {
+		if valueAfter(args, "--fields") != "id,title" {
+			return nil, errors.New("heavy corpus read should not be used for duplicate registry")
+		}
 		return duplicateLinkApplyNotes(), nil
 	}
 	if valueAfter(args, "--fields") == "id,title" {
 		return []byte(`[]`), nil
 	}
 	return duplicateLinkApplyNotes(), nil
+}
+
+type cancelingCrossDomainBackend struct{}
+
+func (cancelingCrossDomainBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) > 0 && args[0] == "list" && valueAfter(args, "--fields") == "id,title" {
+		return nil, context.Canceled
+	}
+	if len(args) == 0 {
+		return []byte("[]"), nil
+	}
+	switch args[0] {
+	case "cat", "show":
+		return []byte(`{"id":"created","title":"created","content":"","hash":"h","tags":[]}`), nil
+	case "create":
+		return []byte(`{"id":"created","title":"created","content":"","tags":[]}`), nil
+	case "overwrite":
+		return []byte(`{"ok":true}`), nil
+	default:
+		return []byte("[]"), nil
+	}
 }
 
 func (b *duplicateLinkApplyBackend) createdMasterBody() string {
@@ -456,6 +480,33 @@ func TestApply_CrossDomainMoveSurfacesFailedPrePassCount(t *testing.T) {
 	counts := result.PrePasses["cross_domain"]
 	if counts.Changed != 0 || counts.Failed != 1 {
 		t.Fatalf("cross_domain counts = %+v, want changed=0 failed=1", counts)
+	}
+}
+
+func TestApply_CrossDomainMoveCancelMarksInterruptedWithoutFailure(t *testing.T) {
+	dir := t.TempDir()
+	domains := []*domain.Domain{
+		render.NewFlatListDomain("inbox/a", "Inbox A"),
+		render.NewFlatListDomain("inbox/b", "Inbox B"),
+	}
+	ctx := bearcli.ContextWithBackend(context.Background(), cancelingCrossDomainBackend{})
+
+	result, err := engine.Apply(ctx, engine.ApplyOpts{
+		Domains:   domains,
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{CrossDomainMoves: true},
+		SkipFlock: true,
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	counts := result.PrePasses["cross_domain"]
+	if counts.Failed != 0 {
+		t.Fatalf("cross_domain counts = %+v, want canceled pre-pass without synthetic failure", counts)
+	}
+	if !result.Interrupted {
+		t.Fatal("Interrupted = false, want true when a pre-pass sees context cancellation")
 	}
 }
 

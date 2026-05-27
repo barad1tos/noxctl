@@ -171,11 +171,9 @@ func (d *Domain) renderAtomicCanonical(
 // `# #tag` recursive-corruption class.
 func RenderAtomicCanonical(
 	d *Domain,
-	noteTitle,
 	bucket,
 	content string,
 ) string {
-	_ = noteTitle
 	parts := d.parseAtomicContent(content, bucket)
 	if parts.H1Line == "" || isEmptyH1(parts.H1Line) {
 		parts.H1Line = "# " + NowForNewNoteLink().Format(H1DatetimeFormat)
@@ -219,7 +217,8 @@ func hoistPreambleToBody(p *AtomicParts) {
 // title input — the new datetime-stamp path doesn't consult it.
 func RenderAtomicCanonicalForTest(t interface{ Helper() }, d *Domain, noteTitle, bucket, content string) string {
 	t.Helper()
-	return RenderAtomicCanonical(d, noteTitle, bucket, content)
+	_ = noteTitle
+	return RenderAtomicCanonical(d, bucket, content)
 }
 
 // RenderCanonicalForBootstrap returns the canonical body form for a note

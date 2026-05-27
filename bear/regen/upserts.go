@@ -158,7 +158,7 @@ func upsertAtomicBacklink(
 	d *domain.Domain,
 	noteID, noteTitle, bucket, content string,
 ) (string, error) {
-	desired := domain.RenderAtomicCanonical(d, noteTitle, bucket, content)
+	desired := domain.RenderAtomicCanonical(d, bucket, content)
 	if domain.EqualIgnoringNewNoteLinkStrict(desired, content) {
 		return "", nil
 	}

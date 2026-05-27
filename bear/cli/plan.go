@@ -77,7 +77,6 @@ func RunPlan(ctx context.Context, opts PlanOptions) error {
 		return err
 	}
 	features := cliutil.FeaturesFromCatalog(catalog)
-
 	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -97,6 +96,9 @@ func RunPlan(ctx context.Context, opts PlanOptions) error {
 
 	if result.Interrupted {
 		return ErrInterrupted
+	}
+	if len(result.Errors) > 0 {
+		return fmt.Errorf("noxctl plan: %d error(s)", len(result.Errors))
 	}
 	if result.HasDrift() {
 		return ErrDriftDetected

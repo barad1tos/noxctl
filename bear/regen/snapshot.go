@@ -20,6 +20,9 @@ func FetchMasterContent(ctx context.Context, d *domain.Domain) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("FetchMasterContent(%s) findIndex: %w", d.Tag, err)
 	}
+	if idxID == "" {
+		return "", nil
+	}
 	out, err := bearcli.Run(ctx, []string{"cat", idxID, bearcli.FlagFormat, bearcli.FormatJSON}, "")
 	if err != nil {
 		return "", fmt.Errorf("FetchMasterContent(%s) cat: %w", d.Tag, err)

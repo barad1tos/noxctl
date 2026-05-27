@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -29,6 +30,25 @@ func (planFake) Run(_ context.Context, args []string, _ string) ([]byte, error) 
 		return []byte(`{"hash":"deadbeef"}`), nil
 	}
 	return []byte("[]"), nil
+}
+
+type planReadFailureFake struct{}
+
+func (planReadFailureFake) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) > 0 && args[0] == "list" && hasPlanArg(args, "--tag") {
+		return nil, errors.New("bearcli list --tag simulated failure")
+	}
+	if len(args) > 0 && args[0] == "cat" {
+		return []byte(`{"content":""}`), nil
+	}
+	if len(args) > 0 && args[0] == "show" {
+		return []byte(`{"hash":"deadbeef"}`), nil
+	}
+	return []byte("[]"), nil
+}
+
+func hasPlanArg(args []string, key string) bool {
+	return slices.Contains(args, key)
 }
 
 // planOptionsForTest builds PlanOptions pointing at the real catalog fixture
@@ -218,5 +238,27 @@ func TestRunPlan_EmitsJSON_WhenOutputJSON(t *testing.T) {
 	out := stdout.String()
 	if !strings.Contains(out, `"schema_version"`) || !strings.Contains(out, `"domains"`) {
 		t.Errorf("`-o json` output is not the documented JSON shape; got:\n%s", out)
+	}
+}
+
+func TestRunPlan_ReturnsError_WhenPlanContainsReadFailures(t *testing.T) {
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+
+	ctx := bearcli.ContextWithBackend(context.Background(), planReadFailureFake{})
+	var stdout bytes.Buffer
+	opts := planOptionsForTest(t, []string{"library/poetry"}, &stdout)
+	opts.Output = "json"
+
+	err := cli.RunPlan(ctx, opts)
+	if err == nil {
+		t.Fatal("RunPlan returned nil despite a Bear read failure; scripts would see exit 0")
+	}
+	if errors.Is(err, cli.ErrDriftDetected) {
+		t.Fatalf("RunPlan err = %v, want generic runtime error instead of drift", err)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, `"errors"`) || !strings.Contains(out, "simulated failure") {
+		t.Fatalf("JSON output did not expose the plan error; got:\n%s", out)
 	}
 }

@@ -8,6 +8,10 @@ import (
 	"syscall"
 )
 
+// ErrInterrupted is the command-level cancellation sentinel that maps to
+// POSIX exit code 130 in cmd/noxctl.
+var ErrInterrupted = errors.New("noxctl: interrupted")
+
 // RunWithSignalContext wraps fn in the standard SIGINT/SIGTERM-aware context
 // flow and maps context cancellation to interruptedErr.
 func RunWithSignalContext(

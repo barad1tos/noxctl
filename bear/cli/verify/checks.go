@@ -306,12 +306,6 @@ func classifySecondApplyPass(checkName string, second *engine.ApplyResult) (Chec
 	return Check{}, false
 }
 
-// ClassifySecondApplyPassForTest exposes second-pass classification to
-// external tests.
-func ClassifySecondApplyPassForTest(checkName string, second *engine.ApplyResult) (Check, bool) {
-	return classifySecondApplyPass(checkName, second)
-}
-
 // runApplyOnce invokes `engine.Apply` using `opts.ApplyOpts` as the
 // template — Pins, StatePath, LockPath, Features are caller-supplied
 // (cmd layer derives Features from the same catalog `noxctl apply`
