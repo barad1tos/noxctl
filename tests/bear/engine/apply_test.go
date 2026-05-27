@@ -254,6 +254,41 @@ func TestApply_DomainListFailureSurfacesInResult(t *testing.T) {
 	}
 }
 
+func TestApply_DaemonFailureUsesDaemonProgressMarker(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	priorLastApply := time.Date(2026, 5, 26, 12, 0, 0, 0, time.UTC)
+	if err := (&state.State{Version: state.SchemaVersion, LastApply: priorLastApply}).Save(statePath); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+	d := minimalApplyDomain("test/daemon-failing", "Test Daemon Failing")
+	ctx := domain.ContextWithBackend(context.Background(), failingApplyBackend{})
+	opts := engine.ApplyOpts{
+		Domains:   []*domain.Domain{d},
+		StatePath: statePath,
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{},
+		SkipFlock: true,
+	}
+	result, err := engine.Apply(ctx, opts)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if !result.AnyFailed() {
+		t.Fatal("AnyFailed = false, want true for daemon list failure")
+	}
+	after, err := state.Load(statePath)
+	if err != nil {
+		t.Fatalf("Load state: %v", err)
+	}
+	if !after.LastApply.Equal(priorLastApply) {
+		t.Errorf("LastApply = %s, want prior %s", after.LastApply, priorLastApply)
+	}
+	if after.InProgress.Verb != "daemon" {
+		t.Errorf("InProgress.Verb = %q, want daemon after failed daemon cycle", after.InProgress.Verb)
+	}
+}
+
 func TestApply_MasterCreateSurfacesInDomainCounts(t *testing.T) {
 	dir := t.TempDir()
 	d := minimalApplyDomain("test/master-create", "Test Master Create")

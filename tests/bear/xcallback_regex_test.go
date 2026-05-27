@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode"
@@ -64,7 +65,7 @@ func assertNoUnexpectedCyrillic(t *testing.T, path string) {
 	ast.Inspect(file, func(node ast.Node) bool {
 		switch value := node.(type) {
 		case *ast.BasicLit:
-			if value.Kind == token.STRING && hasCyrillicRun(value.Value) && !hasCyrillicPermit(fset, permitLines, value.Pos()) {
+			if hasCyrillicStringLiteral(value) && !hasCyrillicPermit(fset, permitLines, value.Pos()) {
 				t.Errorf("%s:%d: Cyrillic literal without //cyrillic:permit: %s",
 					path, fset.Position(value.Pos()).Line, value.Value)
 			}
@@ -104,22 +105,37 @@ func hasCyrillicRune(s string) bool {
 	return false
 }
 
-// hasCyrillicRun reports whether s contains a run of >=2 consecutive
-// Cyrillic letters. A single Cyrillic rune can appear accidentally in Unicode
-// punctuation-adjacent contexts; two or more is deliberate localized text.
-func hasCyrillicRun(s string) bool {
-	run := 0
-	for _, r := range s {
-		if unicode.Is(unicode.Cyrillic, r) {
-			run++
-			if run >= 2 {
-				return true
-			}
-		} else {
-			run = 0
-		}
+func hasCyrillicStringLiteral(value *ast.BasicLit) bool {
+	if value.Kind != token.STRING {
+		return false
 	}
-	return false
+	unquoted, err := strconv.Unquote(value.Value)
+	if err != nil {
+		return hasCyrillicRune(value.Value)
+	}
+	return hasCyrillicRune(unquoted)
+}
+
+func TestHasCyrillicStringLiteral(t *testing.T) {
+	tests := []struct {
+		name    string
+		literal string
+		kind    token.Token
+		want    bool
+	}{
+		{name: "ascii", literal: `"Title"`, kind: token.STRING, want: false},
+		{name: "single cyrillic rune", literal: `"і"`, kind: token.STRING, want: true},
+		{name: "escaped cyrillic rune", literal: `"\u0456"`, kind: token.STRING, want: true},
+		{name: "non string literal", literal: `42`, kind: token.INT, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hasCyrillicStringLiteral(&ast.BasicLit{Kind: tt.kind, Value: tt.literal})
+			if got != tt.want {
+				t.Errorf("hasCyrillicStringLiteral(%s) = %t, want %t", tt.literal, got, tt.want)
+			}
+		})
+	}
 }
 
 // TestEffectiveQuickPlaceholderH1_FallsBackToDefault locks the
