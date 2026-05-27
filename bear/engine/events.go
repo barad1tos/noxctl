@@ -5,6 +5,8 @@ package engine
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
 	"log"
 	"path/filepath"
 	"time"
@@ -14,6 +16,50 @@ import (
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/fastpass"
 )
+
+type databaseBaseline struct {
+	modTime       time.Time
+	token         string
+	pending       bool
+	pendingChange databaseCandidate
+	pendingCycle  bool
+}
+
+type databaseCandidate struct {
+	modTime time.Time
+	token   string
+}
+
+func (b *databaseBaseline) pendingCandidate() (databaseCandidate, bool) {
+	if !b.pending {
+		return databaseCandidate{}, false
+	}
+	return b.pendingChange, true
+}
+
+func (b *databaseBaseline) markPending(candidate databaseCandidate) {
+	b.modTime = candidate.modTime
+	b.pendingChange = candidate
+	b.pending = true
+}
+
+func (b *databaseBaseline) commit(candidate databaseCandidate) {
+	b.modTime = candidate.modTime
+	b.token = candidate.token
+	b.pending = false
+	b.pendingChange = databaseCandidate{}
+	b.pendingCycle = false
+}
+
+func (b *databaseBaseline) markPendingCycle() {
+	if b.pending {
+		b.pendingCycle = true
+	}
+}
+
+func (b *databaseBaseline) clearPendingCycle() {
+	b.pendingCycle = false
+}
 
 func (d *Daemon) handleEvent(event fsnotify.Event, quietTimer, maxTimer *time.Timer, burstActive *bool) {
 	if !d.isWatchedDBEvent(event) {
@@ -31,88 +77,225 @@ func (d *Daemon) handleEvent(event fsnotify.Event, quietTimer, maxTimer *time.Ti
 	)
 }
 
-// handlePollTick is the 6th-case body of Daemon.Run. Stats
-// database.sqlite via opts.StatFn; on mtime advance, routes a
-// synthetic fsnotify.Event through handleEvent so the debounce +
-// max-burst + self-write-gate path is uniform with the real FSEvent
-// trigger. Stat errors are non-fatal — they typically mean Bear
-// rotated the file mid-flush, and the next tick recovers. Extracted
-// from Run to keep gocognit ≤15.
-func (d *Daemon) handlePollTick(quietTimer, maxTimer *time.Timer, burstActive *bool, lastMtime *time.Time) {
+// handlePollTick is the 6th-case body of Daemon.Run. database.sqlite mtime is
+// only the cheap wake-up signal; a content-level token decides whether the
+// daemon should route a synthetic event. This filters Bear/bearcli read
+// housekeeping that advances the SQLite file mtime without changing notes.
+func (d *Daemon) handlePollTick(quietTimer, maxTimer *time.Timer, burstActive *bool, baseline *databaseBaseline) {
 	dbPath := filepath.Join(d.opts.BearDBDir, dbFilename)
-	info, err := d.opts.StatFn(dbPath)
+	_, changed, replayPending, err := d.nextDatabaseCandidate(dbPath, baseline)
 	if err != nil {
-		log.Printf("poll: stat %s failed: %v", dbPath, err)
+		log.Printf("poll: %s failed: %v", dbPath, err)
 		return
 	}
-	mt := info.ModTime()
-	if !mt.After(*lastMtime) {
+	if !changed {
 		return
 	}
-	*lastMtime = mt
+	if replayPending && *burstActive {
+		return
+	}
 	d.handleEvent(fsnotify.Event{Op: fsnotify.Write, Name: dbPath}, quietTimer, maxTimer, burstActive)
 }
 
 // autoTagPass is one row in [Daemon.handleAutoTagTick]'s pass slice — a
 // named struct (instead of an anonymous literal) so the slice literal
-// stays readable when the three passes are listed inline.
+// stays readable when the four passes are listed inline.
 type autoTagPass struct {
 	name    string
 	enabled bool
-	fn      func(context.Context) (int, error)
+	fn      func(context.Context) (fastpass.PassResult, error)
 }
 
-// handleAutoTagTick is the 7th-case body of Daemon.Run. Runs the four
-// fast-passes — ApplyForeignTagEscape, ApplyDailyDefaultTag,
-// ApplyDomainBootstrap, then ApplyPlaceholderRefresh — independent of
-// the full per-domain regen cycle. Order matches engine.Apply's
-// prePassSpec loop in apply.go: foreign-tag escape first so a freshly-
-// stamped daily note cannot be misclassified by the escape pass on
-// the same tick; domain-bootstrap third so notes the daily/escape
-// passes just stamped get their destination-canonical body written in
-// the same tick; placeholder refresh last so it can rewrite the H1
-// marker on notes the daily pass just produced via x-callback
-// bootstrap.
+type autoTagTickResult struct {
+	candidate databaseCandidate
+	wrote     int
+	failed    bool
+}
+
+func (d *Daemon) handleCycleTimer(
+	ctx context.Context,
+	reason string,
+	pollBaseline, autoTagBaseline *databaseBaseline,
+	burstActive *bool,
+	stopTimer *time.Timer,
+) {
+	if d.cycleOnce(ctx, reason) {
+		if d.opts.MtimePollInterval > 0 {
+			d.updateDatabaseBaseline(pollBaseline)
+		}
+		if d.opts.AutoTagPollInterval > 0 {
+			d.updateDatabaseBaseline(autoTagBaseline)
+		}
+	}
+	*burstActive = false
+	stopTimer.Stop()
+}
+
+func (d *Daemon) handleAutoTagSelectTick(
+	ctx context.Context,
+	quietTimer, maxTimer *time.Timer,
+	burstActive *bool,
+	pollBaseline, autoTagBaseline *databaseBaseline,
+) bool {
+	closed := d.handleQueuedWatcherEvents(quietTimer, maxTimer, burstActive)
+	if closed {
+		return true
+	}
+	d.handleAutoTagLoopTick(ctx, quietTimer, maxTimer, burstActive, pollBaseline, autoTagBaseline)
+	return false
+}
+
+func (d *Daemon) handleQueuedWatcherEvents(quietTimer, maxTimer *time.Timer, burstActive *bool) bool {
+	for {
+		select {
+		case event, ok := <-d.watcher.Events():
+			if !ok {
+				return true
+			}
+			d.handleEvent(event, quietTimer, maxTimer, burstActive)
+		default:
+			return false
+		}
+	}
+}
+
+func (d *Daemon) handleAutoTagLoopTick(
+	ctx context.Context,
+	quietTimer, maxTimer *time.Timer,
+	burstActive *bool,
+	pollBaseline, autoTagBaseline *databaseBaseline,
+) {
+	candidate, changed := d.nextAutoTagCandidate(burstActive, autoTagBaseline)
+	if !changed {
+		return
+	}
+	result, ran := d.runAutoTagFastPass(ctx, candidate, autoTagBaseline)
+	if !ran {
+		return
+	}
+	closed := d.handleQueuedWatcherEvents(quietTimer, maxTimer, burstActive)
+	if closed || *burstActive {
+		return
+	}
+	d.finishAutoTagTick(ctx, pollBaseline, autoTagBaseline, result)
+}
+
+func (d *Daemon) nextAutoTagCandidate(
+	burstActive *bool,
+	autoTagBaseline *databaseBaseline,
+) (databaseCandidate, bool) {
+	if *burstActive || d.isRegenInProgress() {
+		return databaseCandidate{}, false
+	}
+	dbPath := filepath.Join(d.opts.BearDBDir, dbFilename)
+	candidate, changed, _, err := d.nextDatabaseCandidate(dbPath, autoTagBaseline)
+	if err != nil {
+		log.Printf("auto-tag poll: %s failed: %v", dbPath, err)
+		return databaseCandidate{}, false
+	}
+	return candidate, changed
+}
+
+func (d *Daemon) runAutoTagFastPass(
+	ctx context.Context,
+	candidate databaseCandidate,
+	autoTagBaseline *databaseBaseline,
+) (autoTagTickResult, bool) {
+	wrote, ran, failed := d.handleAutoTagTick(ctx)
+	result := autoTagTickResult{candidate: candidate, wrote: wrote, failed: failed}
+	if !ran {
+		return result, false
+	}
+	if wrote > 0 {
+		autoTagBaseline.markPendingCycle()
+	}
+	return result, true
+}
+
+func (d *Daemon) finishAutoTagTick(
+	ctx context.Context,
+	pollBaseline, autoTagBaseline *databaseBaseline,
+	result autoTagTickResult,
+) {
+	if result.wrote == 0 {
+		d.finishNoWriteAutoTagTick(ctx, pollBaseline, autoTagBaseline, result)
+		return
+	}
+	if d.cycleOnce(ctx, "auto-tag fast-pass wrote changes") {
+		d.finishAutoTagCycle(pollBaseline, autoTagBaseline, result.failed)
+	}
+}
+
+func (d *Daemon) finishNoWriteAutoTagTick(
+	ctx context.Context,
+	pollBaseline, autoTagBaseline *databaseBaseline,
+	result autoTagTickResult,
+) {
+	if result.failed {
+		return
+	}
+	if autoTagBaseline.pendingCycle {
+		d.retryAutoTagPendingCycle(ctx, pollBaseline, autoTagBaseline)
+		return
+	}
+	autoTagBaseline.commit(result.candidate)
+}
+
+func (d *Daemon) retryAutoTagPendingCycle(
+	ctx context.Context,
+	pollBaseline, autoTagBaseline *databaseBaseline,
+) {
+	if !d.cycleOnce(ctx, "auto-tag fast-pass retry") {
+		return
+	}
+	d.finishAutoTagCycle(pollBaseline, autoTagBaseline, false)
+}
+
+func (d *Daemon) finishAutoTagCycle(
+	pollBaseline, autoTagBaseline *databaseBaseline,
+	retryAutoTag bool,
+) {
+	if d.opts.MtimePollInterval > 0 {
+		d.updateDatabaseBaseline(pollBaseline)
+	}
+	if retryAutoTag {
+		autoTagBaseline.clearPendingCycle()
+		return
+	}
+	d.updateDatabaseBaseline(autoTagBaseline)
+}
+
+func (d *Daemon) isRegenInProgress() bool {
+	d.regenMu.Lock()
+	defer d.regenMu.Unlock()
+	return d.regenInProgress
+}
+
+// handleAutoTagTick runs the four fast-passes — ApplyForeignTagEscape,
+// ApplyDailyDefaultTag, ApplyDomainBootstrap, then ApplyPlaceholderRefresh —
+// independent of the full per-domain regen cycle. Order matches engine.Apply's
+// prePassSpec loop in apply.go: foreign-tag escape first so a freshly-stamped
+// daily note cannot be misclassified by the escape pass on the same tick;
+// domain-bootstrap third so notes the daily/escape passes just stamped get their
+// destination-canonical body written in the same tick; placeholder refresh last
+// so it can rewrite the H1 marker on notes the daily pass just produced via
+// x-callback bootstrap.
 //
-// Gate: if a regen cycle is in progress, skip the tick silently — the
-// next AutoTagPollInterval tick retries. No coalescing, no DEBUG log
-// noise.
+// Error policy: all pre-passes run regardless of any prior pass's outcome;
+// log-and-continue. The caller keeps the database token pending when any pass
+// fails so a transient bearcli error retries on the next tick.
 //
-// Self-write gate: markRegenStart/markRegenEnd wrap the entire tick
-// so the effectiveSelfWriteEpsilon absorbs the fast-pass's own
-// writes. Accepts a brief FSEvent blackout window (~100-300ms per
-// tick) — the next user keystroke arms the debounce timer normally.
-//
-// Error policy: all pre-passes run regardless of any prior pass's
-// outcome; log-and-continue. Mirrors apply.go::runPrePass.
-//
-// Bearcli semaphore: all pre-pass calls route through
-// domain.runBearcli → SetBearcliConcurrency pool. No bypass.
-//
-// Best-effort error contract: per-pass failures are logged with a
-// `(continuing)` suffix and the tick keeps going. There is no return
-// value because the daemon select loop has no consumer for it —
-// fast-pass failure is not a user-visible event, the operator sees
-// it in the daemon log. Use `noxctl verify --check daemon-log` to
-// gate on the post-startup error rate.
-func (d *Daemon) handleAutoTagTick(ctx context.Context) {
+// Bearcli semaphore: all pre-pass calls route through domain.runBearcli →
+// SetBearcliConcurrency pool. No bypass.
+func (d *Daemon) handleAutoTagTick(ctx context.Context) (int, bool, bool) {
 	d.regenMu.Lock()
 	if d.regenInProgress {
 		d.regenMu.Unlock()
-		return
+		return 0, false, false
 	}
 	d.regenInProgress = true
 	d.regenMu.Unlock()
 
-	// self-write gate fix: we set regenInProgress in-line above
-	// (matches markRegenStart's semantics) but DO NOT call markRegenEnd
-	// at exit — that would bump regenEndTime every 2s, keeping
-	// effectiveSelfWriteEpsilon's 7s window perpetually open and
-	// starving the FSEvent path of any user-driven cycle. Instead, we
-	// clear regenInProgress unconditionally on exit and bump
-	// regenEndTime ONLY when we actually wrote something through
-	// bearcli. A no-write tick produces no FSEvent and thus needs no
-	// gate window.
 	// canonical-bootstrap wiring: build the tag→*Domain lookup
 	// once per tick so both pre-pass paths can write destination-canonical
 	// form in a single bearcli call.
@@ -132,29 +315,42 @@ func (d *Daemon) handleAutoTagTick(ctx context.Context) {
 	// without setting `[meta].daily_default_tag`.
 	dailyTagOn := d.opts.Features.AutoTagDefault && d.opts.DailyDefaultTag != ""
 	feats := d.opts.Features
-	mkPass := func(name string, enabled bool, fn func(context.Context) (int, error)) autoTagPass {
+	mkPass := func(name string, enabled bool, fn func(context.Context) (fastpass.PassResult, error)) autoTagPass {
 		return autoTagPass{name: name, enabled: enabled, fn: fn}
 	}
 	passes := []autoTagPass{
 		mkPass("foreign-tag escape", feats.ForeignTagEscape,
-			func(c context.Context) (int, error) { return fastpass.ApplyForeignTagEscape(c, domainsByTag) }),
+			func(c context.Context) (fastpass.PassResult, error) {
+				return fastpass.ApplyForeignTagEscapeResult(c, domainsByTag)
+			}),
 		mkPass("daily-default", dailyTagOn,
-			func(c context.Context) (int, error) { return fastpass.ApplyDailyDefaultTag(c, dailyDomain) }),
+			func(c context.Context) (fastpass.PassResult, error) {
+				return fastpass.ApplyDailyDefaultTagResult(c, dailyDomain)
+			}),
 		mkPass("domain-bootstrap", feats.DomainBootstrap,
-			func(c context.Context) (int, error) { return fastpass.ApplyDomainBootstrap(c, domainsByTag) }),
+			func(c context.Context) (fastpass.PassResult, error) {
+				return fastpass.ApplyDomainBootstrapResult(c, domainsByTag)
+			}),
 		mkPass("placeholder-refresh", feats.AutoTagDefault,
-			func(c context.Context) (int, error) { return fastpass.ApplyPlaceholderRefresh(c, domainsByTag) }),
+			func(c context.Context) (fastpass.PassResult, error) {
+				return fastpass.ApplyPlaceholderRefreshResult(c, domainsByTag)
+			}),
 	}
 	wrote := 0
+	failed := false
 	for _, p := range passes {
 		if !p.enabled {
 			continue
 		}
-		n, err := p.fn(ctx)
+		result, err := p.fn(ctx)
 		if err != nil {
+			failed = true
 			log.Printf("auto-tag fast-pass: %s failed: %v (continuing)", p.name, err)
 		}
-		wrote += n
+		if result.Failed > 0 {
+			failed = true
+		}
+		wrote += result.Changed
 	}
 
 	d.regenMu.Lock()
@@ -163,32 +359,74 @@ func (d *Daemon) handleAutoTagTick(ctx context.Context) {
 		d.regenEndTime = time.Now()
 	}
 	d.regenMu.Unlock()
+	return wrote, true, failed
 }
 
-// updatePollBaseline re-stats database.sqlite immediately after cycleOnce
-// completes and locks lastMtime to the resulting ModTime. Without this
-// reset the next poll tick (~MtimePollInterval after cycle end) sees the
-// daemon's OWN bearcli writes as a fresh mtime advance and triggers a
-// redundant cycle — an empirical cycle-storm observable as 7 cycles in
-// 6 minutes of idle daemon (database.sqlite mtime advances ~4s after
-// every cycleOnce, the 5s poll catches it, and SelfWriteEpsilon=2s has
-// already closed). Resetting the baseline post-cycle aligns lastMtime with reality
-// the daemon already knows about, so only EXTERNAL (user) writes after
-// cycle-end can re-trigger.
-//
-// No-op when MtimePollInterval == 0 (polling disabled, lastMtime is
-// unread anyway). Stat errors are non-fatal — a stale baseline just
-// means the next poll re-stats and may catch up on a transient.
-func (d *Daemon) updatePollBaseline(lastMtime *time.Time) {
-	if d.opts.MtimePollInterval == 0 {
-		return
-	}
+func (d *Daemon) updateDatabaseBaseline(baseline *databaseBaseline) {
 	dbPath := filepath.Join(d.opts.BearDBDir, dbFilename)
 	info, err := d.opts.StatFn(dbPath)
 	if err != nil {
 		return
 	}
-	*lastMtime = info.ModTime()
+	token, tokenErr := d.databaseChangeToken(dbPath, info)
+	if tokenErr != nil {
+		return
+	}
+	baseline.commit(databaseCandidate{modTime: info.ModTime(), token: token})
+}
+
+func (d *Daemon) nextDatabaseCandidate(
+	dbPath string,
+	baseline *databaseBaseline,
+) (databaseCandidate, bool, bool, error) {
+	pending, hasPending := baseline.pendingCandidate()
+	info, err := d.opts.StatFn(dbPath)
+	if err != nil {
+		if hasPending {
+			return pending, true, true, nil
+		}
+		return databaseCandidate{}, false, false, fmt.Errorf("stat: %w", err)
+	}
+	mt := info.ModTime()
+	if !mt.After(baseline.modTime) {
+		if hasPending {
+			return pending, true, true, nil
+		}
+		return databaseCandidate{}, false, false, nil
+	}
+	token, err := d.databaseChangeToken(dbPath, info)
+	if err != nil {
+		if hasPending {
+			return pending, true, true, nil
+		}
+		return databaseCandidate{}, false, false, fmt.Errorf("token: %w", err)
+	}
+	candidate := databaseCandidate{modTime: mt, token: token}
+	if hasPending {
+		if token == baseline.token {
+			baseline.commit(candidate)
+			return databaseCandidate{}, false, false, nil
+		}
+		baseline.markPending(candidate)
+		return candidate, true, token == pending.token, nil
+	}
+	if token == baseline.token {
+		baseline.commit(candidate)
+		return databaseCandidate{}, false, false, nil
+	}
+	baseline.markPending(candidate)
+	return candidate, true, false, nil
+}
+
+func (d *Daemon) databaseChangeToken(dbPath string, info fs.FileInfo) (string, error) {
+	token, err := d.opts.DatabaseChangeTokenFn(dbPath, info)
+	if err != nil {
+		return "", err
+	}
+	if token == "" {
+		return "", fmt.Errorf("empty database change token")
+	}
+	return token, nil
 }
 
 // cycleOnce runs one regen cycle: sentinel skip-check (priority yield
@@ -205,16 +443,16 @@ func (d *Daemon) updatePollBaseline(lastMtime *time.Time) {
 // engine.Apply to bypass BOTH AcquireApply AND the .apply-pending
 // sentinel write (semantic correctness — daemon's internal Apply is
 // not "external apply requesting priority").
-func (d *Daemon) cycleOnce(ctx context.Context, reason string) {
+func (d *Daemon) cycleOnce(ctx context.Context, reason string) bool {
 	log.Printf("regen trigger: %s", reason)
 	if IsApplyPending(d.opts.LockPath) {
 		log.Printf("apply-pending sentinel present; skipping cycle (apply will run)")
-		return
+		return false
 	}
 	release, err := AcquireDaemon(ctx, d.opts.LockPath)
 	if err != nil {
 		log.Printf("daemon flock failed: %v", err)
-		return
+		return false
 	}
 	defer release()
 
@@ -225,9 +463,20 @@ func (d *Daemon) cycleOnce(ctx context.Context, reason string) {
 	// bypasses AcquireApply + sentinel — see deadlock note above.
 	applyOpts := d.opts.ApplyOpts
 	applyOpts.SkipFlock = true
-	if _, applyErr := Apply(ctx, applyOpts); applyErr != nil {
+	result, applyErr := Apply(ctx, applyOpts)
+	if applyErr != nil {
 		log.Printf("daemon cycle: %v", applyErr)
+		return false
 	}
+	if result.Interrupted {
+		log.Printf("daemon cycle interrupted; preserving database baseline for retry")
+		return false
+	}
+	if result.AnyFailed() {
+		log.Printf("daemon cycle reported failed work; preserving database baseline for retry")
+		return false
+	}
+	return true
 }
 
 func (d *Daemon) markRegenStart() {
@@ -270,18 +519,13 @@ func (d *Daemon) isSelfTriggered() bool {
 	return time.Now().Before(d.regenEndTime.Add(d.effectiveSelfWriteEpsilon()))
 }
 
-// effectiveSelfWriteEpsilon widens the self-write gate when polling is
-// active so the post-cycle window covers one full poll-tick-plus-debounce
-// roundtrip. Without this, the daemon's own bearcli writes still propagate
-// to disk for several seconds after cycleOnce returns (Bear flushes the
-// SQLite commit asynchronously), and the next poll tick (~MtimePollInterval
-// after cycle end) sees an mtime advance that the static 2s
-// SelfWriteEpsilon has already stopped gating. Empirically the trailing
-// flush window is 3-5s; budget +3s past the poll tick + debounce sum
-// covers it without leaning on a magic constant.
+// effectiveSelfWriteEpsilon widens the fixed self-write gate when polling is
+// active so one poll-tick-plus-debounce roundtrip still lands inside the same
+// daemon-originated write window. Incoming events never slide this window
+// forward; only known daemon writes move regenEndTime.
 //
 // Returns the operator-configured SelfWriteEpsilon when polling is off
-// (MtimePollInterval == 0) — no need to widen if there's no poll-tick
+// (MtimePollInterval == 0) — no need to widen if there is no poll-tick
 // stream chasing the daemon's own writes.
 func (d *Daemon) effectiveSelfWriteEpsilon() time.Duration {
 	if d.opts.MtimePollInterval == 0 {

@@ -4,8 +4,10 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode"
@@ -14,52 +16,126 @@ import (
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
-// TestNewNoteURLFile_NoCyrillicLiterals enforces the no-Cyrillic-literals
-// rule on the SSOT URL module and the H1-stamping cluster. Cyrillic in Go
-// comments is fine (analyzer is *ast.BasicLit based) — only string
-// literals trip the gate. Replaces the legacy TestNewNoteFile_NoCyrillicLiterals
-// which targeted the now-deleted bear/new_note.go.
-func TestNewNoteURLFile_NoCyrillicLiterals(t *testing.T) {
+// TestProductionGoFiles_NoUnexpectedCyrillic enforces the production-source
+// rule: no Cyrillic identifiers and no Cyrillic string literals unless the
+// literal is explicitly marked with //cyrillic:permit. Comments are allowed to
+// mention localized Bear copy; tests carry real-world fixture strings and are
+// intentionally outside this gate.
+func TestProductionGoFiles_NoUnexpectedCyrillic(t *testing.T) {
 	repoRoot := findRepoRootFromTest(t)
-	for _, rel := range []string{"bear/domain/xcallback.go", "bear/domain/h1stamp.go"} {
-		path := filepath.Join(repoRoot, rel)
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
-		if err != nil {
-			t.Fatalf("parse %s: %v", path, err)
-		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			lit, ok := n.(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
-				return true
-			}
-			if hasCyrillicRun(lit.Value) {
-				t.Errorf("%s:%d: Cyrillic literal: %s",
-					path, fset.Position(lit.Pos()).Line, lit.Value)
-			}
-			return true
-		})
+	for _, path := range productionGoFiles(t, repoRoot) {
+		assertNoUnexpectedCyrillic(t, path)
 	}
 }
 
-// hasCyrillicRun reports whether s contains a run of ≥2 consecutive
-// Cyrillic letters. Matches the project's cyrillic-lint analyzer
-// (tools/cyrillic-lint/cyrillic/analyzer.go) so the in-package test
-// surfaces the same violations even on files not yet covered by the
-// analyzer's package patterns.
-func hasCyrillicRun(s string) bool {
-	run := 0
+func productionGoFiles(t *testing.T, repoRoot string) []string {
+	t.Helper()
+
+	var paths []string
+	for _, root := range []string{"bear", "cmd"} {
+		err := filepath.WalkDir(filepath.Join(repoRoot, root), func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+				paths = append(paths, path)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", root, err)
+		}
+	}
+	paths = append(paths, filepath.Join(repoRoot, "tools.go"))
+	return paths
+}
+
+func assertNoUnexpectedCyrillic(t *testing.T, path string) {
+	t.Helper()
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	permitLines := cyrillicPermitLines(fset, file)
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch value := node.(type) {
+		case *ast.BasicLit:
+			if hasCyrillicStringLiteral(value) && !hasCyrillicPermit(fset, permitLines, value.Pos()) {
+				t.Errorf("%s:%d: Cyrillic literal without //cyrillic:permit: %s",
+					path, fset.Position(value.Pos()).Line, value.Value)
+			}
+		case *ast.Ident:
+			if hasCyrillicRune(value.Name) {
+				t.Errorf("%s:%d: Cyrillic identifier: %s",
+					path, fset.Position(value.Pos()).Line, value.Name)
+			}
+		}
+		return true
+	})
+}
+
+func cyrillicPermitLines(fset *token.FileSet, file *ast.File) map[int]bool {
+	lines := make(map[int]bool)
+	for _, group := range file.Comments {
+		for _, comment := range group.List {
+			if strings.Contains(comment.Text, "cyrillic:permit") {
+				lines[fset.Position(comment.Pos()).Line] = true
+			}
+		}
+	}
+	return lines
+}
+
+func hasCyrillicPermit(fset *token.FileSet, permitLines map[int]bool, position token.Pos) bool {
+	line := fset.Position(position).Line
+	return permitLines[line] || permitLines[line-1]
+}
+
+func hasCyrillicRune(s string) bool {
 	for _, r := range s {
 		if unicode.Is(unicode.Cyrillic, r) {
-			run++
-			if run >= 2 {
-				return true
-			}
-		} else {
-			run = 0
+			return true
 		}
 	}
 	return false
+}
+
+func hasCyrillicStringLiteral(value *ast.BasicLit) bool {
+	if value.Kind != token.STRING {
+		return false
+	}
+	unquoted, err := strconv.Unquote(value.Value)
+	if err != nil {
+		return hasCyrillicRune(value.Value)
+	}
+	return hasCyrillicRune(unquoted)
+}
+
+func TestHasCyrillicStringLiteral(t *testing.T) {
+	tests := []struct {
+		name    string
+		literal string
+		kind    token.Token
+		want    bool
+	}{
+		{name: "ascii", literal: `"Title"`, kind: token.STRING, want: false},
+		{name: "single cyrillic rune", literal: `"і"`, kind: token.STRING, want: true},
+		{name: "escaped cyrillic rune", literal: `"\u0456"`, kind: token.STRING, want: true},
+		{name: "non string literal", literal: `42`, kind: token.INT, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hasCyrillicStringLiteral(&ast.BasicLit{Kind: tt.kind, Value: tt.literal})
+			if got != tt.want {
+				t.Errorf("hasCyrillicStringLiteral(%s) = %t, want %t", tt.literal, got, tt.want)
+			}
+		})
+	}
 }
 
 // TestEffectiveQuickPlaceholderH1_FallsBackToDefault locks the

@@ -95,11 +95,12 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 			DailyDefaultTag:    dailyDefaultTagFromCatalog(cat),
 			PromotionRules:     promotionRulesFromCatalog(cat),
 		},
-		BearDBDir:           bearDBDir,
-		DebouncePause:       dc.DebouncePause,
-		MaxBurstWindow:      dc.MaxBurstWindow,
-		MtimePollInterval:   dc.MtimePollInterval,
-		AutoTagPollInterval: dc.AutoTagPollInterval,
+		BearDBDir:             bearDBDir,
+		DebouncePause:         dc.DebouncePause,
+		MaxBurstWindow:        dc.MaxBurstWindow,
+		MtimePollInterval:     dc.MtimePollInterval,
+		DatabaseChangeTokenFn: engine.SQLiteNoteChangeToken,
+		AutoTagPollInterval:   dc.AutoTagPollInterval,
 	}
 
 	warnSilentFastPassGates(opts)

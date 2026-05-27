@@ -1,0 +1,3 @@
+update ZSFNOTE
+set ZMODIFICATIONDATE = 20.0
+where Z_PK = 1;

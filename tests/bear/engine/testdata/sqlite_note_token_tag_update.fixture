@@ -1,0 +1,4 @@
+update ZSFNOTETAG
+set ZMODIFICATIONDATE = 30.0,
+    ZTITLE = 'daily'
+where Z_PK = 2;

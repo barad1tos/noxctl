@@ -14,14 +14,34 @@ import (
 	"strings"
 )
 
-func (d *Domain) upsertHub(ctx context.Context, bucket string, notes []Note) (string, error) {
+type upsertOutcome int
+
+const (
+	upsertSkipped upsertOutcome = iota
+	upsertCreated
+	upsertChanged
+	upsertUnchanged
+)
+
+func incrementOutcome(outcome upsertOutcome, created, changed, unchanged *int) {
+	switch outcome {
+	case upsertCreated:
+		(*created)++
+	case upsertChanged:
+		(*changed)++
+	case upsertUnchanged:
+		(*unchanged)++
+	}
+}
+
+func (d *Domain) upsertHub(ctx context.Context, bucket string, notes []Note) (string, upsertOutcome, error) {
 	if d.RenderHub == nil {
-		return bucket + ": skipped (no Tier-2)", nil
+		return bucket + ": skipped (no Tier-2)", upsertSkipped, nil
 	}
 	hubTitle := d.HubTitle(bucket)
 	hubID, err := d.findHubID(ctx, hubTitle)
 	if err != nil {
-		return "", fmt.Errorf("upsertHub %q: %w", hubTitle, err)
+		return "", upsertSkipped, fmt.Errorf("upsertHub %q: %w", hubTitle, err)
 	}
 
 	if hubID == "" {
@@ -32,18 +52,18 @@ func (d *Domain) upsertHub(ctx context.Context, bucket string, notes []Note) (st
 			newAuto,
 		)
 		if err != nil {
-			return "", fmt.Errorf("upsertHub %q create: %w", hubTitle, err)
+			return "", upsertSkipped, fmt.Errorf("upsertHub %q create: %w", hubTitle, err)
 		}
-		return fmt.Sprintf("%s: created", hubTitle), nil
+		return fmt.Sprintf("%s: created", hubTitle), upsertCreated, nil
 	}
 
 	out, err := runBearcli(ctx, []string{"cat", hubID, flagFormat, formatJSON}, "")
 	if err != nil {
-		return "", fmt.Errorf("upsertHub %q cat: %w", hubTitle, err)
+		return "", upsertSkipped, fmt.Errorf("upsertHub %q cat: %w", hubTitle, err)
 	}
 	var existing Note
 	if err = json.Unmarshal(out, &existing); err != nil {
-		return "", fmt.Errorf("upsertHub %q parse: %w", hubTitle, err)
+		return "", upsertSkipped, fmt.Errorf("upsertHub %q parse: %w", hubTitle, err)
 	}
 
 	autoZone, manual := SplitMarker(existing.Content)
@@ -58,22 +78,22 @@ func (d *Domain) upsertHub(ctx context.Context, bucket string, notes []Note) (st
 	}
 
 	if equalIgnoringNewNoteLinkStrict(newBody, existing.Content) {
-		return fmt.Sprintf("%s: unchanged", hubTitle), nil
+		return fmt.Sprintf("%s: unchanged", hubTitle), upsertUnchanged, nil
 	}
 	if err = overwriteWithRetry(ctx, hubID, newBody); err != nil {
-		return "", fmt.Errorf("upsertHub %q write: %w", hubTitle, err)
+		return "", upsertSkipped, fmt.Errorf("upsertHub %q write: %w", hubTitle, err)
 	}
-	return fmt.Sprintf("%s: updated", hubTitle), nil
+	return fmt.Sprintf("%s: updated", hubTitle), upsertChanged, nil
 }
 
 // upsertMasterIndex creates or updates the domain's master index note.
 // Preserves the curator zone (below "## ✱ Куратор") on update. Returns a
 // human-readable summary; an err signals the caller to aggregate failures.
-func (d *Domain) upsertMasterIndex(ctx context.Context, groups map[string][]Note) (string, error) {
+func (d *Domain) upsertMasterIndex(ctx context.Context, groups map[string][]Note) (string, upsertOutcome, error) {
 	newAuto := d.RenderMaster(d, groups)
 	idxID, err := d.FindIndexID(ctx)
 	if err != nil {
-		return "", fmt.Errorf("upsertMasterIndex(%s): %w", d.IndexTitle, err)
+		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s): %w", d.IndexTitle, err)
 	}
 
 	if idxID == "" {
@@ -82,18 +102,18 @@ func (d *Domain) upsertMasterIndex(ctx context.Context, groups map[string][]Note
 			newAuto,
 		)
 		if err != nil {
-			return "", fmt.Errorf("upsertMasterIndex(%s) create: %w", d.IndexTitle, err)
+			return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s) create: %w", d.IndexTitle, err)
 		}
-		return "index: created", nil
+		return "index: created", upsertCreated, nil
 	}
 
 	out, err := runBearcli(ctx, []string{"cat", idxID, flagFormat, formatJSON}, "")
 	if err != nil {
-		return "", fmt.Errorf("upsertMasterIndex(%s) cat: %w", d.IndexTitle, err)
+		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s) cat: %w", d.IndexTitle, err)
 	}
 	var existing Note
 	if err = json.Unmarshal(out, &existing); err != nil {
-		return "", fmt.Errorf("upsertMasterIndex(%s) parse: %w", d.IndexTitle, err)
+		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s) parse: %w", d.IndexTitle, err)
 	}
 
 	_, manual := SplitMarker(existing.Content)
@@ -105,12 +125,12 @@ func (d *Domain) upsertMasterIndex(ctx context.Context, groups map[string][]Note
 	}
 
 	if equalIgnoringNewNoteLinkStrict(newBody, existing.Content) {
-		return "index: unchanged", nil
+		return "index: unchanged", upsertUnchanged, nil
 	}
 	if err = overwriteWithRetry(ctx, idxID, newBody); err != nil {
-		return "", fmt.Errorf("upsertMasterIndex(%s) write: %w", d.IndexTitle, err)
+		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s) write: %w", d.IndexTitle, err)
 	}
-	return "index: updated", nil
+	return "index: updated", upsertChanged, nil
 }
 
 // atomicsPilotBucket returns the bucket filter for the atomics pass, or "" for
@@ -185,19 +205,20 @@ func (d *Domain) runAtomicsPass(ctx context.Context, groups map[string][]Note) (
 }
 
 // runHubsPass upserts each per-bucket Tier-2 Hub note. No-op for domains
-// without Tier-2 hubs (d.RenderHub == nil). Returns count of failed hubs.
-func (d *Domain) runHubsPass(ctx context.Context, groups map[string][]Note) (failed int) {
+// without Tier-2 hubs (d.RenderHub == nil). Returns hub outcome counts.
+func (d *Domain) runHubsPass(ctx context.Context, groups map[string][]Note) (created, changed, unchanged, failed int) {
 	if d.RenderHub == nil {
-		return 0
+		return 0, 0, 0, 0
 	}
 	for bucket, items := range groups {
-		summary, err := d.upsertHub(ctx, bucket, items)
+		summary, outcome, err := d.upsertHub(ctx, bucket, items)
 		if err != nil {
 			d.Logf("ERROR: %v", err)
 			failed++
 			continue
 		}
+		incrementOutcome(outcome, &created, &changed, &unchanged)
 		d.Logf("%s", summary)
 	}
-	return failed
+	return created, changed, unchanged, failed
 }

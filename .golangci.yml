@@ -34,8 +34,8 @@ linters:
  # Dead code
     - unparam      # unused function parameters
  # Go ≥1.24 idiom upgrades (slices.Contains, strings.{SplitSeq,FieldsSeq,Cut}, …).
- # Replaces former forbidigo entry; Cyrillic-literal ban now lives in
- # tools/cyrillic-lint (wired through pre-commit).
+ # Replaces former forbidigo entry; production Cyrillic identifier/string-literal
+ # checks now live in tests/bear/xcallback_regex_test.go and run through go test.
     - modernize
 
   settings:

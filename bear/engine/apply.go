@@ -87,6 +87,18 @@ type ApplyOpts struct {
 // silently drifting defaults are a maintenance trap.
 const DefaultBearcliConcurrency = 8
 
+const (
+	applyInProgressVerb       = "apply"
+	daemonApplyInProgressVerb = "daemon"
+)
+
+func applyInProgressVerbFor(opts ApplyOpts) string {
+	if opts.SkipFlock {
+		return daemonApplyInProgressVerb
+	}
+	return applyInProgressVerb
+}
+
 // Apply runs the orchestrator one-shot: acquires flock,
 // runs pre-passes (gated by opts.Features), iterates opts.Domains
 // calling RunRegen, persists state.json incrementally per-domain,
@@ -152,7 +164,7 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	}
 
 	// Step 2: write InProgress marker before any pre-pass mutation.
-	st.InProgress = state.InProgress{Verb: "apply", StartedAt: result.StartedAt}
+	st.InProgress = state.InProgress{Verb: applyInProgressVerbFor(opts), StartedAt: result.StartedAt}
 	if err = st.Save(opts.StatePath); err != nil {
 		return result, fmt.Errorf("engine.Apply state.Save(InProgress): %w", err)
 	}

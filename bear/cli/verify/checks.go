@@ -262,22 +262,8 @@ func checkApplyIdempotency(ctx context.Context, opts Options, domains []*domain.
 		return check
 	}
 
-	offenders := nonIdempotentDomains(second)
-	if len(offenders) > 0 {
-		return failCheck(check.Name,
-			fmt.Sprintf("%d domain(s) wrote on the second apply pass", len(offenders)),
-			offenders)
-	}
-	if second.AnyFailed() {
-		// Mirror the first-pass treatment: `AnyFailed()` on a write
-		// path means infrastructure-level breakage (bearcli outage,
-		// flock contention, etc.), not "idempotency contract
-		// violated". Surface as StatusError so the operator routes
-		// to the daemon log instead of trying to debug renderer
-		// determinism.
-		check.Status = StatusError
-		check.Message = "second apply pass reported per-domain failures (see daemon log)"
-		return check
+	if resolved, done := classifySecondApplyPass(check.Name, second); done {
+		return resolved
 	}
 
 	// Capture pass-1 stats in the message — useful to know whether
@@ -293,6 +279,29 @@ func checkApplyIdempotency(ctx context.Context, opts Options, domains []*domain.
 		len(first.Domains),
 	)
 	return check
+}
+
+func classifySecondApplyPass(checkName string, second *engine.ApplyResult) (Check, bool) {
+	if second.AnyFailed() {
+		// Mirror the first-pass treatment: `AnyFailed()` on a write
+		// path means infrastructure-level breakage (bearcli outage,
+		// flock contention, etc.), not "idempotency contract
+		// violated". Surface as StatusError so the operator routes
+		// to the daemon log instead of trying to debug renderer
+		// determinism.
+		return Check{
+			Name:    checkName,
+			Status:  StatusError,
+			Message: "second apply pass reported apply failures (see daemon log)",
+		}, true
+	}
+	offenders := nonIdempotentDomains(second)
+	if len(offenders) > 0 {
+		return failCheck(checkName,
+			fmt.Sprintf("%d apply target(s) wrote on the second apply pass", len(offenders)),
+			offenders), true
+	}
+	return Check{}, false
 }
 
 // runApplyOnce invokes `engine.Apply` using `opts.ApplyOpts` as the
@@ -327,6 +336,11 @@ func nonIdempotentDomains(res *engine.ApplyResult) []string {
 		if counts.Created > 0 || counts.Changed > 0 {
 			out = append(out, fmt.Sprintf("%s (created=%d changed=%d)",
 				tag, counts.Created, counts.Changed))
+		}
+	}
+	for name, counts := range res.PrePasses {
+		if counts.Changed > 0 {
+			out = append(out, fmt.Sprintf("%s (pre-pass changed=%d)", name, counts.Changed))
 		}
 	}
 	sort.Strings(out)

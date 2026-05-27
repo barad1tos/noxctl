@@ -43,7 +43,7 @@ func TestRun_DefaultLogPath_UsesHomeBaseline(t *testing.T) {
 // FAIL). Covers checkPlanParity's res.Interrupted branch.
 func TestRun_CtxCanceledMidPlan_PlanParitySurfacesInterrupted(t *testing.T) {
 	catalog := writeMinimalCatalog(t)
-	ctx, cancel := context.WithCancel(domain.ContextWithBackend(t.Context(), benignBearcliBackend{}))
+	ctx, cancel := context.WithCancel(domain.ContextWithBackend(t.Context(), &benignBearcliBackend{}))
 	cancel() // pre-cancel; engine.Plan sees Done immediately.
 
 	var stdout, stderr strings.Builder

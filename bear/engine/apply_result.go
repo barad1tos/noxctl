@@ -37,6 +37,21 @@ type DomainCounts struct {
 	Created, Changed, Unchanged, Failed int
 }
 
+// DomainCountsFromRegen converts the per-domain pipeline result into
+// the PLAY RECAP shape.
+func DomainCountsFromRegen(result domain.RegenResult) DomainCounts {
+	counts := DomainCounts{
+		Created:   result.Created(),
+		Changed:   result.Changed(),
+		Unchanged: result.Unchanged(),
+		Failed:    result.Failed(),
+	}
+	if counts.Created == 0 && counts.Changed == 0 && counts.Unchanged == 0 && counts.Failed == 0 {
+		counts.Unchanged = 1
+	}
+	return counts
+}
+
 // AnyFailed reports whether any pre-pass or domain has Failed > 0.
 // cmd/noxctl/apply.go uses this to decide between exit 0 and exit 1
 // when the engine returned no error (i.e., partial-failure case).

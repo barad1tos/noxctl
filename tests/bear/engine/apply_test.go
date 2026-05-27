@@ -3,16 +3,21 @@ package engine_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
+	"github.com/barad1tos/noxctl/bear/render"
 	"github.com/barad1tos/noxctl/bear/state"
 )
 
 func TestApply_NoStateFileLoadsCleanly(t *testing.T) {
 	dir := t.TempDir()
+	ctx := domain.ContextWithBackend(context.Background(), emptyApplyBackend{})
 	opts := engine.ApplyOpts{
 		Domains:   nil,
 		Pins:      nil,
@@ -20,7 +25,7 @@ func TestApply_NoStateFileLoadsCleanly(t *testing.T) {
 		LockPath:  filepath.Join(dir, ".lock"),
 		Features:  engine.AllFeaturesOn(),
 	}
-	result, err := engine.Apply(context.Background(), opts)
+	result, err := engine.Apply(ctx, opts)
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -63,8 +68,10 @@ func TestApply_FeaturesGate_DisablesPrePass(t *testing.T) {
 
 func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 	dir := t.TempDir()
+	daily := minimalApplyDomain("stub/daily", "Stub Daily")
+	ctx := domain.ContextWithBackend(context.Background(), emptyApplyBackend{})
 	opts := engine.ApplyOpts{
-		Domains:   nil,
+		Domains:   []*domain.Domain{daily},
 		StatePath: filepath.Join(dir, "state.json"),
 		LockPath:  filepath.Join(dir, ".lock"),
 		Features:  engine.AllFeaturesOn(),
@@ -75,14 +82,279 @@ func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 		// AllFeaturesOn actually exercises every pre-pass row here.
 		DailyDefaultTag: "stub/daily",
 	}
-	result, err := engine.Apply(context.Background(), opts)
+	result, err := engine.Apply(ctx, opts)
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	for _, name := range []string{"foreign_tag", "auto_tag", "cross_domain", "time_promotion", "duplicate_registry"} {
+	if result.AnyFailed() {
+		t.Fatalf("AnyFailed = true, want false for hermetic enabled pre-pass test: %#v", result.PrePasses)
+	}
+	for _, name := range []string{
+		"foreign_tag",
+		"auto_tag",
+		"cross_domain",
+		"time_promotion",
+		"domain_bootstrap",
+		"placeholder_refresh",
+		"duplicate_registry",
+	} {
 		if _, ok := result.PrePasses[name]; !ok {
 			t.Errorf("pre-pass %q missing from result.PrePasses", name)
 		}
+	}
+}
+
+type failingApplyBackend struct{}
+
+func (failingApplyBackend) Run(_ context.Context, _ []string, _ string) ([]byte, error) {
+	return nil, errors.New("bearcli unavailable")
+}
+
+type emptyApplyBackend struct{}
+
+func (emptyApplyBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) == 0 {
+		return []byte(`[]`), nil
+	}
+	switch args[0] {
+	case "list":
+		return []byte(`[]`), nil
+	case "create":
+		return []byte(`{"id":"created","title":"created","content":"","tags":[]}`), nil
+	case "cat", "show":
+		return []byte(`{"id":"created","title":"created","content":"","hash":"h","tags":[]}`), nil
+	case "overwrite":
+		return []byte(`{"ok":true}`), nil
+	default:
+		return []byte(`[]`), nil
+	}
+}
+
+type crossDomainApplyBackend struct {
+	overwriteErr error
+}
+
+func (b crossDomainApplyBackend) Run(_ context.Context, args []string, stdin string) ([]byte, error) {
+	if len(args) == 0 {
+		return []byte(`[]`), nil
+	}
+	switch args[0] {
+	case "list":
+		return b.list(args)
+	case "cat":
+		return b.cat(args)
+	case "show":
+		return []byte(`{"hash":"deadbeef"}`), nil
+	case "create":
+		return []byte(`{"id":"created","title":"created","content":"","tags":[]}`), nil
+	case "overwrite":
+		if b.overwriteErr != nil {
+			return nil, b.overwriteErr
+		}
+		_ = stdin
+		return []byte(`{"ok":true}`), nil
+	default:
+		return []byte(`[]`), nil
+	}
+}
+
+func (b crossDomainApplyBackend) list(args []string) ([]byte, error) {
+	tag := valueAfter(args, "--tag")
+	if valueAfter(args, "--fields") == "id,title" {
+		switch tag {
+		case "inbox/a":
+			return []byte(`[{"id":"master-a","title":"Inbox A"}]`), nil
+		case "inbox/b":
+			return []byte(`[{"id":"master-b","title":"Inbox B"}]`), nil
+		}
+	}
+	if tag == "inbox/a" {
+		return []byte(`[` +
+			`{"id":"atom-1","title":"Moved","tags":["#inbox/a"],` +
+			`"content":"# Moved\n#inbox/a | [[Inbox A]]\n---\nbody\n"}` +
+			`]`), nil
+	}
+	return []byte(`[]`), nil
+}
+
+func (b crossDomainApplyBackend) cat(args []string) ([]byte, error) {
+	if len(args) < 2 {
+		return nil, errors.New("cat missing id")
+	}
+	switch args[1] {
+	case "master-a":
+		return []byte(`{"id":"master-a","title":"Inbox A","content":"# Inbox A\n"}`), nil
+	case "master-b":
+		return []byte(`{"id":"master-b","title":"Inbox B","content":"# Inbox B\n- [[Moved]]\n"}`), nil
+	default:
+		return []byte(`{"id":"unknown","title":"unknown","content":""}`), nil
+	}
+}
+
+func valueAfter(args []string, key string) string {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == key {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
+func minimalApplyDomain(tag, indexTitle string) *domain.Domain {
+	return &domain.Domain{
+		Tag:          tag,
+		CanonicalTag: "#" + tag,
+		IndexTitle:   indexTitle,
+		ParseMeta: func(_ *domain.Domain, _ string) domain.AtomicMeta {
+			return domain.AtomicMeta{}
+		},
+		RenderMaster: func(_ *domain.Domain, _ map[string][]domain.Note) string {
+			return "# " + indexTitle + "\n"
+		},
+	}
+}
+
+func TestApply_DomainListFailureSurfacesInResult(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	priorLastApply := time.Date(2026, 5, 26, 12, 0, 0, 0, time.UTC)
+	if err := (&state.State{Version: state.SchemaVersion, LastApply: priorLastApply}).Save(statePath); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+	d := minimalApplyDomain("test/failing", "Test Failing")
+	ctx := domain.ContextWithBackend(context.Background(), failingApplyBackend{})
+	opts := engine.ApplyOpts{
+		Domains:   []*domain.Domain{d},
+		StatePath: statePath,
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{},
+	}
+	result, err := engine.Apply(ctx, opts)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if !result.AnyFailed() {
+		t.Fatal("AnyFailed = false, want true for per-domain list failure")
+	}
+	if got := result.Domains[d.Tag].Failed; got != 1 {
+		t.Errorf("Failed = %d, want 1", got)
+	}
+	after, err := state.Load(statePath)
+	if err != nil {
+		t.Fatalf("Load state: %v", err)
+	}
+	if !after.LastApply.Equal(priorLastApply) {
+		t.Errorf("LastApply = %s, want prior %s", after.LastApply, priorLastApply)
+	}
+	if after.InProgress.Verb != "apply" {
+		t.Errorf("InProgress.Verb = %q, want apply after failed run", after.InProgress.Verb)
+	}
+	if !result.CompletedAt.IsZero() {
+		t.Errorf("CompletedAt = %s, want zero after failed run", result.CompletedAt)
+	}
+}
+
+func TestApply_DaemonFailureUsesDaemonProgressMarker(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	priorLastApply := time.Date(2026, 5, 26, 12, 0, 0, 0, time.UTC)
+	if err := (&state.State{Version: state.SchemaVersion, LastApply: priorLastApply}).Save(statePath); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+	d := minimalApplyDomain("test/daemon-failing", "Test Daemon Failing")
+	ctx := domain.ContextWithBackend(context.Background(), failingApplyBackend{})
+	opts := engine.ApplyOpts{
+		Domains:   []*domain.Domain{d},
+		StatePath: statePath,
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{},
+		SkipFlock: true,
+	}
+	result, err := engine.Apply(ctx, opts)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if !result.AnyFailed() {
+		t.Fatal("AnyFailed = false, want true for daemon list failure")
+	}
+	after, err := state.Load(statePath)
+	if err != nil {
+		t.Fatalf("Load state: %v", err)
+	}
+	if !after.LastApply.Equal(priorLastApply) {
+		t.Errorf("LastApply = %s, want prior %s", after.LastApply, priorLastApply)
+	}
+	if after.InProgress.Verb != "daemon" {
+		t.Errorf("InProgress.Verb = %q, want daemon after failed daemon cycle", after.InProgress.Verb)
+	}
+}
+
+func TestApply_MasterCreateSurfacesInDomainCounts(t *testing.T) {
+	dir := t.TempDir()
+	d := minimalApplyDomain("test/master-create", "Test Master Create")
+	ctx := domain.ContextWithBackend(context.Background(), emptyApplyBackend{})
+	opts := engine.ApplyOpts{
+		Domains:   []*domain.Domain{d},
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{},
+	}
+	result, err := engine.Apply(ctx, opts)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	counts := result.Domains[d.Tag]
+	if counts.Created != 1 {
+		t.Errorf("Created = %d, want 1 for master create", counts.Created)
+	}
+	if counts.Unchanged != 0 {
+		t.Errorf("Unchanged = %d, want 0 when master was created", counts.Unchanged)
+	}
+}
+
+func TestApply_CrossDomainMoveSurfacesChangedPrePassCount(t *testing.T) {
+	dir := t.TempDir()
+	domains := []*domain.Domain{
+		render.NewFlatListDomain("inbox/a", "Inbox A"),
+		render.NewFlatListDomain("inbox/b", "Inbox B"),
+	}
+	ctx := domain.ContextWithBackend(context.Background(), crossDomainApplyBackend{})
+	result, err := engine.Apply(ctx, engine.ApplyOpts{
+		Domains:   domains,
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{CrossDomainMoves: true},
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	counts := result.PrePasses["cross_domain"]
+	if counts.Changed != 1 || counts.Failed != 0 {
+		t.Fatalf("cross_domain counts = %+v, want changed=1 failed=0", counts)
+	}
+}
+
+func TestApply_CrossDomainMoveSurfacesFailedPrePassCount(t *testing.T) {
+	dir := t.TempDir()
+	domains := []*domain.Domain{
+		render.NewFlatListDomain("inbox/a", "Inbox A"),
+		render.NewFlatListDomain("inbox/b", "Inbox B"),
+	}
+	ctx := domain.ContextWithBackend(context.Background(), crossDomainApplyBackend{
+		overwriteErr: errors.New("overwrite failed"),
+	})
+	result, err := engine.Apply(ctx, engine.ApplyOpts{
+		Domains:   domains,
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{CrossDomainMoves: true},
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	counts := result.PrePasses["cross_domain"]
+	if counts.Changed != 0 || counts.Failed != 1 {
+		t.Fatalf("cross_domain counts = %+v, want changed=0 failed=1", counts)
 	}
 }
 
@@ -102,6 +374,7 @@ func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 //     domain without declaring `[meta].daily_default_tag`.
 func TestApply_AutoTagGatedOnDailyDefaultTag(t *testing.T) {
 	dir := t.TempDir()
+	ctx := domain.ContextWithBackend(context.Background(), emptyApplyBackend{})
 	opts := engine.ApplyOpts{
 		Domains:   nil,
 		StatePath: filepath.Join(dir, "state.json"),
@@ -109,9 +382,12 @@ func TestApply_AutoTagGatedOnDailyDefaultTag(t *testing.T) {
 		Features:  engine.AllFeaturesOn(),
 		// DailyDefaultTag deliberately empty.
 	}
-	result, err := engine.Apply(context.Background(), opts)
+	result, err := engine.Apply(ctx, opts)
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
+	}
+	if result.AnyFailed() {
+		t.Fatalf("AnyFailed = true, want false for hermetic auto-tag gate test: %#v", result.PrePasses)
 	}
 	if _, ok := result.PrePasses["auto_tag"]; ok {
 		t.Error("pre-pass \"auto_tag\" ran despite empty DailyDefaultTag")

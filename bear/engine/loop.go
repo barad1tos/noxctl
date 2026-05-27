@@ -51,18 +51,21 @@ func (d *Daemon) Run(ctx context.Context) error {
 	burstActive := false
 
 	// Poll-ticker setup. When MtimePollInterval == 0 the pollTick stays
-	// nil and `case <-pollTick:` blocks forever — Go's canonical
-	// "disabled select arm" idiom. lastMtime tracks the most recent
-	// ModTime observed; initialized to the zero time.Time so the FIRST
-	// poll tick after daemon startup ALWAYS observes "changed" and
-	// forces a catch-up cycle.
-	var lastMtime time.Time
+	// nil and `case <-pollTick:` blocks forever. pollBaseline starts at
+	// zero so the first poll tick still performs the startup catch-up
+	// check, but only a content-token change can arm a cycle.
+	var pollBaseline databaseBaseline
 	pollTick, stopPoll := startTickerOrNil(d.opts.MtimePollInterval)
 	defer stopPoll()
 
 	// Auto-tag fast-pass ticker setup. Same nil-channel idiom as
 	// pollTick: when AutoTagPollInterval == 0 the channel stays nil and
-	// `case <-autoTagTick:` blocks forever.
+	// `case <-autoTagTick:` blocks forever. Its baseline starts at the
+	// current DB content token so an idle daemon does not poll Bear every tick.
+	var autoTagBaseline databaseBaseline
+	if d.opts.AutoTagPollInterval > 0 {
+		d.updateDatabaseBaseline(&autoTagBaseline)
+	}
 	autoTagTick, stopAutoTag := startTickerOrNil(d.opts.AutoTagPollInterval)
 	defer stopAutoTag()
 
@@ -79,29 +82,23 @@ func (d *Daemon) Run(ctx context.Context) error {
 			}
 			d.handleEvent(event, quietTimer, maxTimer, &burstActive)
 		case <-quietTimer.C:
-			d.cycleOnce(ctx, "quiet period reached")
-			d.updatePollBaseline(&lastMtime)
-			burstActive = false
-			maxTimer.Stop()
+			d.handleCycleTimer(
+				ctx, "quiet period reached", &pollBaseline, &autoTagBaseline, &burstActive, maxTimer,
+			)
 		case <-maxTimer.C:
-			d.cycleOnce(ctx, "max-burst window reached (events still incoming)")
-			d.updatePollBaseline(&lastMtime)
-			burstActive = false
-			quietTimer.Stop()
+			d.handleCycleTimer(
+				ctx, "max-burst window reached (events still incoming)",
+				&pollBaseline, &autoTagBaseline, &burstActive, quietTimer,
+			)
 		case <-pollTick:
-			// Stat database.sqlite, compare ModTime to lastMtime, route
-			// a change through the same handleEvent path FSEvents use
-			// (debounce, burst, self-write-gate all apply uniformly) —
-			// no fast-path for poll.
-			d.handlePollTick(quietTimer, maxTimer, &burstActive, &lastMtime)
+			// Stat database.sqlite first, then compare a content token
+			// before routing a synthetic event through the same debounce
+			// path FSEvents use. Mtime is only a cheap wake-up signal.
+			d.handlePollTick(quietTimer, maxTimer, &burstActive, &pollBaseline)
 		case <-autoTagTick:
-			// Run ONLY the four fast-passes (foreign-tag escape, daily-
-			// default, domain-bootstrap, placeholder-refresh — in that
-			// order) — NEVER the full per-domain regen cycle. Skips
-			// silently if a regen is already in progress. Self-write
-			// gate is honored because handleAutoTagTick wraps the work
-			// in markRegenStart/markRegenEnd.
-			d.handleAutoTagTick(ctx)
+			if d.handleAutoTagSelectTick(ctx, quietTimer, maxTimer, &burstActive, &pollBaseline, &autoTagBaseline) {
+				return nil
+			}
 		case err, ok := <-d.watcher.Errors():
 			if !ok {
 				return nil

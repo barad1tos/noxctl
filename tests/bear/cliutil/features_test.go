@@ -26,6 +26,17 @@ func TestFeaturesFromCatalog_DefaultsAllOnForNilCatalog(t *testing.T) {
 	}
 }
 
+func TestDailyDefaultTagFromCatalog_NilAndConfigured(t *testing.T) {
+	if got := cliutil.DailyDefaultTagFromCatalog(nil); got != "" {
+		t.Fatalf("nil catalog daily default = %q, want empty", got)
+	}
+	catalog := &config.Catalog{}
+	catalog.Meta.DailyDefaultTag = "quicknote/daily"
+	if got := cliutil.DailyDefaultTagFromCatalog(catalog); got != "quicknote/daily" {
+		t.Fatalf("configured daily default = %q, want quicknote/daily", got)
+	}
+}
+
 // TestFeaturesFromCatalog_DomainBootstrapOverlay locks the four
 // catalog states for DomainBootstrap (nil catalog / omitted pointer /
 // explicit true / explicit false). Field-swap coverage for the other

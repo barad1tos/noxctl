@@ -29,12 +29,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
@@ -49,7 +55,11 @@ import (
 // spirit; trimmed for this test's needs (no inflight peak counting —
 // the BearcliPool semaphore itself is exercised by TestApplyParallel_*).
 type fakeAutoTagBackend struct {
-	listPayload []byte // canned response for "list"
+	listPayload    []byte // canned response for "list"
+	onRun          func([]string)
+	failList       atomic.Int64
+	failDomainList atomic.Int64
+	failWrite      atomic.Int64
 
 	mu    sync.Mutex
 	calls []fakeAutoTagCall
@@ -75,10 +85,23 @@ func (f *fakeAutoTagBackend) Run(_ context.Context, args []string, stdin string)
 	}
 	f.mu.Lock()
 	f.calls = append(f.calls, fakeAutoTagCall{Kind: kind, Args: append([]string(nil), args...), Body: stdin})
+	onRun := f.onRun
 	f.mu.Unlock()
+	if onRun != nil {
+		onRun(append([]string(nil), args...))
+	}
 	switch kind {
 	case "list":
-		return f.listPayload, nil
+		if f.failList.Load() > 0 && f.failList.Add(-1) >= 0 {
+			return nil, errors.New("list failed")
+		}
+		if valueAfter(args, "--tag") != "" && f.failDomainList.Load() > 0 && f.failDomainList.Add(-1) >= 0 {
+			return nil, errors.New("domain list failed")
+		}
+		f.mu.Lock()
+		payload := append([]byte(nil), f.listPayload...)
+		f.mu.Unlock()
+		return payload, nil
 	case "show":
 		// overwriteWithRetry calls ShowHash first to obtain the
 		// optimistic-concurrency hash; empty-hash is treated as fault
@@ -87,9 +110,30 @@ func (f *fakeAutoTagBackend) Run(_ context.Context, args []string, stdin string)
 		// downstream "overwrite" call proceeds and the test can observe it.
 		return []byte(`{"hash":"deadbeef"}`), nil
 	case "overwrite":
+		if f.failWrite.Load() > 0 && f.failWrite.Add(-1) >= 0 {
+			return nil, errors.New("overwrite failed")
+		}
 		return []byte(`{"ok":true}`), nil
 	}
 	return []byte("{}"), nil
+}
+
+func (f *fakeAutoTagBackend) SetListPayload(notes []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listPayload = append([]byte(nil), notes...)
+}
+
+func (f *fakeAutoTagBackend) FailNextList() {
+	f.failList.Add(1)
+}
+
+func (f *fakeAutoTagBackend) FailNextDomainList() {
+	f.failDomainList.Add(1)
+}
+
+func (f *fakeAutoTagBackend) FailNextOverwrite() {
+	f.failWrite.Add(1)
 }
 
 func (f *fakeAutoTagBackend) TotalCalls() int64 {
@@ -108,16 +152,37 @@ func (f *fakeAutoTagBackend) CountKind(kind string) int {
 	return n
 }
 
+func (f *fakeAutoTagBackend) OverwriteNoteIDs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ids := make([]string, 0)
+	for _, c := range f.calls {
+		if c.Kind == "overwrite" && len(c.Args) > 1 {
+			ids = append(ids, c.Args[1])
+		}
+	}
+	return ids
+}
+
 // untaggedListPayload returns the JSON bearcli list emits for one
 // untagged quicknote. Matches autoTagNote shape in bear/autotag.go.
 func untaggedListPayload(t *testing.T) []byte {
 	t.Helper()
-	raw, err := json.Marshal([]map[string]any{{
-		"id":      "abc123",
-		"title":   "Нова нотатка",
-		"tags":    []string{}, // empty → ApplyDailyDefaultTag stamps
-		"content": "Body of a brand new quicknote\n",
-	}})
+	return untaggedListPayloadWithIDs(t, "abc123")
+}
+
+func untaggedListPayloadWithIDs(t *testing.T, ids ...string) []byte {
+	t.Helper()
+	notes := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		notes = append(notes, map[string]any{
+			"id":      id,
+			"title":   "Нова нотатка",
+			"tags":    []string{}, // empty → ApplyDailyDefaultTag stamps
+			"content": "Body of a brand new quicknote\n",
+		})
+	}
+	raw, err := json.Marshal(notes)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -203,35 +268,239 @@ func (r *daemonRun) WaitFor(dur time.Duration) {
 
 // TestDaemonAutoTagPoll_TickFires asserts: a fast-pass tick invokes
 // ApplyForeignTagEscape + ApplyDailyDefaultTag via the BearcliBackend
-// seam — but NEVER invokes cycleOnce. With one untagged note injected
-// via the fake list payload, the daily-default pass stamps it (one
-// "overwrite" call), and no "regen trigger:" log line is emitted.
+// seam. With one untagged note injected via the fake list payload, the
+// daily-default pass stamps it (one "overwrite" call), then the daemon
+// runs one follow-up apply.
 func TestDaemonAutoTagPoll_TickFires(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fake := newFakeAutoTagBackend(untaggedListPayload(t))
+		fake.onRun = func(args []string) {
+			if len(args) > 0 && args[0] == "overwrite" {
+				fake.SetListPayload([]byte("[]"))
+			}
+		}
 		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
 		run := startDaemonRun(t, fake, opts, nil)
-		run.WaitFor(500 * time.Millisecond) // ~4 ticks of the 100ms ticker
+		run.WaitFor(500 * time.Millisecond)
 		buf := run.Buf
 
-		// At least one overwrite must fire (the daily-default pass stamps
-		// the untagged note). Use >=1 rather than ==1 because the fake
-		// list payload does NOT simulate idempotency (real
-		// ApplyDailyDefaultTag skips notes whose Tags is already
-		// populated; the fake keeps returning the same untagged shape
-		// each tick). The contract is "fast-pass invokes the pre-passes",
-		// not "exactly one stamp" — exactness comes from production
-		// behavior, not the fake.
-		if got := fake.CountKind("overwrite"); got < 1 {
-			t.Errorf("overwrite count = %d, want >= 1 (one note stamped #quicknote/daily per tick)\nlog:\n%s",
+		if got := fake.CountKind("overwrite"); got != 1 {
+			t.Errorf("overwrite count = %d, want 1 (one note stamped #quicknote/daily once)\nlog:\n%s",
 				got, buf.String())
 		}
-		if cycles := countCycles(buf); cycles != 0 {
-			t.Errorf("cycle count = %d, want 0 (fast-pass MUST NOT invoke cycleOnce)\nlog:\n%s",
+		if cycles := countCycles(buf); cycles != 1 {
+			t.Errorf("cycle count = %d, want 1 (one follow-up apply after fast-pass write)\nlog:\n%s",
 				cycles, buf.String())
 		}
 		if listN := fake.CountKind("list"); listN < 1 {
-			t.Errorf("list call count = %d, want >= 1 (fast-pass must list notes each tick)", listN)
+			t.Errorf("list call count = %d, want >= 1 (fast-pass must list notes on DB mtime advance)", listN)
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_IdleMtimeSkipsBearcli(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend(untaggedListPayload(t))
+		idleMtime := time.Unix(1, 0)
+		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
+		opts.StatFn = func(string) (os.FileInfo, error) { return fakeFileInfo{mt: idleMtime}, nil }
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(500 * time.Millisecond)
+
+		if got := fake.TotalCalls(); got != 0 {
+			t.Errorf("backend calls while DB mtime is idle = %d, want 0\nlog:\n%s", got, run.Buf.String())
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_MtimeNoiseWithoutTokenChangeSkipsBearcli(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend(untaggedListPayload(t))
+		base := time.Now()
+		stat := &fakeStat{mtimes: []time.Time{
+			base,
+			base.Add(1 * time.Second),
+			base.Add(2 * time.Second),
+		}}
+		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
+		opts.StatFn = stat.Stat
+		opts.DatabaseChangeTokenFn = func(string, os.FileInfo) (string, error) {
+			return "stable", nil
+		}
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(500 * time.Millisecond)
+
+		if got := fake.TotalCalls(); got != 0 {
+			t.Errorf("backend calls while only DB mtime changes = %d, want 0\nlog:\n%s", got, run.Buf.String())
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_FastPassFailureRetriesSameToken(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend([]byte("[]"))
+		fake.FailNextList()
+		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(350 * time.Millisecond)
+
+		if got := fake.CountKind("list"); got != 8 {
+			t.Errorf("list call count = %d, want 8 (failed tick + one successful retry, then pending clears)\nlog:\n%s",
+				got, run.Buf.String())
+		}
+		if cycles := countCycles(run.Buf); cycles != 0 {
+			t.Errorf("cycle count = %d, want 0 (no-write retry should not trigger follow-up apply)\nlog:\n%s",
+				cycles, run.Buf.String())
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_PerNoteFailureRetriesSameToken(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend(untaggedListPayload(t))
+		fake.FailNextOverwrite()
+		fake.onRun = func(args []string) {
+			if len(args) > 0 && args[0] == "overwrite" && fake.CountKind("overwrite") >= 2 {
+				fake.SetListPayload([]byte("[]"))
+			}
+		}
+		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(350 * time.Millisecond)
+
+		if got := fake.CountKind("overwrite"); got != 2 {
+			t.Errorf("overwrite count = %d, want 2 (failed write + one successful retry, then pending clears)\nlog:\n%s",
+				got, run.Buf.String())
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_MixedWriteFailureRetriesFailedNote(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend(untaggedListPayloadWithIDs(t, "failed-note", "ok-note"))
+		fake.FailNextOverwrite()
+		fake.onRun = func(args []string) {
+			if len(args) == 0 || args[0] != "overwrite" {
+				return
+			}
+			switch fake.CountKind("overwrite") {
+			case 2:
+				fake.SetListPayload(untaggedListPayloadWithIDs(t, "failed-note"))
+			case 3:
+				fake.SetListPayload([]byte("[]"))
+			}
+		}
+		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(450 * time.Millisecond)
+
+		if got := fake.CountKind("overwrite"); got != 3 {
+			t.Errorf("overwrite count = %d, want 3 (failed note must retry after sibling write succeeds)\nlog:\n%s",
+				got, run.Buf.String())
+		}
+		if got, want := fake.OverwriteNoteIDs(), []string{"failed-note", "ok-note", "failed-note"}; !slices.Equal(got, want) {
+			t.Errorf("overwrite note IDs = %v, want %v (failed note must be retried directly)\nlog:\n%s",
+				got, want, run.Buf.String())
+		}
+		if got := fake.CountKind("list"); got != 18 {
+			t.Errorf("list call count = %d, want 18 (pending should clear after retry settle)\nlog:\n%s",
+				got, run.Buf.String())
+		}
+		if cycles := countCycles(run.Buf); cycles != 1 {
+			t.Errorf("cycle count = %d, want 1 (mixed write retry should need one follow-up apply)\nlog:\n%s",
+				cycles, run.Buf.String())
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_FollowUpApplyFailureRetriesCycle(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend(untaggedListPayload(t))
+		fake.FailNextDomainList()
+		fake.onRun = func(args []string) {
+			if len(args) > 0 && args[0] == "overwrite" {
+				fake.SetListPayload([]byte("[]"))
+			}
+		}
+		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.Features{AutoTagDefault: true})
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(350 * time.Millisecond)
+
+		if cycles := countCycles(run.Buf); cycles != 2 {
+			t.Errorf("cycle count = %d, want 2 (failed follow-up apply must retry before baseline commit)\nlog:\n%s",
+				cycles, run.Buf.String())
+		}
+		if got := fake.CountKind("overwrite"); got != 1 {
+			t.Errorf("overwrite count = %d, want 1 (retry should rerun apply, not the already-successful fast-pass)\nlog:\n%s",
+				got, run.Buf.String())
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_PreservesReadOnlyDBEvents(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend([]byte("[]"))
+		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
+		fw := newFakeWatcher()
+		dbPath := filepath.Join(opts.BearDBDir, "database.sqlite")
+		var injected atomic.Bool
+		fake.onRun = func(args []string) {
+			if len(args) == 0 || args[0] != "list" || !injected.CompareAndSwap(false, true) {
+				return
+			}
+			fw.events <- fsnotify.Event{Op: fsnotify.Write, Name: dbPath}
+		}
+
+		resetPoolForApply(t)
+		d := engine.NewDaemonWithWatcher(opts, fw)
+		t.Cleanup(func() { _ = d.Close() })
+		buf := captureLog(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		ctx = domain.ContextWithBackend(ctx, fake)
+		t.Cleanup(cancel)
+		errCh := make(chan error, 1)
+		go func() { errCh <- d.Run(ctx) }()
+
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+		<-errCh
+
+		if listN := fake.CountKind("list"); listN < 1 {
+			t.Fatalf("list call count = %d, want >= 1", listN)
+		}
+		if cycles := countCycles(buf); cycles != 1 {
+			t.Errorf("cycle count = %d, want 1 (queued DB write must stay on the normal debounce path)\nlog:\n%s",
+				cycles, buf.String())
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_SkipsWhileBurstActive(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend([]byte("[]"))
+		opts := autoTagOptsFor(t, 50*time.Millisecond, engine.AllFeaturesOn())
+		opts.DebouncePause = 200 * time.Millisecond
+		fw := newFakeWatcher()
+		d := engine.NewDaemonWithWatcher(opts, fw)
+		t.Cleanup(func() { _ = d.Close() })
+		buf := captureLog(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		ctx = domain.ContextWithBackend(ctx, fake)
+		t.Cleanup(cancel)
+		errCh := make(chan error, 1)
+		go func() { errCh <- d.Run(ctx) }()
+
+		fw.events <- fsnotify.Event{
+			Op:   fsnotify.Write,
+			Name: filepath.Join(opts.BearDBDir, "database.sqlite"),
+		}
+		time.Sleep(150 * time.Millisecond)
+		cancel()
+		<-errCh
+
+		if got := fake.TotalCalls(); got != 0 {
+			t.Errorf("backend calls while burstActive=true = %d, want 0 (full apply is already pending)\nlog:\n%s",
+				got, buf.String())
 		}
 	})
 }
@@ -350,6 +619,8 @@ func TestDaemonAutoTagPoll_Disabled(t *testing.T) {
 // MtimePollInterval=0, etc.) carries through.
 func autoTagOptsForDomains(t *testing.T, pollInterval time.Duration, features engine.Features, domains []*domain.Domain) engine.DaemonOpts {
 	t.Helper()
+	base := time.Now()
+	stat := &fakeStat{mtimes: []time.Time{base, base.Add(1 * time.Second)}}
 	inner := applyOptsFor(t, domains)
 	inner.SkipFlock = true
 	inner.Features = features
@@ -361,6 +632,7 @@ func autoTagOptsForDomains(t *testing.T, pollInterval time.Duration, features en
 		SelfWriteEpsilon:    2 * time.Second,
 		MtimePollInterval:   0,
 		AutoTagPollInterval: pollInterval,
+		StatFn:              stat.Stat,
 	}
 }
 
@@ -400,14 +672,11 @@ func fourPassDaemonOpts(t *testing.T, features engine.Features) engine.DaemonOpt
 // when `Features.DomainBootstrap=true`, the per-tick `passes` slice in
 // `handleAutoTagTick` runs all FOUR pre-passes — foreign-tag escape,
 // daily-default, domain-bootstrap, placeholder-refresh — each issuing
-// one `bearcli list` per tick. Drives a single virtual tick under
-// `synctest` and asserts:
-// - `list` count == 4 (one per pass; equality pins the ordinal slot)
-// - `overwrite` count >= 1 (the aphorism note got canonicalized by
-// the 4th pass via the `#library/aphorisms` leaf).
+// one `bearcli list` per tick. The empty payload keeps this focused on
+// pass order: no pass has a note to rewrite, so no follow-up apply runs.
 func TestDaemonAutoTagPoll_FourPassesInOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		fake := newFakeAutoTagBackend(aphorismListPayload(t))
+		fake := newFakeAutoTagBackend([]byte("[]"))
 		// Pin a single tick: ticker=200ms + sleep=300ms under synctest
 		// virtual time advances past exactly one fire at the 200ms mark.
 		opts := fourPassDaemonOpts(t, engine.AllFeaturesOn())
@@ -417,12 +686,15 @@ func TestDaemonAutoTagPoll_FourPassesInOrder(t *testing.T) {
 
 		if got := fake.CountKind("list"); got != 4 {
 			t.Errorf("list call count = %d, want 4 "+
-				"(foreign-tag + daily-default + domain-bootstrap + placeholder-refresh, "+
-				"one each per tick)\nlog:\n%s", got, buf.String())
+				"(foreign-tag + daily-default + domain-bootstrap + placeholder-refresh)\nlog:\n%s", got, buf.String())
 		}
-		if got := fake.CountKind("overwrite"); got < 1 {
-			t.Errorf("overwrite count = %d, want >= 1 (domain-bootstrap must canonicalize the aphorism note)\nlog:\n%s",
+		if got := fake.CountKind("overwrite"); got != 0 {
+			t.Errorf("overwrite count = %d, want 0 (no-write payload keeps this test focused on pass order)\nlog:\n%s",
 				got, buf.String())
+		}
+		if cycles := countCycles(buf); cycles != 0 {
+			t.Errorf("cycle count = %d, want 0 (no-write fast-pass should not trigger follow-up apply)\nlog:\n%s",
+				cycles, buf.String())
 		}
 	})
 }
@@ -444,7 +716,7 @@ func TestDaemonAutoTagPoll_FourPassesInOrder(t *testing.T) {
 // remain), and no `auto-tag:` stamp lines appear in the log.
 func TestDaemonAutoTagPoll_DailyDefaultTagEmptyGate(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		fake := newFakeAutoTagBackend(aphorismListPayload(t))
+		fake := newFakeAutoTagBackend([]byte("[]"))
 		opts := fourPassDaemonOpts(t, engine.AllFeaturesOn())
 		// Override the default DailyDefaultTag seeded by applyOptsFor
 		// to assert the empty-tag silent-disable contract directly.

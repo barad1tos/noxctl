@@ -28,7 +28,7 @@ By participating, you agree to uphold the [Code of Conduct](.github/CODE_OF_COND
 ## What stays out of scope
 
 - **Cross-platform support.** Bear is macOS-only; `bearcli` is macOS-only; FSEvents is macOS-only. PRs that introduce cross-platform shims will be closed.
-- **New rendering blueprints.** The catalog is deliberately closed at six blueprints. Add a use case to an existing blueprint via configuration before proposing a new one.
+- **New rendering blueprints.** The catalog is deliberately closed at five blueprints. Add a use case to an existing blueprint via configuration before proposing a new one.
 - **Networking, telemetry, auto-update.** This is a local-vault tool. It never reaches out.
 - **AI assistants in committed code or comments.** No tool-vendor references in code, comments, commit messages, or doc files.
 
