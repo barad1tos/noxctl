@@ -32,6 +32,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -149,6 +150,18 @@ func (f *fakeAutoTagBackend) CountKind(kind string) int {
 		}
 	}
 	return n
+}
+
+func (f *fakeAutoTagBackend) OverwriteNoteIDs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ids := make([]string, 0)
+	for _, c := range f.calls {
+		if c.Kind == "overwrite" && len(c.Args) > 1 {
+			ids = append(ids, c.Args[1])
+		}
+	}
+	return ids
 }
 
 // untaggedListPayload returns the JSON bearcli list emits for one
@@ -385,6 +398,18 @@ func TestDaemonAutoTagPoll_MixedWriteFailureRetriesFailedNote(t *testing.T) {
 			t.Errorf("overwrite count = %d, want 3 (failed note must retry after sibling write succeeds)\nlog:\n%s",
 				got, run.Buf.String())
 		}
+		if got, want := fake.OverwriteNoteIDs(), []string{"failed-note", "ok-note", "failed-note"}; !slices.Equal(got, want) {
+			t.Errorf("overwrite note IDs = %v, want %v (failed note must be retried directly)\nlog:\n%s",
+				got, want, run.Buf.String())
+		}
+		if got := fake.CountKind("list"); got != 18 {
+			t.Errorf("list call count = %d, want 18 (pending should clear after retry settle)\nlog:\n%s",
+				got, run.Buf.String())
+		}
+		if cycles := countCycles(run.Buf); cycles != 1 {
+			t.Errorf("cycle count = %d, want 1 (mixed write retry should need one follow-up apply)\nlog:\n%s",
+				cycles, run.Buf.String())
+		}
 	})
 }
 
@@ -397,7 +422,7 @@ func TestDaemonAutoTagPoll_FollowUpApplyFailureRetriesCycle(t *testing.T) {
 				fake.SetListPayload([]byte("[]"))
 			}
 		}
-		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
+		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.Features{AutoTagDefault: true})
 		run := startDaemonRun(t, fake, opts, nil)
 		run.WaitFor(350 * time.Millisecond)
 
