@@ -1,6 +1,7 @@
 package bear_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -220,4 +221,68 @@ func TestAtomicWikilink_NonEmptyTitleStaysWikilink(t *testing.T) {
 	if got != "[[Paranova]]" {
 		t.Errorf("unique-title atom should render as `[[Title]]`; got %q", got)
 	}
+}
+
+func TestAtomicWikilink_UnmanagedCorpusCollisionUsesURL(t *testing.T) {
+	domain.ResetBearcliPoolForTest(2)
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	ctx := domain.ContextWithBackend(t.Context(), unmanagedDuplicateRegistryBackend{})
+	registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+	if err != nil {
+		t.Fatalf("BuildCorpusDuplicateRegistry: %v", err)
+	}
+	d := &domain.Domain{Tag: "test/notes", IndexTitle: "Index", Duplicates: registry}
+
+	got := domain.AtomicWikilink(d, domain.Note{ID: "managed-note", Title: "Same Title"})
+
+	if !strings.Contains(got, "bear://x-callback-url/open-note?id=managed-note") {
+		t.Fatalf("AtomicWikilink = %q, want URL form for unmanaged corpus collision", got)
+	}
+}
+
+func TestAtomicWikilink_GeneratedTitleCollisionUsesURL(t *testing.T) {
+	domain.ResetBearcliPoolForTest(2)
+	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	ctx := domain.ContextWithBackend(t.Context(), generatedTitleDuplicateRegistryBackend{})
+	registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+	if err != nil {
+		t.Fatalf("BuildCorpusDuplicateRegistry: %v", err)
+	}
+	d := &domain.Domain{Tag: "test/notes", IndexTitle: "Index", Duplicates: registry}
+
+	got := domain.AtomicWikilink(d, domain.Note{ID: "managed-note", Title: "Bucket"})
+
+	if !strings.Contains(got, "bear://x-callback-url/open-note?id=managed-note") {
+		t.Fatalf("AtomicWikilink = %q, want URL form for generated-title collision", got)
+	}
+	got = domain.AtomicWikilink(d, domain.Note{ID: "managed-index-note", Title: "Index"})
+	if !strings.Contains(got, "bear://x-callback-url/open-note?id=managed-index-note") {
+		t.Fatalf("AtomicWikilink = %q, want URL form for generated-master title collision", got)
+	}
+}
+
+type unmanagedDuplicateRegistryBackend struct{}
+
+func (unmanagedDuplicateRegistryBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) > 0 && args[0] == "list" {
+		return []byte(`[
+			{"id":"managed-note","title":"Same Title","content":"","tags":["#test/notes"]},
+			{"id":"unmanaged-note","title":"Same Title","content":"","tags":["#personal/archive"]}
+		]`), nil
+	}
+	return []byte(`[]`), nil
+}
+
+type generatedTitleDuplicateRegistryBackend struct{}
+
+func (generatedTitleDuplicateRegistryBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) > 0 && args[0] == "list" {
+		return []byte(`[
+			{"id":"managed-note","title":"Bucket","content":"","tags":["#test/notes"]},
+			{"id":"managed-index-note","title":"Index","content":"","tags":["#test/notes"]},
+			{"id":"generated-hub","title":"Bucket","content":"","tags":["#test/notes"]},
+			{"id":"generated-master","title":"Index","content":"","tags":["#test/notes"]}
+		]`), nil
+	}
+	return []byte(`[]`), nil
 }

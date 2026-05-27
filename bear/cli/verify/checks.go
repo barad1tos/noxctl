@@ -30,9 +30,11 @@ func failCheck(name, message string, details []string) Check {
 // residue scan reports untracked tag-families.
 func checkPlanParity(ctx context.Context, opts Options, domains []*domain.Domain) Check {
 	check := Check{Name: "plan-parity"}
+	features := opts.ApplyOpts.Features
 	res, err := engine.Plan(ctx, engine.PlanOpts{
-		Domains: domains,
-		Stderr:  opts.Stderr,
+		Domains:  domains,
+		Stderr:   opts.Stderr,
+		Features: &features,
 	})
 	if err != nil {
 		check.Status = StatusError

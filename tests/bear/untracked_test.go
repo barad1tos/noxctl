@@ -26,9 +26,10 @@ import (
 // shape — id and title are not used by aggregation, but emitting the
 // full shape keeps fixtures one Marshal away from real bearcli output.
 type noteFixture struct {
-	ID    string   `json:"id"`
-	Title string   `json:"title"`
-	Tags  []string `json:"tags"`
+	ID      string   `json:"id"`
+	Title   string   `json:"title"`
+	Content string   `json:"content,omitempty"`
+	Tags    []string `json:"tags"`
 }
 
 func mustMarshalNotes(t *testing.T, notes []noteFixture) []byte {

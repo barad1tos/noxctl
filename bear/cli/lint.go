@@ -30,29 +30,30 @@ import (
 var ErrLintFailed = errors.New("noxctl lint: reported failures")
 
 // RunLint performs the lint sweep. When apply is false (audit mode or
-// `lint` without --apply), it runs audit.Scan read-only PLUS
-// audit.ScanOrphanFamilies (corpus-level), merges and re-sorts the
-// findings, then prints the grouped report. When apply is true, it
-// runs audit.LintApplyDomains (rewrites Fixable rows through bearcli)
-// AND then audit.ApplyOrphanFamilies (one `bearcli tags add <id>
-// orphans` per stray-family atom) — the apply order matters:
+// `lint` without --apply), it runs audit.Scan read-only PLUS the
+// corpus-level orphan-family and duplicate-title scans, merges and
+// re-sorts the findings, then prints the grouped report. When apply is
+// true, it runs audit.LintApplyDomains (rewrites Fixable rows through
+// bearcli), then the orphan-family tag pass, then the duplicate-title
+// tag pass — the apply order matters:
 // per-domain auto-fix may rewrite atom bodies, so the orphan tag-add
-// runs against the post-fix atom state.
+// runs against the post-fix atom state before duplicate-title triage
+// marks remaining ambiguous-title notes.
 //
-// On orphan-scan failure, audit-mode appends a synthetic finding to
+// On corpus-scan failure, audit-mode appends a synthetic finding to
 // the report so the operator sees the gap inline AND returns the
 // wrapped scan error so CI gates greping exit codes still catch the
-// regression. In apply-mode, orphan-scan failure aborts the orphan
-// pass (per-domain fixes have already landed; logging + returning
-// the wrapped error lets the operator re-run the lint sweep with the
+// regression. In apply-mode, scan failure aborts that corpus pass
+// (per-domain fixes have already landed; logging + returning the
+// wrapped error lets the operator re-run the lint sweep with the
 // failure context).
 //
 // ctx cancellation aborts the sweep at the next bearcli call. All
 // four orchestrators are log-and-continue on per-atom failures, so a
 // partial sweep always renders whatever findings completed before the
 // cancellation. The returned error is non-nil when apply-mode hit
-// per-atom failures (ErrLintFailed), or when the orphan scan could
-// not complete in either mode (wrapped scan error). Audit mode
+// per-atom failures (ErrLintFailed), or when a corpus scan could not
+// complete in either mode (wrapped scan error). Audit mode
 // returns nil when the scan ran clean — even if per-domain findings
 // were emitted, those are operator-actionable but not a sweep
 // failure.
@@ -62,13 +63,50 @@ var ErrLintFailed = errors.New("noxctl lint: reported failures")
 func RunLint(ctx context.Context, stdout io.Writer, domains []*domain.Domain, apply bool) error {
 	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
 	if apply {
-		audit.LintApplyDomains(ctx, domains)
-		return runApplyOrphanPass(ctx, domains)
+		_, domainFailed, domainErr := audit.LintApplyDomains(ctx, domains)
+		if errors.Is(domainErr, context.Canceled) {
+			orphanErr := runApplyOrphanPass(ctx, domains)
+			if orphanErr != nil {
+				return orphanErr
+			}
+			return domainErr
+		}
+		var domainLintErr error
+		if domainFailed > 0 {
+			domainLintErr = fmt.Errorf("%w: per-domain lint apply failed for %d atom(s)",
+				ErrLintFailed, domainFailed)
+		}
+		orphanErr := runApplyOrphanPass(ctx, domains)
+		if errors.Is(orphanErr, context.Canceled) {
+			return orphanErr
+		}
+		duplicateErr := runApplyDuplicatePass(ctx, domains)
+		return joinApplyErrors(domainErr, domainLintErr, orphanErr, duplicateErr)
 	}
 	findings := audit.Scan(ctx, domains)
-	findings, scanErr := appendOrphanFindings(ctx, findings, domains)
+	findings, orphanErr := appendOrphanFindings(ctx, findings, domains)
+	findings, duplicateErr := appendDuplicateFindings(ctx, findings, domains)
 	audit.PrintFindings(stdout, findings, len(domains))
-	return scanErr
+	return errors.Join(orphanErr, duplicateErr)
+}
+
+func joinApplyErrors(errs ...error) error {
+	var runtimeErrs []error
+	var lintErrs []error
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, ErrLintFailed) {
+			lintErrs = append(lintErrs, err)
+			continue
+		}
+		runtimeErrs = append(runtimeErrs, err)
+	}
+	if len(runtimeErrs) > 0 {
+		return errors.Join(runtimeErrs...)
+	}
+	return errors.Join(lintErrs...)
 }
 
 // runApplyOrphanPass invokes the corpus orphan scan + tag-add chain.
@@ -109,6 +147,28 @@ func runApplyOrphanPass(ctx context.Context, domains []*domain.Domain) error {
 	return nil
 }
 
+func runApplyDuplicatePass(ctx context.Context, domains []*domain.Domain) error {
+	if err := domain.CheckCtx(ctx); err != nil {
+		log.Printf("lint --apply: duplicate-title pass skipped: %v", err)
+		return fmt.Errorf("lint --apply duplicate-title pass: %w", err)
+	}
+	duplicateFindings, scanErr := audit.ScanDuplicateTitles(ctx, domains)
+	if scanErr != nil {
+		log.Printf("lint --apply: duplicate-title scan failed: %v", scanErr)
+		return fmt.Errorf("lint --apply duplicate-title scan: %w", scanErr)
+	}
+	tagged, failed, applyErr := audit.ApplyDuplicateTitles(ctx, duplicateFindings)
+	log.Printf("lint --apply: duplicate-title scanned=%d tagged=%d failed=%d",
+		len(duplicateFindings), tagged, failed)
+	if applyErr != nil {
+		return fmt.Errorf("lint --apply duplicate-title tag-add: %w", applyErr)
+	}
+	if failed > 0 {
+		return fmt.Errorf("%w: duplicate-title tag-add failed for %d atom(s)", ErrLintFailed, failed)
+	}
+	return nil
+}
+
 // appendOrphanFindings runs the corpus orphan scan and merges its
 // findings into the per-domain set, re-sorting in place. On scan
 // failure a synthetic LintOrphanFamily Finding is appended in place
@@ -131,23 +191,63 @@ func appendOrphanFindings(
 		return findings, nil
 	}
 	if err := domain.CheckCtx(ctx); err != nil {
-		return findings, nil
+		return appendScanFailureFinding(
+			findings, audit.LintOrphanFamily, "(orphan scan failed)",
+			"lint audit orphan scan", err,
+		)
 	}
 	orphanFindings, orphanErr := audit.ScanOrphanFamilies(ctx, domains)
 	if orphanErr != nil {
 		log.Printf("lint: orphan scan failed: %v", orphanErr)
-		findings = append(findings, audit.Finding{
-			Category: audit.LintOrphanFamily,
-			Title:    "(orphan scan failed)",
-			Detail:   flattenForReport(orphanErr.Error()),
-			Fixable:  false,
-		})
-		audit.SortFindings(findings)
-		return findings, fmt.Errorf("lint audit orphan scan: %w", orphanErr)
+		return appendScanFailureFinding(
+			findings, audit.LintOrphanFamily, "(orphan scan failed)",
+			"lint audit orphan scan", orphanErr,
+		)
 	}
 	findings = append(findings, orphanFindings...)
 	audit.SortFindings(findings)
 	return findings, nil
+}
+
+func appendDuplicateFindings(
+	ctx context.Context,
+	findings []audit.Finding,
+	domains []*domain.Domain,
+) ([]audit.Finding, error) {
+	if err := domain.CheckCtx(ctx); err != nil {
+		return appendScanFailureFinding(
+			findings, audit.LintDuplicateTitle, "(duplicate-title scan failed)",
+			"lint audit duplicate-title scan", err,
+		)
+	}
+	duplicateFindings, scanErr := audit.ScanDuplicateTitles(ctx, domains)
+	if scanErr != nil {
+		log.Printf("lint: duplicate-title scan failed: %v", scanErr)
+		return appendScanFailureFinding(
+			findings, audit.LintDuplicateTitle, "(duplicate-title scan failed)",
+			"lint audit duplicate-title scan", scanErr,
+		)
+	}
+	findings = append(findings, duplicateFindings...)
+	audit.SortFindings(findings)
+	return findings, nil
+}
+
+func appendScanFailureFinding(
+	findings []audit.Finding,
+	category audit.LintCategory,
+	title string,
+	wrapPrefix string,
+	scanErr error,
+) ([]audit.Finding, error) {
+	findings = append(findings, audit.Finding{
+		Category: category,
+		Title:    title,
+		Detail:   flattenForReport(scanErr.Error()),
+		Fixable:  false,
+	})
+	audit.SortFindings(findings)
+	return findings, fmt.Errorf("%s: %w", wrapPrefix, scanErr)
 }
 
 // flattenForReport collapses newlines and tabs in a free-form error

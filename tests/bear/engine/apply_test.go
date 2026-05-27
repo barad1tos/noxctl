@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -104,6 +106,40 @@ func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 	}
 }
 
+func TestApply_DuplicateRegistryRendersURLLinks(t *testing.T) {
+	dir := t.TempDir()
+	backend := &duplicateLinkApplyBackend{}
+	ctx := domain.ContextWithBackend(context.Background(), backend)
+	d := duplicateLinkApplyDomain()
+	opts := engine.ApplyOpts{
+		Domains:   []*domain.Domain{d},
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features: engine.Features{
+			DuplicateRegistry: true,
+		},
+		SkipFlock: true,
+	}
+
+	result, err := engine.Apply(ctx, opts)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if result.AnyFailed() {
+		t.Fatalf("AnyFailed = true, want false: %#v", result)
+	}
+	body := backend.createdMasterBody()
+	for _, noteID := range []string{"note-a", "note-b"} {
+		want := "[Same Title](bear://x-callback-url/open-note?id=" + noteID + ")"
+		if !strings.Contains(body, want) {
+			t.Fatalf("created master body missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "[[Same Title]]") {
+		t.Fatalf("created master body contains ambiguous wikilink:\n%s", body)
+	}
+}
+
 type failingApplyBackend struct{}
 
 func (failingApplyBackend) Run(_ context.Context, _ []string, _ string) ([]byte, error) {
@@ -128,6 +164,51 @@ func (emptyApplyBackend) Run(_ context.Context, args []string, _ string) ([]byte
 	default:
 		return []byte(`[]`), nil
 	}
+}
+
+type duplicateLinkApplyBackend struct {
+	mu         sync.Mutex
+	masterBody string
+}
+
+func (b *duplicateLinkApplyBackend) Run(_ context.Context, args []string, stdin string) ([]byte, error) {
+	if len(args) == 0 {
+		return []byte(`[]`), nil
+	}
+	switch args[0] {
+	case "list":
+		return b.list(args)
+	case "create":
+		b.mu.Lock()
+		b.masterBody = stdin
+		b.mu.Unlock()
+		return []byte(`{"id":"created-master","title":"Index","content":"","tags":[]}`), nil
+	default:
+		return []byte(`[]`), nil
+	}
+}
+
+func (b *duplicateLinkApplyBackend) list(args []string) ([]byte, error) {
+	if valueAfter(args, "--location") == "notes" {
+		return duplicateLinkApplyNotes(), nil
+	}
+	if valueAfter(args, "--fields") == "id,title" {
+		return []byte(`[]`), nil
+	}
+	return duplicateLinkApplyNotes(), nil
+}
+
+func (b *duplicateLinkApplyBackend) createdMasterBody() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.masterBody
+}
+
+func duplicateLinkApplyNotes() []byte {
+	return []byte(`[
+		{"id":"note-a","title":"Same Title","content":"# Same Title\n#test/notes | [[Index]] | Items\n---\n","tags":["#test/notes"]},
+		{"id":"note-b","title":"Same Title","content":"# Same Title\n#test/notes | [[Index]] | Items\n---\n","tags":["#test/notes"]}
+	]`)
 }
 
 type crossDomainApplyBackend struct {
@@ -210,6 +291,25 @@ func minimalApplyDomain(tag, indexTitle string) *domain.Domain {
 		},
 		RenderMaster: func(_ *domain.Domain, _ map[string][]domain.Note) string {
 			return "# " + indexTitle + "\n"
+		},
+	}
+}
+
+func duplicateLinkApplyDomain() *domain.Domain {
+	return &domain.Domain{
+		Tag:             "test/notes",
+		CanonicalTag:    "#test/notes",
+		IndexTitle:      "Index",
+		UnknownBucket:   "Items",
+		SkipAtomicsPass: true,
+		ParseMeta: func(_ *domain.Domain, _ string) domain.AtomicMeta {
+			return domain.AtomicMeta{Bucket: "Items"}
+		},
+		RenderMaster: func(d *domain.Domain, groups map[string][]domain.Note) string {
+			var body strings.Builder
+			body.WriteString("# Index\n#test/notes\n---\n")
+			domain.RenderNoteList(&body, d, groups["Items"])
+			return body.String()
 		},
 	}
 }

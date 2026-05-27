@@ -19,6 +19,7 @@ import (
 
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
+	"github.com/barad1tos/noxctl/bear/render"
 )
 
 // planAtomRow is the single work atom every drift scenario stages. Its body
@@ -41,6 +42,15 @@ func planAtomRow() map[string]any {
 func firstMasterDiff(dp engine.DomainPlan) (engine.Diff, bool) {
 	for _, d := range dp.Changes {
 		if d.Target == "master" {
+			return d, true
+		}
+	}
+	return engine.Diff{}, false
+}
+
+func firstHubDiff(dp engine.DomainPlan) (engine.Diff, bool) {
+	for _, d := range dp.Changes {
+		if d.Target == "hub" {
 			return d, true
 		}
 	}
@@ -186,4 +196,170 @@ func TestPlan_ReportsClean_WhenMasterMatchesRender(t *testing.T) {
 			t.Errorf("Plan reported drift on an in-sync master; want clean. domain=%+v", res.Domains[0])
 		}
 	})
+}
+
+func TestPlan_ReportsClean_WhenDuplicateMasterUsesURLLinks(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		resetPoolForApply(t)
+		fake := newFakeWorkBackend()
+		first := duplicatePlanAtomRow("plan-dup-a", "#work | [[✱ Робота]] | tasks")
+		second := duplicatePlanAtomRow("plan-dup-b", "#work | [[✱ Робота]] | tasks")
+		fake.StageList(t, []map[string]any{first, second})
+		fake.StageNote(t, "plan-dup-a", first)
+		fake.StageNote(t, "plan-dup-b", second)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
+		d := buildWorkDomainForIntegration()
+		registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+		if err != nil {
+			t.Fatalf("BuildCorpusDuplicateRegistry: %v", err)
+		}
+		d.Duplicates = registry
+
+		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		if err != nil {
+			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
+		}
+		rendered := d.RenderMaster(d, inputs.Groups)
+		if !strings.Contains(rendered, "id=plan-dup-a") || !strings.Contains(rendered, "id=plan-dup-b") {
+			t.Fatalf("rendered master lacks duplicate URL links:\n%s", rendered)
+		}
+		masterRow := map[string]any{"id": masterNoteID, "title": "✱ Робота", "tags": []string{"#work"}, "content": rendered}
+		fake.StageList(t, []map[string]any{first, second, masterRow})
+		fake.StageNote(t, masterNoteID, masterRow)
+
+		res, err := engine.Plan(ctx, engine.PlanOpts{Domains: []*domain.Domain{d}, Verbose: true})
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if res.HasDrift() {
+			t.Fatalf("Plan reported duplicate URL-link false drift; want clean. domain=%+v", res.Domains[0])
+		}
+	})
+}
+
+func TestPlan_ReportsHubDrift_WhenDuplicateHubNeedsURLLinks(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		resetPoolForApply(t)
+		fake := newFakeWorkBackend()
+		d := buildHubPlanDomain()
+		first := hubPlanAtomRow("hub-dup-a")
+		second := hubPlanAtomRow("hub-dup-b")
+		fake.StageList(t, []map[string]any{first, second})
+		fake.StageNote(t, "hub-dup-a", first)
+		fake.StageNote(t, "hub-dup-b", second)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
+
+		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		if err != nil {
+			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
+		}
+		master := d.RenderMaster(d, inputs.Groups)
+		plainHub := "# Bucket\n#test/hub | [[Index]]\n---\n## Items (2)\n- [[Same Title]]\n- [[Same Title]]\n"
+		masterRow := hubPlanMasterRow(master)
+		hubRow := hubPlanHubRow(plainHub)
+		fake.StageList(t, []map[string]any{first, second, hubRow, masterRow})
+		fake.StageNote(t, "hub-bucket", hubRow)
+		fake.StageNote(t, "hub-master", masterRow)
+
+		res, err := engine.Plan(ctx, engine.PlanOpts{Domains: []*domain.Domain{d}, Verbose: true})
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if !res.HasDrift() {
+			t.Fatalf("Plan reported no drift for stale duplicate hub links; want drift")
+		}
+		diff, ok := firstHubDiff(res.Domains[0])
+		if !ok {
+			t.Fatalf("no hub diff recorded; domain plan=%+v", res.Domains[0])
+		}
+		if diff.Kind != engine.DiffReplace || diff.Title != "Bucket" {
+			t.Fatalf("hub diff = %+v, want replace for Bucket", diff)
+		}
+	})
+}
+
+func TestPlan_FeatureDisabledKeepsPlainDuplicateHubLinksClean(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		resetPoolForApply(t)
+		fake := newFakeWorkBackend()
+		d := buildHubPlanDomain()
+		first := hubPlanAtomRow("hub-feature-a")
+		second := hubPlanAtomRow("hub-feature-b")
+		fake.StageList(t, []map[string]any{first, second})
+		fake.StageNote(t, "hub-feature-a", first)
+		fake.StageNote(t, "hub-feature-b", second)
+		ctx := domain.ContextWithBackend(context.Background(), fake)
+
+		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		if err != nil {
+			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
+		}
+		master := d.RenderMaster(d, inputs.Groups)
+		plainHub := d.RenderHub(d, "Bucket", inputs.Groups["Bucket"], nil)
+		registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+		if err != nil {
+			t.Fatalf("BuildCorpusDuplicateRegistry: %v", err)
+		}
+		d.Duplicates = registry
+
+		masterRow := hubPlanMasterRow(master)
+		hubRow := hubPlanHubRow(plainHub)
+		fake.StageList(t, []map[string]any{first, second, hubRow, masterRow})
+		fake.StageNote(t, "hub-bucket", hubRow)
+		fake.StageNote(t, "hub-master", masterRow)
+		features := engine.AllFeaturesOn()
+		features.DuplicateRegistry = false
+
+		res, err := engine.Plan(ctx, engine.PlanOpts{
+			Domains:  []*domain.Domain{d},
+			Features: &features,
+			Verbose:  true,
+		})
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if res.HasDrift() {
+			t.Fatalf("Plan reported drift with duplicate registry disabled; want clean. domain=%+v", res.Domains[0])
+		}
+	})
+}
+
+func duplicatePlanAtomRow(id, canonicalLine string) map[string]any {
+	return map[string]any{
+		"id":      id,
+		"title":   "Same Title",
+		"tags":    []string{"#work", "#work/tasks"},
+		"content": "# Same Title\n" + canonicalLine + "\n---\n",
+	}
+}
+
+func buildHubPlanDomain() *domain.Domain {
+	return render.NewHubRoutedDomain("test/hub", "Index", "Inbox", "Items", render.DefaultRenderMaster3Tier)
+}
+
+func hubPlanAtomRow(id string) map[string]any {
+	return map[string]any{
+		"id":      id,
+		"title":   "Same Title",
+		"tags":    []string{"#test/hub"},
+		"content": "# Same Title\n#test/hub | [[Bucket]]\n---\n",
+	}
+}
+
+func hubPlanHubRow(content string) map[string]any {
+	return map[string]any{
+		"id":      "hub-bucket",
+		"title":   "Bucket",
+		"tags":    []string{"#test/hub"},
+		"content": content,
+	}
+}
+
+func hubPlanMasterRow(content string) map[string]any {
+	return map[string]any{
+		"id":      "hub-master",
+		"title":   "Index",
+		"tags":    []string{"#test/hub"},
+		"content": content,
+	}
 }

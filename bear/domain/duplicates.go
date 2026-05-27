@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -37,56 +38,51 @@ func (r *DuplicateRegistry) IsDuplicate(title string) bool {
 	return len(r.titleToIDs[title]) > 1
 }
 
-// BuildDuplicateRegistry walks every note in every domain (atomics AND
-// Tier-2 hubs), indexes titles, and returns a registry containing only the
-// titles with multiple owners. Bear's `[[wikilink]]` resolution doesn't
-// distinguish between atom-ish and hub-ish notes — any note matching the
-// target title is a candidate — so the registry must index hubs too.
-// Masters are skipped (their titles are unique by daemon construction
-// and they should never appear in another domain as collateral).
-//
-// Cross-domain collision example: a Tier-2 hub `Diablo` in `library/lyrics`
-// (a band hub) and an atom `Diablo` in `library/aphorisms` (a quote about
-// the game) share the same title. Without registering the hub, the daemon
-// emits `[[Diablo]]` for the aphorism atom, and Bear non-deterministically
-// resolves the link to the lyrics hub. Including the hub forces the URL-
-// form emission and the click lands on the right note.
-//
-// Same note ID appearing twice (a note tagged in two managed domains) is
-// deduped per-title — `len(ids) > 1` then reflects distinct owners only.
-//
-// Single bearcli call per domain. Registry is rebuilt at the start of each
-// regen cycle so renames between cycles are picked up.
-func BuildDuplicateRegistry(ctx context.Context, domains []*Domain) (*DuplicateRegistry, error) {
+// BuildCorpusDuplicateRegistry indexes every Bear note in the notes location.
+// Use this when rendering generated links: unmanaged notes can still collide
+// with managed atom titles, and Bear's `[[Title]]` resolver does not know
+// which corpus slice noxctl owns.
+func BuildCorpusDuplicateRegistry(ctx context.Context) (*DuplicateRegistry, error) {
+	notes, err := ListCorpusNotes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("BuildCorpusDuplicateRegistry: %w", err)
+	}
 	titleToIDSet := make(map[string]map[string]struct{})
-	for _, d := range domains {
-		if err := indexDomainTitles(ctx, d, titleToIDSet); err != nil {
-			return nil, err
-		}
+	for _, note := range notes {
+		indexNoteTitle(note, titleToIDSet)
 	}
 	return &DuplicateRegistry{titleToIDs: collectDuplicates(titleToIDSet)}, nil
 }
 
-// indexDomainTitles populates `titleToIDSet` with every note in domain `d`
-// except its master. Uses a set keyed by ID so a note tagged in two managed
-// domains contributes only one entry per title.
-func indexDomainTitles(ctx context.Context, d *Domain, titleToIDSet map[string]map[string]struct{}) error {
-	notes, err := d.listNotes(ctx)
+// ListCorpusNotes reads every Bear note in the notes location using the field
+// set needed by duplicate-title scanners and structural-note classifiers.
+func ListCorpusNotes(ctx context.Context) ([]Note, error) {
+	out, err := runBearcli(
+		ctx,
+		[]string{"list", "--location", "notes", flagFormat, formatJSON, flagFields, "id,title,content,tags"},
+		"",
+	)
 	if err != nil {
-		return fmt.Errorf("BuildDuplicateRegistry(%s): %w", d.Tag, err)
+		return nil, fmt.Errorf("ListCorpusNotes list: %w", err)
 	}
-	for _, note := range notes {
-		if note.Title == d.IndexTitle {
-			continue
-		}
-		ids, ok := titleToIDSet[note.Title]
-		if !ok {
-			ids = make(map[string]struct{})
-			titleToIDSet[note.Title] = ids
-		}
-		ids[note.ID] = struct{}{}
+	var notes []Note
+	if err = json.Unmarshal(out, &notes); err != nil {
+		return nil, fmt.Errorf("ListCorpusNotes parse: %w", err)
 	}
-	return nil
+	return notes, nil
+}
+
+func indexNoteTitle(note Note, titleToIDSet map[string]map[string]struct{}) {
+	title := strings.TrimSpace(note.Title)
+	if title == "" || note.ID == "" {
+		return
+	}
+	ids, ok := titleToIDSet[title]
+	if !ok {
+		ids = make(map[string]struct{})
+		titleToIDSet[title] = ids
+	}
+	ids[note.ID] = struct{}{}
 }
 
 // collectDuplicates filters the per-title ID sets down to titles owned by

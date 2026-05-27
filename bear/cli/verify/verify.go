@@ -31,6 +31,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
@@ -188,6 +189,7 @@ func Run(ctx context.Context, opts Options) error {
 	if cat != nil && cat.Meta.Locale != "" {
 		domain.SetLocale(cat.Meta.Locale)
 	}
+	opts.ApplyOpts.Features = cliutil.FeaturesFromCatalog(cat)
 
 	result.Checks = append(
 		result.Checks,

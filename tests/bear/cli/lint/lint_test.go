@@ -88,6 +88,18 @@ func (f *fakeBearcli) countKind(kind string) int {
 	return n
 }
 
+func (f *fakeBearcli) countTagValue(tag string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, c := range f.calls {
+		if c.Kind == "tags" && len(c.Args) >= 4 && c.Args[3] == tag {
+			n++
+		}
+	}
+	return n
+}
+
 // brokenH1ListPayload returns the JSON shape `bearcli list --tag X`
 // emits for one note with a broken-H1 title — the canonical lint
 // finding the audit pass surfaces. Tagged under the flat-list domain
@@ -104,6 +116,22 @@ func brokenH1ListPayload(t *testing.T) []byte {
 	}})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
+	}
+	return raw
+}
+
+func fixableMultiCanonicalListPayload(t *testing.T) []byte {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{{
+		"id":    "note-fixable",
+		"title": "Fixable",
+		"content": "# Fixable\n#test/notes | [[✱ Notes]]\n" +
+			"#test/notes | [[✱ Notes]]\n---\nbody\n",
+		"tags":    []string{"#test/notes"},
+		"created": "2026-05-23T12:00:00Z",
+	}})
+	if err != nil {
+		t.Fatalf("marshal fixable payload: %v", err)
 	}
 	return raw
 }
@@ -200,10 +228,9 @@ func TestRun_ApplyMode_InvokesAutoFix(t *testing.T) {
 
 // TestRun_CanceledContext_Aborts pins the SIGINT-like cancellation
 // contract: a ctx already canceled at entry produces no panic, no
-// hang, and the bearcli backend records zero list calls because the
-// per-domain loop bails on the ctx.Err check before issuing any
-// I/O. Scan's contract is that a canceled context short-
-// circuits each domain's listNotes call.
+// hang, returns a context error, and the bearcli backend records zero
+// list calls because every scan bails on the ctx.Err check before
+// issuing any I/O.
 func TestRun_CanceledContext_Aborts(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(brokenH1ListPayload(t))
@@ -211,11 +238,10 @@ func TestRun_CanceledContext_Aborts(t *testing.T) {
 	cancel() // canceled before Run even starts
 
 	var buf bytes.Buffer
-	// Audit mode swallows scan failures (per-domain Scan returns
-	// what it has, orphan scan appends a synthetic finding). The
-	// canceled context surfaces through the empty list-call count
-	// below, not as a RunLint return value.
-	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false, "audit-mode canceled ctx")
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunLint canceled ctx err = %v, want context.Canceled", err)
+	}
 
 	// Honoring cancellation means the listNotes path saw ctx.Err
 	// and skipped the bearcli round-trip. Without this assertion the
@@ -241,8 +267,8 @@ func TestRun_EmptyDomains_RendersEmptyTally(t *testing.T) {
 	if !strings.Contains(buf.String(), "0 findings across 0 domains") {
 		t.Errorf("empty-domain tally missing; got %q", buf.String())
 	}
-	if got := fake.countKind("list"); got != 0 {
-		t.Errorf("empty domain set should issue 0 list calls; got %d", got)
+	if got := fake.countKind("list"); got != 1 {
+		t.Errorf("empty domain set should issue 1 duplicate-title corpus list call; got %d", got)
 	}
 }
 
@@ -275,6 +301,137 @@ func orphanFamilyListPayload(t *testing.T, tags []string) []byte {
 	return raw
 }
 
+func duplicateTitleListPayload(t *testing.T) []byte {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{
+		{
+			"id":      "note-dup-a",
+			"title":   "Duplicated",
+			"content": "",
+			"tags":    []string{"#test/notes"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+		{
+			"id":      "note-dup-b",
+			"title":   "Duplicated",
+			"content": "",
+			"tags":    []string{"#test/archive"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal duplicate-title payload: %v", err)
+	}
+	return raw
+}
+
+func threeDuplicateTitleListPayload(t *testing.T) []byte {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{
+		{
+			"id":      "note-dup-a",
+			"title":   "Triplicated",
+			"content": "",
+			"tags":    []string{"#test/notes"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+		{
+			"id":      "note-dup-b",
+			"title":   "Triplicated",
+			"content": "",
+			"tags":    []string{"#test/archive"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+		{
+			"id":      "note-dup-c",
+			"title":   "Triplicated",
+			"content": "",
+			"tags":    []string{"#personal/archive"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal triplicate-title payload: %v", err)
+	}
+	return raw
+}
+
+func duplicateOrphanListPayload(t *testing.T) []byte {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{
+		{
+			"id":      "note-dup-orphan-a",
+			"title":   "Duplicated Orphan",
+			"content": "",
+			"tags":    []string{"#test/notes", "#strayfamily/a"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+		{
+			"id":      "note-dup-orphan-b",
+			"title":   "Duplicated Orphan",
+			"content": "",
+			"tags":    []string{"#test/notes", "#strayfamily/b"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal duplicate-orphan payload: %v", err)
+	}
+	return raw
+}
+
+func duplicateTaggedOrphanRetryListPayload(t *testing.T) []byte {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{
+		{
+			"id":      "note-retry-a",
+			"title":   "Duplicated Retry",
+			"content": "",
+			"tags": []string{
+				"#test/notes", "#strayfamily/a", "#orphans/duplicate-title",
+			},
+			"created": "2026-05-23T12:00:00Z",
+		},
+		{
+			"id":      "note-retry-b",
+			"title":   "Duplicated Retry",
+			"content": "",
+			"tags": []string{
+				"#test/notes", "#strayfamily/b", "#orphans", "#orphans/duplicate-title",
+			},
+			"created": "2026-05-23T12:00:00Z",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal duplicate-tagged orphan-retry payload: %v", err)
+	}
+	return raw
+}
+
+func alreadyDuplicateTaggedListPayload(t *testing.T) []byte {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{
+		{
+			"id":      "note-dup-only-a",
+			"title":   "Duplicate Only",
+			"content": "",
+			"tags":    []string{"#test/notes", "#orphans/duplicate-title"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+		{
+			"id":      "note-dup-only-b",
+			"title":   "Duplicate Only",
+			"content": "",
+			"tags":    []string{"#test/archive", "#orphans/duplicate-title"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal already-duplicate-tagged payload: %v", err)
+	}
+	return raw
+}
+
 // TestRun_AuditMode_OrphanFamilyAppearsInOutput verifies the read-only
 // composition: the corpus orphan scan runs alongside the per-domain
 // audit scan, the stray-family finding lands in the printed report,
@@ -302,6 +459,47 @@ func TestRun_AuditMode_OrphanFamilyAppearsInOutput(t *testing.T) {
 	}
 	if got := fake.countKind("tags"); got != 0 {
 		t.Errorf("audit mode issued %d tags calls; want 0 (read-only contract)", got)
+	}
+}
+
+func TestRun_AuditMode_DuplicateTitleAppearsInOutput(t *testing.T) {
+	armBearcliPool(t)
+	fake := newFakeBearcli(duplicateTitleListPayload(t))
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false,
+		"audit-mode duplicate-title finding")
+
+	out := buf.String()
+	if !strings.Contains(out, "duplicate-title:") {
+		t.Errorf("audit output missing duplicate-title category; got %q", out)
+	}
+	if !strings.Contains(out, "Duplicated") || !strings.Contains(out, "note-dup-a") {
+		t.Errorf("audit output missing duplicate-title detail; got %q", out)
+	}
+	if got := fake.countKind("overwrite"); got != 0 {
+		t.Errorf("audit mode wrote %d overwrites; want 0", got)
+	}
+	if got := fake.countKind("tags"); got != 0 {
+		t.Errorf("audit mode issued %d tags calls; want 0", got)
+	}
+}
+
+func TestRun_AuditMode_EmptyDomains_DuplicateTitleAppearsInOutput(t *testing.T) {
+	armBearcliPool(t)
+	fake := newFakeBearcli(duplicateTitleListPayload(t))
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	runLintExpectOK(t, ctx, &buf, nil, false, "audit-mode empty-domain duplicate-title finding")
+
+	out := buf.String()
+	if !strings.Contains(out, "duplicate-title:") {
+		t.Errorf("empty-domain audit output missing duplicate-title category; got %q", out)
+	}
+	if got := fake.countKind("list"); got != 1 {
+		t.Errorf("empty-domain duplicate-title audit list calls = %d, want 1", got)
 	}
 }
 
@@ -366,6 +564,172 @@ func TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent(t *testing.T) {
 	}
 }
 
+func TestRun_ApplyMode_DuplicateTitleTagEmitted(t *testing.T) {
+	armBearcliPool(t)
+	fake := newFakeBearcli(duplicateTitleListPayload(t))
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true,
+		"apply-mode duplicate-title tagging")
+
+	if got := fake.countKind("tags"); got != 2 {
+		t.Fatalf("apply mode tags-call count = %d, want 2 duplicate-title tag calls", got)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	for _, call := range fake.calls {
+		if call.Kind != "tags" {
+			continue
+		}
+		wantArgs := []string{"tags", "add", call.Args[2], "orphans/duplicate-title"}
+		for index, want := range wantArgs {
+			if call.Args[index] != want {
+				t.Fatalf("tags call args[%d] = %q, want %q (full args=%v)",
+					index, call.Args[index], want, call.Args)
+			}
+		}
+	}
+	if buf.Len() != 0 {
+		t.Errorf("apply mode leaked stdout: %q", buf.String())
+	}
+}
+
+func TestRun_ApplyMode_OrphanPartialFailure_StillTagsDuplicateTitles(t *testing.T) {
+	armBearcliPool(t)
+	fake := &partialTagAddFailFakeBearcli{
+		fakeBearcli: newFakeBearcli(duplicateOrphanListPayload(t)),
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+	assertWrappedErr(t, "partial orphan failure still runs duplicate pass", err,
+		cli.ErrLintFailed, "orphan tag-add failed for 1")
+
+	if got := fake.countKind("tags"); got != 4 {
+		t.Fatalf("tags-call count = %d, want 4 (2 orphan attempts + 2 duplicate-title attempts)", got)
+	}
+	if got := fake.countTagValue("orphans/duplicate-title"); got != 2 {
+		t.Fatalf("duplicate-title tag calls = %d, want 2", got)
+	}
+}
+
+func TestRun_ApplyMode_DuplicateTitleTagDoesNotSuppressOrphanRetry(t *testing.T) {
+	armBearcliPool(t)
+	fake := newFakeBearcli(duplicateTaggedOrphanRetryListPayload(t))
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true,
+		"apply-mode duplicate-title triage does not suppress orphan retry")
+
+	if got := fake.countTagValue("orphans"); got != 1 {
+		t.Fatalf("orphan tag calls = %d, want 1 retry for note missing #orphans", got)
+	}
+	if got := fake.countTagValue("orphans/duplicate-title"); got != 0 {
+		t.Fatalf("duplicate-title tag calls = %d, want 0 for already duplicate-tagged notes", got)
+	}
+}
+
+func TestRun_ApplyMode_DuplicateTitleTagDoesNotBecomeOrphanTag(t *testing.T) {
+	armBearcliPool(t)
+	fake := newFakeBearcli(alreadyDuplicateTaggedListPayload(t))
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true,
+		"apply-mode duplicate-title tag is not orphan-family triage")
+
+	if got := fake.countTagValue("orphans"); got != 0 {
+		t.Fatalf("orphan tag calls = %d, want 0 for duplicate-title-only audit tags", got)
+	}
+	if got := fake.countTagValue("orphans/duplicate-title"); got != 0 {
+		t.Fatalf("duplicate-title tag calls = %d, want 0 for already duplicate-tagged notes", got)
+	}
+}
+
+func TestRun_ApplyMode_RuntimeErrorTakesPrecedenceOverLintFailure(t *testing.T) {
+	armBearcliPool(t)
+	runtimeErr := errors.New("duplicate-title corpus boom")
+	fake := &secondCorpusListFailFakeBearcli{
+		partialTagAddFailFakeBearcli: &partialTagAddFailFakeBearcli{
+			fakeBearcli: newFakeBearcli(duplicateOrphanListPayload(t)),
+		},
+		corpusErr: runtimeErr,
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+
+	if err == nil {
+		t.Fatalf("RunLint err = nil, want duplicate-title runtime error")
+	}
+	if errors.Is(err, cli.ErrLintFailed) {
+		t.Fatalf("RunLint err wraps ErrLintFailed, want runtime error precedence: %v", err)
+	}
+	if !errors.Is(err, runtimeErr) || !strings.Contains(err.Error(), "duplicate-title scan") {
+		t.Fatalf("RunLint err = %v, want wrapped duplicate-title scan runtime error", err)
+	}
+	if got := fake.countTagValue("orphans"); got != 2 {
+		t.Fatalf("orphan tag calls = %d, want 2 before duplicate scan failure", got)
+	}
+	if got := fake.countTagValue("orphans/duplicate-title"); got != 0 {
+		t.Fatalf("duplicate-title tag calls = %d, want 0 after scan failure", got)
+	}
+}
+
+func TestRun_ApplyMode_DomainAutoFixFailureReturnsLintError(t *testing.T) {
+	armBearcliPool(t)
+	fake := &overwriteFailFakeBearcli{
+		fakeBearcli:  newFakeBearcli(fixableMultiCanonicalListPayload(t)),
+		overwriteErr: errors.New("bearcli overwrite: simulated failure"),
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+	assertWrappedErr(t, "domain autofix failure", err,
+		cli.ErrLintFailed, "per-domain lint apply failed for 1")
+	if got := fake.countKind("overwrite"); got != 1 {
+		t.Fatalf("overwrite calls = %d, want 1 failed domain autofix attempt", got)
+	}
+}
+
+func TestRun_ApplyMode_DuplicatePass_TotalTagFailure(t *testing.T) {
+	armBearcliPool(t)
+	fake := &duplicateTagAddFailFakeBearcli{
+		fakeBearcli: newFakeBearcli(threeDuplicateTitleListPayload(t)),
+		tagAddErr:   errors.New("bearcli duplicate tag add: simulated total failure"),
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+	assertWrappedErr(t, "duplicate total tag failure", err,
+		audit.ErrApplyAllFailed, "duplicate-title tag-add")
+	if got := fake.countTagValue("orphans/duplicate-title"); got != 3 {
+		t.Fatalf("duplicate-title tag calls = %d, want 3 before total-failure abort", got)
+	}
+}
+
+func TestRun_ApplyMode_DuplicatePass_PartialTagFailure(t *testing.T) {
+	armBearcliPool(t)
+	fake := &duplicatePartialTagAddFailFakeBearcli{
+		fakeBearcli: newFakeBearcli(duplicateTitleListPayload(t)),
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+	assertWrappedErr(t, "duplicate partial tag failure", err,
+		cli.ErrLintFailed, "duplicate-title tag-add failed for 1")
+	if got := fake.countTagValue("orphans/duplicate-title"); got != 2 {
+		t.Fatalf("duplicate-title tag calls = %d, want 2", got)
+	}
+}
+
 // TestRun_ApplyMode_PoolInitializedFromCold pins the production path
 // (RunLint) MUST arm the bearcli concurrency pool itself — earlier
 // tests pre-armed via armBearcliPool, so dropping the SetConcurrency
@@ -391,21 +755,20 @@ func TestRun_ApplyMode_PoolInitializedFromCold(t *testing.T) {
 	}
 }
 
-// TestRun_ApplyMode_EmptyDomains_NoBearcliCalls pins the short-circuit
-// guard in runApplyOrphanPass: an empty domain catalog must skip the
-// corpus orphan scan entirely. Without the guard, RunLint would issue
-// a `list --location notes` round-trip just to discover there is
-// nothing to tag.
-func TestRun_ApplyMode_EmptyDomains_NoBearcliCalls(t *testing.T) {
+// TestRun_ApplyMode_EmptyDomains_TagsDuplicateTitles pins the empty-
+// catalog split: orphan-family scanning still needs managed domains,
+// but duplicate-title scanning is corpus-level and can triage notes
+// even before any domain is configured.
+func TestRun_ApplyMode_EmptyDomains_TagsDuplicateTitles(t *testing.T) {
 	armBearcliPool(t)
-	fake := newFakeBearcli([]byte(`[]`))
+	fake := newFakeBearcli(duplicateTitleListPayload(t))
 	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, nil, true, "apply-mode empty domains")
 
-	if got := fake.count.Load(); got != 0 {
-		t.Errorf("apply mode with no domains issued %d bearcli calls; want 0", got)
+	if got := fake.countKind("tags"); got != 2 {
+		t.Errorf("apply mode with no domains tags-call count = %d, want 2 duplicate-title tags", got)
 	}
 }
 
@@ -492,6 +855,34 @@ func TestRun_AuditMode_ScanFailure_ReturnsErrorAndSyntheticFinding(t *testing.T)
 		}
 	}
 	t.Errorf("synthetic Finding Detail not flattened onto single line; got %q", out)
+}
+
+func TestRun_AuditMode_DuplicateScanFailureReturnsSyntheticFinding(t *testing.T) {
+	armBearcliPool(t)
+	corpusErr := errors.New("bearcli duplicate list --location notes boom")
+	fake := &secondCorpusListFailFakeBearcli{
+		partialTagAddFailFakeBearcli: &partialTagAddFailFakeBearcli{
+			fakeBearcli: newFakeBearcli(brokenH1ListPayload(t)),
+		},
+		corpusErr: corpusErr,
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
+	if err == nil {
+		t.Fatalf("RunLint audit-mode with failing duplicate scan: err = nil, want wrapped scan error")
+	}
+	if !strings.Contains(err.Error(), "duplicate-title scan") {
+		t.Errorf("err = %v, want message mentioning 'duplicate-title scan'", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "(duplicate-title scan failed)") {
+		t.Errorf("audit output missing synthetic duplicate-title scan Finding; got %q", out)
+	}
+	if strings.Contains(out, "(orphan scan failed)") {
+		t.Errorf("audit output reported orphan scan failure; got %q", out)
+	}
 }
 
 // mutatingFakeBearcli wraps fakeBearcli and rewrites listPayload after
@@ -668,6 +1059,70 @@ func (f *partialTagAddFailFakeBearcli) Run(ctx context.Context, args []string, s
 		return []byte(`{"ok":true}`), nil
 	}
 	return f.fakeBearcli.Run(ctx, args, stdin)
+}
+
+type secondCorpusListFailFakeBearcli struct {
+	*partialTagAddFailFakeBearcli
+	corpusErr   error
+	corpusCalls atomic.Int64
+}
+
+func (f *secondCorpusListFailFakeBearcli) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	if len(args) >= 3 && args[0] == "list" && args[1] == "--location" && args[2] == "notes" {
+		if f.corpusCalls.Add(1) == 2 {
+			return nil, f.corpusErr
+		}
+	}
+	return f.partialTagAddFailFakeBearcli.Run(ctx, args, stdin)
+}
+
+type overwriteFailFakeBearcli struct {
+	*fakeBearcli
+	overwriteErr error
+}
+
+func (f *overwriteFailFakeBearcli) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	if len(args) > 0 && args[0] == "overwrite" {
+		_, _ = f.fakeBearcli.Run(ctx, args, stdin)
+		return nil, f.overwriteErr
+	}
+	return f.fakeBearcli.Run(ctx, args, stdin)
+}
+
+type duplicateTagAddFailFakeBearcli struct {
+	*fakeBearcli
+	tagAddErr error
+}
+
+func (f *duplicateTagAddFailFakeBearcli) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	if isDuplicateTagAdd(args) {
+		_, _ = f.fakeBearcli.Run(ctx, args, stdin)
+		return nil, f.tagAddErr
+	}
+	return f.fakeBearcli.Run(ctx, args, stdin)
+}
+
+type duplicatePartialTagAddFailFakeBearcli struct {
+	*fakeBearcli
+	firstDuplicateCallDone atomic.Bool
+}
+
+func (f *duplicatePartialTagAddFailFakeBearcli) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	if isDuplicateTagAdd(args) {
+		_, _ = f.fakeBearcli.Run(ctx, args, stdin)
+		if f.firstDuplicateCallDone.CompareAndSwap(false, true) {
+			return nil, errors.New("bearcli duplicate tags add: simulated transient")
+		}
+		return []byte(`{"ok":true}`), nil
+	}
+	return f.fakeBearcli.Run(ctx, args, stdin)
+}
+
+func isDuplicateTagAdd(args []string) bool {
+	return len(args) >= 4 &&
+		args[0] == "tags" &&
+		args[1] == "add" &&
+		args[3] == "orphans/duplicate-title"
 }
 
 // assertWrappedErr fails the test when err is nil, does not wrap

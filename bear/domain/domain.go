@@ -113,10 +113,10 @@ type Domain struct {
 	SectionFor   func(d *Domain, bucket string, p AtomicParts) string // optional; default: p.Section
 
 	// Duplicates is set by the orchestrator before each regen cycle and
-	// holds the registry of atomic titles shared by ≥ 2 notes across all
-	// managed domains. Renderers consult it via bear.AtomicWikilink to
-	// switch ambiguous titles to bear://x-callback URL form. Nil-safe —
-	// renderers handle the zero registry as "no duplicates known".
+	// holds the registry of atomic titles shared by >= 2 notes across the
+	// Bear corpus. Renderers consult it via bear.AtomicWikilink to switch
+	// ambiguous titles to bear://x-callback URL form. Nil-safe: renderers
+	// handle the zero registry as "no duplicates known".
 	Duplicates *DuplicateRegistry
 
 	// ParseMasterTable, when set, makes the master a two-way contract: the

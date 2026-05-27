@@ -145,18 +145,23 @@ func (d *Domain) parseMasterTableForNotes(notes []Note) map[string]string {
 	return nil
 }
 
-// overrideForNote checks whether `titleToBucket` (parsed master) places the
-// note in a different bucket than its canonical header detects. Returns the
-// new bucket and `true` when an override is needed; (`""`, `false`) when the
-// note isn't tracked by the master or already matches its canonical bucket.
+// overrideForNote checks whether `identifierToBucket` (parsed master) places
+// the note in a different bucket than its canonical header detects. Returns
+// the new bucket and `true` when an override is needed; (`""`, `false`) when
+// the note isn't tracked by the master or already matches its canonical bucket.
 //
-// Lookup is title-first then ID-fallback: plain `[[Title]]` wikilinks key by
-// title, while bear://x-callback URLs (used for duplicate titles) key by
-// note ID. IDs win when both forms point at the same atomic.
-func (d *Domain) overrideForNote(note Note, titleToBucket map[string]string) (string, bool) {
-	masterBucket, inMaster := titleToBucket[note.Title]
-	if idBucket, hasID := titleToBucket[note.ID]; hasID {
-		masterBucket, inMaster = idBucket, true
+// Lookup is ID-first, then title when the title is unique among current
+// atomics. Plain legacy `[[Title]]` entries become ambiguous once duplicate
+// titles exist, so they must not rebucket multiple notes by the same collapsed
+// map entry.
+func (d *Domain) overrideForNote(
+	note Note,
+	identifierToBucket map[string]string,
+	titleCounts map[string]int,
+) (string, bool) {
+	masterBucket, inMaster := identifierToBucket[note.ID]
+	if !inMaster && titleCounts[note.Title] == 1 {
+		masterBucket, inMaster = identifierToBucket[note.Title]
 	}
 	if !inMaster {
 		return "", false
@@ -185,20 +190,32 @@ func (d *Domain) computeMasterOverrides(notes []Note) map[string]string {
 	if d.ParseMasterTable == nil {
 		return nil
 	}
-	titleToBucket := d.parseMasterTableForNotes(notes)
-	if len(titleToBucket) == 0 {
+	identifierToBucket := d.parseMasterTableForNotes(notes)
+	if len(identifierToBucket) == 0 {
 		return nil
 	}
+	titleCounts := d.countAtomicTitles(notes)
 	overrides := make(map[string]string)
 	for _, note := range notes {
 		if d.skipNote(note) {
 			continue
 		}
-		if override, ok := d.overrideForNote(note, titleToBucket); ok {
+		if override, ok := d.overrideForNote(note, identifierToBucket, titleCounts); ok {
 			overrides[note.ID] = override
 		}
 	}
 	return overrides
+}
+
+func (d *Domain) countAtomicTitles(notes []Note) map[string]int {
+	titleCounts := make(map[string]int)
+	for _, note := range notes {
+		if d.skipNote(note) {
+			continue
+		}
+		titleCounts[note.Title]++
+	}
+	return titleCounts
 }
 
 // computeHubOverrides walks every Tier-2 Hub note in `notes` and treats each

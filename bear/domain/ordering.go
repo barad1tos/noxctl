@@ -79,8 +79,17 @@ func RenderSectionGroup(b *strings.Builder, d *Domain, top string, subMap map[st
 	}
 }
 
-// parseHubOrder reads a Hub note's auto-zone and returns the bullet-title order
-// per section path. Unsectioned bullets keyed by ""; H3 by "<top>"; H4 by
+// ParseHubOrder reads a Hub note's auto-zone and returns the bullet identifier
+// order per section path. Plain wikilinks contribute titles; URL-form links
+// contribute note IDs. Unsectioned bullets keyed by ""; H3 by "<top>"; H4 by
+// "<top>/<sub>". Used outside domain by engine.Plan to preview Hub rewrites.
+func ParseHubOrder(autoZone string) map[string][]string {
+	return parseHubOrder(autoZone)
+}
+
+// parseHubOrder reads a Hub note's auto-zone and returns the bullet identifier
+// order per section path. Plain wikilinks contribute titles; URL-form links
+// contribute note IDs. Unsectioned bullets keyed by ""; H3 by "<top>"; H4 by
 // "<top>/<sub>". Used to preserve user-reordered bullets across regen.
 func parseHubOrder(autoZone string) map[string][]string {
 	out := make(map[string][]string)
@@ -99,17 +108,16 @@ func parseHubOrder(autoZone string) map[string][]string {
 		if !strings.HasPrefix(line, "- ") {
 			continue
 		}
-		if title := ExtractWikilinkTarget(strings.TrimPrefix(line, "- ")); title != "" {
-			out[currentSection] = append(out[currentSection], title)
-		}
+		out[currentSection] = append(out[currentSection], extractCellIdentifiers(strings.TrimPrefix(line, "- "))...)
 	}
 	return out
 }
 
-// reorderForOutput orders notes by the given title sequence (from a previous
-// Hub render). Titles found in `order` are emitted first in that order;
-// newcomers — entries whose current title is absent from `order`, including
-// notes renamed on another device since the last regen — are spliced into
+// reorderForOutput orders notes by the given identifier sequence (from a
+// previous Hub render). IDs or titles found in `order` are emitted first in
+// that order; newcomers — entries whose current identifiers are absent from
+// `order`, including notes renamed on another device since the last regen —
+// are spliced into
 // their alphabetical position among already-emitted entries instead of being
 // appended at the end. Duplicate titles are matched first-found.
 //
@@ -135,23 +143,34 @@ func reorderForOutput(notes []Note, order []string) []Note {
 
 // emitInPriorOrder walks `order` and emits each matching note exactly once,
 // in the order requested. Returns the partial result and a `used` mask the
-// caller uses to find newcomers. Duplicate titles are matched first-found.
+// caller uses to find newcomers. IDs win over titles, so URL-form duplicate
+// bullets preserve the exact prior order; duplicate titles are matched
+// first-found only for legacy plain wikilink order entries.
 func emitInPriorOrder(notes []Note, order []string) (out []Note, used []bool) {
+	indexByID := make(map[string]int, len(notes))
 	indexByTitle := make(map[string][]int, len(notes))
 	for index, note := range notes {
+		if note.ID != "" {
+			indexByID[note.ID] = index
+		}
 		indexByTitle[note.Title] = append(indexByTitle[note.Title], index)
 	}
 	used = make([]bool, len(notes))
 	out = make([]Note, 0, len(notes))
-	for _, title := range order {
-		noteIndices := indexByTitle[title]
+	for _, identifier := range order {
+		if noteIndex, ok := indexByID[identifier]; ok && !used[noteIndex] {
+			used[noteIndex] = true
+			out = append(out, notes[noteIndex])
+			continue
+		}
+		noteIndices := indexByTitle[identifier]
 		for slot, noteIndex := range noteIndices {
 			if used[noteIndex] {
 				continue
 			}
 			used[noteIndex] = true
 			out = append(out, notes[noteIndex])
-			indexByTitle[title] = noteIndices[slot+1:]
+			indexByTitle[identifier] = noteIndices[slot+1:]
 			break
 		}
 	}

@@ -39,8 +39,9 @@ type orphanFakeBearcli struct {
 	// runs without a global "always fail" toggle.
 	tagErrByNoteID map[string]error
 
-	mu       sync.Mutex
-	callsTag []orphanTagCall
+	mu        sync.Mutex
+	callsList [][]string
+	callsTag  []orphanTagCall
 }
 
 type orphanTagCall struct {
@@ -54,6 +55,9 @@ func (f *orphanFakeBearcli) Run(_ context.Context, args []string, _ string) ([]b
 	}
 	switch args[0] {
 	case "list":
+		f.mu.Lock()
+		f.callsList = append(f.callsList, append([]string(nil), args...))
+		f.mu.Unlock()
 		if f.listErr != nil {
 			return nil, f.listErr
 		}
@@ -74,6 +78,26 @@ func (f *orphanFakeBearcli) Run(_ context.Context, args []string, _ string) ([]b
 		return []byte(`{"ok":true}`), nil
 	}
 	return []byte("{}"), nil
+}
+
+func (f *orphanFakeBearcli) sawListFields(fields string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, args := range f.callsList {
+		if argsValueAfter(args, "--fields") == fields {
+			return true
+		}
+	}
+	return false
+}
+
+func argsValueAfter(args []string, key string) string {
+	for index, arg := range args {
+		if arg == key && index+1 < len(args) {
+			return args[index+1]
+		}
+	}
+	return ""
 }
 
 // armOrphanFakeBearcli installs the supplied fake backend on a fresh
@@ -191,6 +215,46 @@ func TestAggregateOrphanFamilies_AlreadyTaggedOrphansSub_Skipped(t *testing.T) {
 	}
 	if got := len(findings); got != 0 {
 		t.Fatalf("findings len = %d, want 0 (#orphans/<sub> also counts as already-tagged); got %v",
+			got, findings)
+	}
+}
+
+func TestAggregateOrphanFamilies_DuplicateTitleTagDoesNotSkip(t *testing.T) {
+	notes := []orphanFixture{{
+		ID:    "note-dup-title",
+		Title: "Duplicate triage only",
+		Tags:  []string{"#quicknotes/daily", "#orphans/duplicate-title"},
+	}}
+	findings, err := audit.AggregateOrphanFamiliesFromJSON(
+		mustMarshalNotes(t, notes), managedSet("llm"),
+	)
+	if err != nil {
+		t.Fatalf("AggregateOrphanFamiliesFromJSON: %v", err)
+	}
+	if got, want := len(findings), 1; got != want {
+		t.Fatalf("findings len = %d, want %d (#orphans/duplicate-title is not orphan-family triage); got %v",
+			got, want, findings)
+	}
+	assertDetailContains(t, findings[0].NoteID, findings[0].Detail, []string{"#quicknotes/daily", "quicknotes"})
+	if strings.Contains(findings[0].Detail, "#orphans/duplicate-title") {
+		t.Fatalf("duplicate-title audit tag leaked into orphan detail: %q", findings[0].Detail)
+	}
+}
+
+func TestAggregateOrphanFamilies_DuplicateTitleOnlyTagIgnored(t *testing.T) {
+	notes := []orphanFixture{{
+		ID:    "note-dup-only",
+		Title: "Duplicate triage only",
+		Tags:  []string{"#llm/tips", "#orphans/duplicate-title"},
+	}}
+	findings, err := audit.AggregateOrphanFamiliesFromJSON(
+		mustMarshalNotes(t, notes), managedSet("llm"),
+	)
+	if err != nil {
+		t.Fatalf("AggregateOrphanFamiliesFromJSON: %v", err)
+	}
+	if got := len(findings); got != 0 {
+		t.Fatalf("findings len = %d, want 0 (#orphans/duplicate-title is not a stray family); got %v",
 			got, findings)
 	}
 }

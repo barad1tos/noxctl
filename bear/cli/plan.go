@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
@@ -69,19 +70,21 @@ func ValidateOutput(output string) error {
 func RunPlan(ctx context.Context, opts PlanOptions) error {
 	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
 
-	domains, err := LoadDomains(opts.Args,
+	domains, catalog, err := LoadDomainsAndCatalog(opts.Args,
 		opts.CfgPath, opts.PinLegacy, opts.PinTarget, opts.Stderr)
 	if err != nil {
 		return err
 	}
+	features := cliutil.FeaturesFromCatalog(catalog)
 
 	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	result, planErr := engine.Plan(sigCtx, engine.PlanOpts{
-		Domains: domains,
-		Verbose: opts.Verbose,
-		Stderr:  opts.Stderr,
+		Domains:  domains,
+		Verbose:  opts.Verbose,
+		Stderr:   opts.Stderr,
+		Features: &features,
 	})
 	if planErr != nil {
 		return planErr
@@ -110,22 +113,31 @@ func RunPlan(ctx context.Context, opts PlanOptions) error {
 func LoadDomains(args []string,
 	configPath, pinLegacy, pinTarget string, stderr io.Writer,
 ) ([]*domain.Domain, error) {
+	domains, _, err := LoadDomainsAndCatalog(args, configPath, pinLegacy, pinTarget, stderr)
+	return domains, err
+}
+
+// LoadDomainsAndCatalog loads the scoped plan domain set plus the source catalog.
+func LoadDomainsAndCatalog(args []string,
+	configPath, pinLegacy, pinTarget string, stderr io.Writer,
+) ([]*domain.Domain, *config.Catalog, error) {
 	if migrationErr := state.MigratePins(pinLegacy, pinTarget); migrationErr != nil {
 		_, _ = fmt.Fprintf(stderr, "warning: pin migration failed: %v\n", migrationErr)
 	}
 
 	loaded, cat, loadErr := config.Load(configPath)
 	if loadErr != nil {
-		return nil, errors.New(config.FormatLoadError(loadErr, configPath))
+		return nil, nil, errors.New(config.FormatLoadError(loadErr, configPath))
 	}
 	if cat != nil && cat.Meta.Locale != "" {
 		domain.SetLocale(cat.Meta.Locale)
 	}
 
 	if len(args) == 1 {
-		return ScopeDomains(loaded, args[0])
+		scoped, err := ScopeDomains(loaded, args[0])
+		return scoped, cat, err
 	}
-	return loaded, nil
+	return loaded, cat, nil
 }
 
 // DispatchRender chooses RenderJSON vs RenderText based on output.

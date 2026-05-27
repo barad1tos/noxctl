@@ -17,9 +17,11 @@ package audit
 //     skipped wholesale — that is the idempotency contract. Match is
 //     case-insensitive and trims whitespace (see isOrphansTag), so
 //     operator-typed `#Orphans` or `#orphans ` still triggers the
-//     skip. The apply step issues `bearcli tags add <noteID> orphans`
-//     per finding, so re-running the lint sweep on an already-triaged
-//     atom must produce zero findings.
+//     skip. `#orphans/duplicate-title` is deliberately not an
+//     orphan-family marker; that sibling audit tag must not mask
+//     stray-family findings. The apply step issues `bearcli tags add
+//     <noteID> orphans` per finding, so re-running the lint sweep on
+//     an already-triaged atom must produce zero findings.
 //
 // Finding shape:
 //   - DomainTag is the empty string — orphan-family is a corpus-level
@@ -66,11 +68,19 @@ const (
 // Returns nil + wrapped error on parse failure so callers can
 // distinguish "input was malformed" from "input had zero findings".
 func AggregateOrphanFamiliesFromJSON(jsonBytes []byte, managed map[string]struct{}) ([]Finding, error) {
-	var notes []domain.AutoTagNote
-	if err := json.Unmarshal(jsonBytes, &notes); err != nil {
-		return nil, fmt.Errorf("AggregateOrphanFamiliesFromJSON parse: %w", err)
+	notes, err := decodeAuditNotesJSON[domain.AutoTagNote](jsonBytes, "AggregateOrphanFamiliesFromJSON")
+	if err != nil {
+		return nil, err
 	}
 	return aggregateOrphanFamilies(notes, managed), nil
+}
+
+func decodeAuditNotesJSON[T any](jsonBytes []byte, label string) ([]T, error) {
+	var notes []T
+	if err := json.Unmarshal(jsonBytes, &notes); err != nil {
+		return nil, fmt.Errorf("%s parse: %w", label, err)
+	}
+	return notes, nil
 }
 
 // aggregateOrphanFamilies is the pure-logic core: walks the supplied
@@ -111,6 +121,9 @@ func strayFamilyTags(note domain.AutoTagNote, managed map[string]struct{}) []str
 		if tag == "" {
 			continue
 		}
+		if isDuplicateTitleAuditTag(tag) {
+			continue
+		}
 		if isOrphansTag(tag) {
 			return nil // idempotency skip — already triaged
 		}
@@ -133,8 +146,16 @@ func strayFamilyTags(note domain.AutoTagNote, managed map[string]struct{}) []str
 // atom. Normalizing here keeps both write-side (apply) and read-side
 // (scan) consistent.
 func isOrphansTag(tag string) bool {
-	normalized := strings.TrimSpace(strings.ToLower(tag))
+	normalized := normalizeAuditTag(tag)
 	return normalized == orphansTag || strings.HasPrefix(normalized, orphansTagPrefix)
+}
+
+func isDuplicateTitleAuditTag(tag string) bool {
+	return normalizeAuditTag(tag) == "#"+duplicateTitleTag
+}
+
+func normalizeAuditTag(tag string) string {
+	return strings.TrimSpace(strings.ToLower(tag))
 }
 
 // formatStrayDetail composes the operator-facing Detail message for an
@@ -172,7 +193,7 @@ func uniqueFamilies(strays []string) []string {
 }
 
 // quoteJoin renders a string slice as a comma-separated list of
-// double-quoted items (e.g. `"quicknotes", "scratch"`). Used by the
+// double-quoted items (e.g. `"quick notes", "scratch"`). Used by the
 // multi-family Detail formatter so each family name shows up verbatim
 // in the operator report.
 func quoteJoin(items []string) string {
@@ -253,21 +274,50 @@ func ApplyOrphanFamilies(ctx context.Context, findings []Finding) (tagged, faile
 		if f.Category != LintOrphanFamily {
 			continue
 		}
-		if tagErr := bearcli.AddTag(ctx, f.NoteID, "orphans"); tagErr != nil {
-			log.Printf("audit: orphan-tag %s (id=%s) failed: %v", f.Title, f.NoteID, tagErr)
-			failed++
-			if shouldAbortOnTotalFailure(tagged, failed) {
-				return tagged, failed, fmt.Errorf(
-					"%w: %d/%d initial attempts failed; bearcli verb drift or permissions issue",
-					ErrApplyAllFailed, failed, batchAbortThreshold,
-				)
-			}
-			continue
+		taggedDelta, failedDelta, tagErr := applyFindingTag(ctx, f, orphanTagApply, tagged, failed)
+		tagged += taggedDelta
+		failed += failedDelta
+		if tagErr != nil {
+			return tagged, failed, tagErr
 		}
-		log.Printf("audit: orphan-tagged: %s (id=%s)", f.Title, f.NoteID)
-		tagged++
 	}
 	return tagged, failed, nil
+}
+
+type tagApplyLabels struct {
+	tag          string
+	failLabel    string
+	successLabel string
+	abortDetail  string
+}
+
+var orphanTagApply = tagApplyLabels{
+	tag:          "orphans",
+	failLabel:    "orphan-tag",
+	successLabel: "orphan-tagged",
+	abortDetail:  "initial attempts failed; bearcli verb drift or permissions issue",
+}
+
+func applyFindingTag(
+	ctx context.Context,
+	finding Finding,
+	labels tagApplyLabels,
+	tagged int,
+	failed int,
+) (taggedDelta int, failedDelta int, err error) {
+	if tagErr := bearcli.AddTag(ctx, finding.NoteID, labels.tag); tagErr != nil {
+		log.Printf("audit: %s %s (id=%s) failed: %v", labels.failLabel, finding.Title, finding.NoteID, tagErr)
+		nextFailed := failed + 1
+		if shouldAbortOnTotalFailure(tagged, nextFailed) {
+			return 0, 1, fmt.Errorf(
+				"%w: %d/%d %s",
+				ErrApplyAllFailed, nextFailed, batchAbortThreshold, labels.abortDetail,
+			)
+		}
+		return 0, 1, nil
+	}
+	log.Printf("audit: %s: %s (id=%s)", labels.successLabel, finding.Title, finding.NoteID)
+	return 1, 0, nil
 }
 
 // batchAbortThreshold is the count of consecutive starting failures
