@@ -312,10 +312,10 @@ func TestDaemonAutoTagPoll_FastPassFailureRetriesSameToken(t *testing.T) {
 		fake.FailNextList()
 		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
 		run := startDaemonRun(t, fake, opts, nil)
-		run.WaitFor(250 * time.Millisecond)
+		run.WaitFor(350 * time.Millisecond)
 
-		if got := fake.CountKind("list"); got < 8 {
-			t.Errorf("list call count = %d, want >= 8 (failed fast-pass tick must retry the pending DB token)\nlog:\n%s",
+		if got := fake.CountKind("list"); got != 8 {
+			t.Errorf("list call count = %d, want 8 (failed tick + one successful retry, then pending clears)\nlog:\n%s",
 				got, run.Buf.String())
 		}
 		if cycles := countCycles(run.Buf); cycles != 0 {
@@ -329,12 +329,17 @@ func TestDaemonAutoTagPoll_PerNoteFailureRetriesSameToken(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fake := newFakeAutoTagBackend(untaggedListPayload(t))
 		fake.FailNextOverwrite()
+		fake.onRun = func(args []string) {
+			if len(args) > 0 && args[0] == "overwrite" && fake.CountKind("overwrite") >= 2 {
+				fake.SetListPayload([]byte("[]"))
+			}
+		}
 		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
 		run := startDaemonRun(t, fake, opts, nil)
-		run.WaitFor(250 * time.Millisecond)
+		run.WaitFor(350 * time.Millisecond)
 
-		if got := fake.CountKind("overwrite"); got < 2 {
-			t.Errorf("overwrite count = %d, want >= 2 (per-note fast-pass failure must retry the pending DB token)\nlog:\n%s",
+		if got := fake.CountKind("overwrite"); got != 2 {
+			t.Errorf("overwrite count = %d, want 2 (failed write + one successful retry, then pending clears)\nlog:\n%s",
 				got, run.Buf.String())
 		}
 	})
