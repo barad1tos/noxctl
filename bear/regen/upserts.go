@@ -28,12 +28,14 @@ const (
 
 func incrementOutcome(outcome upsertOutcome, created, changed, unchanged *int) {
 	switch outcome {
+	case upsertSkipped:
+		return
 	case upsertCreated:
-		(*created)++
+		*created++
 	case upsertChanged:
-		(*changed)++
+		*changed++
 	case upsertUnchanged:
-		(*unchanged)++
+		*unchanged++
 	}
 }
 
