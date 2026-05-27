@@ -8,7 +8,8 @@ import (
 // the resulting Finding list grouped by domain+category. Equivalent to
 // the legacy daemon's `--audit` mode: lists every note, evaluates the
 // lint heuristics (broken-H1, malformed-canonical, unsafe-title,
-// missing-canonical), and reports without writing.
+// missing-canonical, orphan-family, duplicate-title), and reports
+// without writing.
 //
 // Exit codes:
 //
@@ -24,8 +25,9 @@ is a read-only pass; no writes to Bear. Use 'noxctl lint --apply' to
 auto-fix the findings flagged as Fixable.
 
 Findings include broken-H1 titles, malformed canonical tag-lines,
-unsafe x-callback titles, and missing canonical bootstrap on notes
-that need it. Each fixable row is auto-resolvable by 'lint --apply';
+unsafe x-callback titles, duplicate note titles, orphan families, and
+missing canonical bootstrap on notes that need it. Each fixable row is
+auto-resolvable by 'lint --apply';
 non-fixable rows need manual review in Bear.`,
 	RunE: runAudit,
 }
