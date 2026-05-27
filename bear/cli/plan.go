@@ -76,7 +76,6 @@ func RunPlan(ctx context.Context, opts PlanOptions) error {
 	if err != nil {
 		return err
 	}
-	features := cliutil.FeaturesFromCatalog(catalog)
 	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -84,7 +83,7 @@ func RunPlan(ctx context.Context, opts PlanOptions) error {
 		Domains:  domains,
 		Verbose:  opts.Verbose,
 		Stderr:   opts.Stderr,
-		Features: &features,
+		Features: new(cliutil.FeaturesFromCatalog(catalog)),
 	})
 	if planErr != nil {
 		return planErr
