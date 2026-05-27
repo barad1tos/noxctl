@@ -24,7 +24,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/regen"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
@@ -46,11 +48,11 @@ func (b *recordingBackend) Run(_ context.Context, _ []string, _ string) ([]byte,
 // over a note that actually belongs to development/noxctl (canonical
 // ping-pong bug observed live on 2026-05-14).
 func TestProcessAtomicSkipsNoteNotCarryingDomainTag(t *testing.T) {
-	domain.ResetBearcliPoolForTest(1)
-	domain.ResetBearcliMetrics()
+	bearcli.ResetPoolForTest(1)
+	bearcli.ResetMetrics()
 
 	backend := &recordingBackend{}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
 
 	note := domain.Note{
 		ID:      "test-note-id-001",
@@ -59,7 +61,7 @@ func TestProcessAtomicSkipsNoteNotCarryingDomainTag(t *testing.T) {
 		Tags:    []string{"#development", "#development/noxctl"}, // note does NOT carry #quicknote/daily
 	}
 
-	touched, failed := testutil.Domain(t, "quicknote/daily").ProcessAtomicForTest(ctx, note, "Daily")
+	touched, failed := regen.ProcessAtomicForTest(ctx, testutil.Domain(t, "quicknote/daily"), note, "Daily")
 
 	if got := backend.calls.Load(); got != 0 {
 		t.Errorf("recordingBackend was invoked %d times; expected 0 — the tag guard should have skipped before any bearcli call", got)
@@ -77,11 +79,11 @@ func TestProcessAtomicSkipsNoteNotCarryingDomainTag(t *testing.T) {
 // bearcli boundary (i.e. the guard must not be over-eager and block valid
 // canonicalization).
 func TestProcessAtomicCanonicalizesNoteCarryingDomainTag(t *testing.T) {
-	domain.ResetBearcliPoolForTest(1)
-	domain.ResetBearcliMetrics()
+	bearcli.ResetPoolForTest(1)
+	bearcli.ResetMetrics()
 
 	backend := &recordingBackend{}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
 
 	note := domain.Note{
 		ID:      "test-note-id-002",
@@ -93,7 +95,7 @@ func TestProcessAtomicCanonicalizesNoteCarryingDomainTag(t *testing.T) {
 	// processAtomic should attempt the bearcli call. The recordingBackend
 	// returns an error, so processAtomic reports failed=1 — that's fine for
 	// this test: we only assert the guard did NOT short-circuit.
-	_, _ = testutil.Domain(t, "quicknote/daily").ProcessAtomicForTest(ctx, note, "Daily")
+	_, _ = regen.ProcessAtomicForTest(ctx, testutil.Domain(t, "quicknote/daily"), note, "Daily")
 
 	if got := backend.calls.Load(); got == 0 {
 		t.Errorf("recordingBackend was never invoked; expected ≥1 — daily SHOULD canonicalize a note that carries quicknote/daily")

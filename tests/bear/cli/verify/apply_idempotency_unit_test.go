@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cli/verify"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -150,7 +151,7 @@ func (e simulatedErr) Error() string { return string(e) }
 func TestCheckApplyIdempotency_OperatorWithFailingBackend_FirstPassReportsFailures(t *testing.T) {
 	domains := loadFixtureDomains(t)
 	backend := failingBearcliBackend{err: simulatedErr("bearcli simulated outage")}
-	ctx := domain.ContextWithBackend(t.Context(), backend)
+	ctx := bearcli.ContextWithBackend(t.Context(), backend)
 	got := verify.CheckApplyIdempotencyForTest(ctx, verify.Options{
 		ApplyOpts: applyOpts(t),
 	}, domains)

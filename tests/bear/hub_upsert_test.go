@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/regen"
 	"github.com/barad1tos/noxctl/bear/render"
 )
 
@@ -80,9 +82,9 @@ func hubUpsertAtom() domain.Note {
 func TestRunRegen_HubCreateSurfacesInResult(t *testing.T) {
 	d := hubUpsertDomain()
 	backend := &hubUpsertBackend{fullList: []domain.Note{hubUpsertAtom()}}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
 
-	result := d.RunRegen(ctx)
+	result := regen.Run(ctx, d)
 	if result.HubsCreated != 1 || result.HubsChanged != 0 || result.HubsFailed != 0 {
 		t.Fatalf("hub result = created:%d changed:%d failed:%d, want 1/0/0",
 			result.HubsCreated, result.HubsChanged, result.HubsFailed)
@@ -105,9 +107,9 @@ func TestRunRegen_HubUpdateSurfacesInResult(t *testing.T) {
 			"master":   masterContent,
 		},
 	}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
 
-	result := d.RunRegen(ctx)
+	result := regen.Run(ctx, d)
 	if result.HubsChanged != 1 || result.HubsCreated != 0 || result.HubsFailed != 0 {
 		t.Fatalf("hub result = created:%d changed:%d failed:%d, want 0/1/0",
 			result.HubsCreated, result.HubsChanged, result.HubsFailed)

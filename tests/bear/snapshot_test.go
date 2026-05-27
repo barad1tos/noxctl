@@ -2,7 +2,7 @@
 //
 // snapshot_test.go locks down the snapshot facade contract:
 //
-//  1. domain.SnapshotDomainRenderInputs returns (RenderInputs{Groups:
+//  1. regen.SnapshotDomainRenderInputs returns (RenderInputs{Groups:
 //     non-nil empty map}, nil) for a Domain whose tag matches zero notes
 //     from the bearcli list boundary. Empty-but-non-nil is the contract the
 //     engine.Plan core and the residue scanner both depend on — they
@@ -14,7 +14,7 @@
 // The empty-tag case exercises the bearcli boundary through a fake backend:
 // it is the smallest hermetic shape that proves the facade calls
 // listNotes → computeMasterOverrides → computeHubOverrides → groupAtomics
-// in the same order Apply does (bear/domain/regen.go::RunRegen).
+// in the same order Apply does (bear/regen/run.go::Run).
 package bear_test
 
 import (
@@ -28,7 +28,9 @@ import (
 	"time"
 
 	"github.com/barad1tos/noxctl/bear/audit"
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/regen"
 )
 
 // TestSnapshotDomainRenderInputs locks the facade's empty-tag contract:
@@ -51,15 +53,15 @@ func TestSnapshotDomainRenderInputs(t *testing.T) {
 		// tags never reach DetectAuthor or RenderMaster on this path.
 	}
 
-	domain.ResetBearcliPoolForTest(1)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(1)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	backend := snapshotBackend{t: t, tag: d.Tag}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	snap, err := domain.SnapshotDomainRenderInputs(ctx, d)
+	snap, err := regen.SnapshotDomainRenderInputs(ctx, d)
 	if err != nil {
 		t.Fatalf("SnapshotDomainRenderInputs returned error for empty-tag domain: %v", err)
 	}

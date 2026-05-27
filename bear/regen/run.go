@@ -1,0 +1,110 @@
+package regen
+
+// Run composes the per-domain reconciliation runtime: listing, routing,
+// canonical atomic rewrites, hub upserts, and master upsert. The pure domain
+// model owns routing/rendering rules; this package owns Bear I/O and mutation
+// order. Heavy sub-steps live in topic-specific files.
+
+import (
+	"context"
+	"time"
+
+	"github.com/barad1tos/noxctl/bear/domain"
+)
+
+// Result is the structured outcome of one per-domain regen run.
+// It preserves the existing log-and-continue behavior while giving
+// callers a machine-readable failure signal for recap and verification
+// gates.
+type Result struct {
+	Buckets         int
+	AtomicsTouched  int
+	AtomicsFailed   int
+	HubsCreated     int
+	HubsChanged     int
+	HubsUnchanged   int
+	HubsFailed      int
+	MasterCreated   int
+	MasterChanged   int
+	MasterUnchanged int
+	MasterFailed    int
+	ListFailed      bool
+}
+
+// Failed returns the total failure count observed during the regen run.
+func (r Result) Failed() int {
+	failed := r.AtomicsFailed + r.HubsFailed + r.MasterFailed
+	if r.ListFailed {
+		failed++
+	}
+	return failed
+}
+
+// Created returns the number of structural notes created by the regen run.
+func (r Result) Created() int {
+	return r.HubsCreated + r.MasterCreated
+}
+
+// Changed returns the number of existing notes rewritten by the regen run.
+func (r Result) Changed() int {
+	return r.AtomicsTouched + r.HubsChanged + r.MasterChanged
+}
+
+// Unchanged returns the number of structural notes that were already current.
+func (r Result) Unchanged() int {
+	return r.HubsUnchanged + r.MasterUnchanged
+}
+
+// Run reconciles one Domain's Bear corpus end-to-end: list its
+// notes, compute master, hub, and tag overrides, run the atomics pass to
+// stamp canonical lines, render and upsert each hub, then render and
+// upsert the master index. Logs per-domain progress and aggregate
+// counts; per-note failures are logged and surfaced via the final
+// summary line without aborting the sweep.
+func Run(ctx context.Context, d *domain.Domain) Result {
+	start := time.Now()
+	notes, err := listNotes(ctx, d)
+	if err != nil {
+		d.Logf("list failed: %v", err)
+		return Result{ListFailed: true}
+	}
+	routing := d.RouteAtomics(notes, func(atomID, kept, suppressed string) {
+		d.Logf("WARN: tag override suppressed by higher layer: note %s wanted %s, kept %s",
+			atomID, suppressed, kept)
+	})
+	if routing.MasterClaims > 0 {
+		d.Logf("master layer claimed %d additional atomic(s)", routing.MasterClaims)
+	}
+	if routing.HubClaims > 0 {
+		d.Logf("hub layer claimed %d additional atomic(s)", routing.HubClaims)
+	}
+	if routing.TagClaims > 0 {
+		d.Logf("tag layer claimed %d additional atomic(s)", routing.TagClaims)
+	}
+	if routing.TagConflicts > 0 {
+		d.Logf("tag conflicts: %d (no override applied)", routing.TagConflicts)
+	}
+	groups := routing.Groups
+	result := Result{Buckets: len(groups)}
+	if !d.SkipAtomicsPass {
+		result.AtomicsTouched, result.AtomicsFailed = runAtomicsPass(ctx, d, groups)
+	}
+	result.HubsCreated, result.HubsChanged, result.HubsUnchanged, result.HubsFailed = runHubsPass(ctx, d, groups)
+	if summary, masterOutcome, masterErr := upsertMasterIndex(ctx, d, groups); masterErr != nil {
+		d.Logf("ERROR: %v", masterErr)
+		result.MasterFailed = 1
+	} else {
+		incrementOutcome(masterOutcome, &result.MasterCreated, &result.MasterChanged, &result.MasterUnchanged)
+		d.Logf("%s", summary)
+	}
+	totalFailed := result.Failed()
+	if totalFailed > 0 {
+		d.Logf(
+			"complete WITH FAILURES (%d buckets, %d atomics touched, %d failed, %s elapsed)",
+			result.Buckets, result.AtomicsTouched, totalFailed, time.Since(start).Round(time.Millisecond),
+		)
+	} else {
+		d.Logf("complete (%d buckets, %s elapsed)", result.Buckets, time.Since(start).Round(time.Millisecond))
+	}
+	return result
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/barad1tos/noxctl/bear/audit"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/fastpass"
+	"github.com/barad1tos/noxctl/bear/regen"
 )
 
 // prePassSpec describes one pre-pass: the enable gate, the metric
@@ -123,7 +124,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 	}
 	clearDuplicateRegistries(opts.Domains)
 	if opts.Features.DuplicateRegistry && len(opts.Domains) > 0 {
-		registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+		registry, err := regen.BuildCorpusDuplicateRegistry(ctx)
 		if err != nil {
 			log.Printf("duplicates: registry build failed: %v (continuing with plain wikilinks)", err)
 			result.PrePasses["duplicate_registry"] = PrePassCounts{Failed: 1}

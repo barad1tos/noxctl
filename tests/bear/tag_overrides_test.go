@@ -3,7 +3,7 @@
 // tag_overrides_test.go locks down the computeTagOverrides primitive — the
 // third override layer sibling to computeMasterOverrides / computeHubOverrides.
 // Tests reach the unexported method through the ComputeTagOverridesForTest
-// seam (mirrors ProcessAtomicForTest in bear/domain/upserts.go).
+// seam (mirrors ProcessAtomicForTest in bear/regen/upserts.go).
 package bear_test
 
 import (

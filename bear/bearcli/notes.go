@@ -36,6 +36,27 @@ func ListNotesForTag(ctx context.Context, tag string) ([]note.Note, error) {
 	return notes, nil
 }
 
+// ListCorpusNotes reads every Bear note in the notes location using the field
+// set needed by duplicate-title scanners and structural-note classifiers.
+func ListCorpusNotes(ctx context.Context) ([]note.Note, error) {
+	out, err := Run(ctx,
+		[]string{
+			"list", "--location", "notes",
+			FlagFormat, FormatJSON,
+			FlagFields, "id,title,content,tags",
+		},
+		"",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("ListCorpusNotes list: %w", err)
+	}
+	var notes []note.Note
+	if parseErr := json.Unmarshal(out, &notes); parseErr != nil {
+		return nil, fmt.Errorf("ListCorpusNotes parse: %w", parseErr)
+	}
+	return notes, nil
+}
+
 // TrashNote soft-deletes a note via `bearcli trash <id>`. The note
 // remains restorable from Bear's trash UI (or via `bearcli
 // restore`). Used by `noxctl destroy` to remove auto-generated

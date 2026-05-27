@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/audit"
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -311,12 +312,12 @@ func TestLintAtom_FlagsUnsafeTitle_WhenTitleHasBrackets(t *testing.T) {
 //
 //cyrillic:permit
 func TestAutoFixDomain_ReportsFixed_WhenOverwriteSucceeds(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	d := workDomain()
 	fake := &overwriteFake{}
-	ctx := domain.ContextWithBackend(context.Background(), fake)
+	ctx := bearcli.ContextWithBackend(context.Background(), fake)
 	notes := []domain.Note{{
 		ID:      "n-multi",
 		Title:   "Подвійний канонік",
@@ -340,12 +341,12 @@ func TestAutoFixDomain_ReportsFixed_WhenOverwriteSucceeds(t *testing.T) {
 //
 //cyrillic:permit
 func TestAutoFixDomain_ReportsFailure_WhenOverwriteFails(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	d := workDomain()
 	fake := &overwriteFake{overwriteErr: errors.New("bearcli overwrite: simulated rejection")}
-	ctx := domain.ContextWithBackend(context.Background(), fake)
+	ctx := bearcli.ContextWithBackend(context.Background(), fake)
 	notes := []domain.Note{{
 		ID:      "n-multi",
 		Title:   "Подвійний канонік",

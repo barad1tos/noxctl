@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/render"
@@ -19,7 +20,7 @@ import (
 
 func TestApply_NoStateFileLoadsCleanly(t *testing.T) {
 	dir := t.TempDir()
-	ctx := domain.ContextWithBackend(context.Background(), emptyApplyBackend{})
+	ctx := bearcli.ContextWithBackend(context.Background(), emptyApplyBackend{})
 	opts := engine.ApplyOpts{
 		Domains:   nil,
 		Pins:      nil,
@@ -71,7 +72,7 @@ func TestApply_FeaturesGate_DisablesPrePass(t *testing.T) {
 func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 	dir := t.TempDir()
 	daily := minimalApplyDomain("stub/daily", "Stub Daily")
-	ctx := domain.ContextWithBackend(context.Background(), emptyApplyBackend{})
+	ctx := bearcli.ContextWithBackend(context.Background(), emptyApplyBackend{})
 	opts := engine.ApplyOpts{
 		Domains:   []*domain.Domain{daily},
 		StatePath: filepath.Join(dir, "state.json"),
@@ -109,7 +110,7 @@ func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 func TestApply_DuplicateRegistryRendersURLLinks(t *testing.T) {
 	dir := t.TempDir()
 	backend := &duplicateLinkApplyBackend{}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
 	d := duplicateLinkApplyDomain()
 	opts := engine.ApplyOpts{
 		Domains:   []*domain.Domain{d},
@@ -322,7 +323,7 @@ func TestApply_DomainListFailureSurfacesInResult(t *testing.T) {
 		t.Fatalf("seed state: %v", err)
 	}
 	d := minimalApplyDomain("test/failing", "Test Failing")
-	ctx := domain.ContextWithBackend(context.Background(), failingApplyBackend{})
+	ctx := bearcli.ContextWithBackend(context.Background(), failingApplyBackend{})
 	opts := engine.ApplyOpts{
 		Domains:   []*domain.Domain{d},
 		StatePath: statePath,
@@ -362,7 +363,7 @@ func TestApply_DaemonFailureUsesDaemonProgressMarker(t *testing.T) {
 		t.Fatalf("seed state: %v", err)
 	}
 	d := minimalApplyDomain("test/daemon-failing", "Test Daemon Failing")
-	ctx := domain.ContextWithBackend(context.Background(), failingApplyBackend{})
+	ctx := bearcli.ContextWithBackend(context.Background(), failingApplyBackend{})
 	opts := engine.ApplyOpts{
 		Domains:   []*domain.Domain{d},
 		StatePath: statePath,
@@ -392,7 +393,7 @@ func TestApply_DaemonFailureUsesDaemonProgressMarker(t *testing.T) {
 func TestApply_MasterCreateSurfacesInDomainCounts(t *testing.T) {
 	dir := t.TempDir()
 	d := minimalApplyDomain("test/master-create", "Test Master Create")
-	ctx := domain.ContextWithBackend(context.Background(), emptyApplyBackend{})
+	ctx := bearcli.ContextWithBackend(context.Background(), emptyApplyBackend{})
 	opts := engine.ApplyOpts{
 		Domains:   []*domain.Domain{d},
 		StatePath: filepath.Join(dir, "state.json"),
@@ -418,7 +419,7 @@ func TestApply_CrossDomainMoveSurfacesChangedPrePassCount(t *testing.T) {
 		render.NewFlatListDomain("inbox/a", "Inbox A"),
 		render.NewFlatListDomain("inbox/b", "Inbox B"),
 	}
-	ctx := domain.ContextWithBackend(context.Background(), crossDomainApplyBackend{})
+	ctx := bearcli.ContextWithBackend(context.Background(), crossDomainApplyBackend{})
 	result, err := engine.Apply(ctx, engine.ApplyOpts{
 		Domains:   domains,
 		StatePath: filepath.Join(dir, "state.json"),
@@ -440,7 +441,7 @@ func TestApply_CrossDomainMoveSurfacesFailedPrePassCount(t *testing.T) {
 		render.NewFlatListDomain("inbox/a", "Inbox A"),
 		render.NewFlatListDomain("inbox/b", "Inbox B"),
 	}
-	ctx := domain.ContextWithBackend(context.Background(), crossDomainApplyBackend{
+	ctx := bearcli.ContextWithBackend(context.Background(), crossDomainApplyBackend{
 		overwriteErr: errors.New("overwrite failed"),
 	})
 	result, err := engine.Apply(ctx, engine.ApplyOpts{
@@ -474,7 +475,7 @@ func TestApply_CrossDomainMoveSurfacesFailedPrePassCount(t *testing.T) {
 //     domain without declaring `[meta].daily_default_tag`.
 func TestApply_AutoTagGatedOnDailyDefaultTag(t *testing.T) {
 	dir := t.TempDir()
-	ctx := domain.ContextWithBackend(context.Background(), emptyApplyBackend{})
+	ctx := bearcli.ContextWithBackend(context.Background(), emptyApplyBackend{})
 	opts := engine.ApplyOpts{
 		Domains:   nil,
 		StatePath: filepath.Join(dir, "state.json"),
@@ -530,7 +531,7 @@ func TestApply_ContentHashStable_StripsNewNoteLink(t *testing.T) {
 	// ComputeContentHash is exported in package engine (see apply.go
 	// docstring for the project-policy deviation that motivated
 	// exporting rather than using a test-seam shim). The strip-of-
-	// new-note-link happens inside domain.FetchMasterContent
+	// new-note-link happens inside regen.FetchMasterContent
 	// (snapshot.go), NOT inside ComputeContentHash — so this test
 	// verifies that ComputeContentHash is deterministic on already-
 	// stripped inputs (the strip-then-hash discipline at the pipeline

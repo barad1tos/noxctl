@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cli"
-	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
@@ -163,10 +163,10 @@ func TestLoadDomains_UnknownTagSurfacesError(t *testing.T) {
 // `noxctl plan` on a fresh vault reports clean / exit 0 and CI gates that
 // branch on exit 2 never fire.
 func TestRunPlan_ReportsDriftAndExitsTwo_OnFreshVault(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
-	ctx := domain.ContextWithBackend(context.Background(), planFake{})
+	ctx := bearcli.ContextWithBackend(context.Background(), planFake{})
 	var stdout bytes.Buffer
 
 	err := cli.RunPlan(ctx, planOptionsForTest(t, nil, &stdout))
@@ -183,10 +183,10 @@ func TestRunPlan_ReportsDriftAndExitsTwo_OnFreshVault(t *testing.T) {
 // silent zero-domain plan. User-facing bug if this regresses: a typo'd
 // `noxctl plan library/poetri` silently plans nothing and reports clean.
 func TestRunPlan_RejectsUnknownTag(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
-	ctx := domain.ContextWithBackend(context.Background(), planFake{})
+	ctx := bearcli.ContextWithBackend(context.Background(), planFake{})
 	var stdout bytes.Buffer
 
 	err := cli.RunPlan(ctx, planOptionsForTest(t, []string{"library/poetri"}, &stdout))
@@ -203,10 +203,10 @@ func TestRunPlan_RejectsUnknownTag(t *testing.T) {
 // instead of the colored text report. User-facing bug if this regresses:
 // `noxctl plan -o json | jq` breaks because the command emitted text.
 func TestRunPlan_EmitsJSON_WhenOutputJSON(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
-	ctx := domain.ContextWithBackend(context.Background(), planFake{})
+	ctx := bearcli.ContextWithBackend(context.Background(), planFake{})
 	var stdout bytes.Buffer
 	opts := planOptionsForTest(t, nil, &stdout)
 	opts.Output = "json"

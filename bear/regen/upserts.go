@@ -1,4 +1,4 @@
-package domain
+package regen
 
 // Per-domain regen sub-steps: hub upserts, master upserts, and the
 // atomics pass that walks every atom and rewrites its canonical
@@ -12,6 +12,9 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"github.com/barad1tos/noxctl/bear/bearcli"
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 type upsertOutcome int
@@ -34,12 +37,17 @@ func incrementOutcome(outcome upsertOutcome, created, changed, unchanged *int) {
 	}
 }
 
-func (d *Domain) upsertHub(ctx context.Context, bucket string, notes []Note) (string, upsertOutcome, error) {
+func upsertHub(
+	ctx context.Context,
+	d *domain.Domain,
+	bucket string,
+	notes []domain.Note,
+) (string, upsertOutcome, error) {
 	if d.RenderHub == nil {
 		return bucket + ": skipped (no Tier-2)", upsertSkipped, nil
 	}
 	hubTitle := d.HubTitle(bucket)
-	hubID, err := d.findHubID(ctx, hubTitle)
+	hubID, err := findHubID(ctx, d, hubTitle)
 	if err != nil {
 		return "", upsertSkipped, fmt.Errorf("upsertHub %q: %w", hubTitle, err)
 	}
@@ -47,8 +55,12 @@ func (d *Domain) upsertHub(ctx context.Context, bucket string, notes []Note) (st
 	if hubID == "" {
 		// Fresh hub — no existing order, render alphabetical.
 		newAuto := d.RenderHub(d, bucket, notes, nil)
-		_, err = runBearcli(ctx,
-			[]string{"create", hubTitle, flagFormat, formatJSON, flagFields, fieldsIDTitle},
+		_, err = bearcli.Run(ctx,
+			[]string{
+				"create", hubTitle,
+				bearcli.FlagFormat, bearcli.FormatJSON,
+				bearcli.FlagFields, bearcli.FieldsIDTitle,
+			},
 			newAuto,
 		)
 		if err != nil {
@@ -57,17 +69,17 @@ func (d *Domain) upsertHub(ctx context.Context, bucket string, notes []Note) (st
 		return fmt.Sprintf("%s: created", hubTitle), upsertCreated, nil
 	}
 
-	out, err := runBearcli(ctx, []string{"cat", hubID, flagFormat, formatJSON}, "")
+	out, err := bearcli.Run(ctx, []string{"cat", hubID, bearcli.FlagFormat, bearcli.FormatJSON}, "")
 	if err != nil {
 		return "", upsertSkipped, fmt.Errorf("upsertHub %q cat: %w", hubTitle, err)
 	}
-	var existing Note
+	var existing domain.Note
 	if err = json.Unmarshal(out, &existing); err != nil {
 		return "", upsertSkipped, fmt.Errorf("upsertHub %q parse: %w", hubTitle, err)
 	}
 
-	autoZone, manual := SplitMarker(existing.Content)
-	existingOrder := parseHubOrder(autoZone)
+	autoZone, manual := domain.SplitMarker(existing.Content)
+	existingOrder := domain.ParseHubOrder(autoZone)
 	newAuto := d.RenderHub(d, bucket, notes, existingOrder)
 
 	var newBody string
@@ -77,10 +89,10 @@ func (d *Domain) upsertHub(ctx context.Context, bucket string, notes []Note) (st
 		newBody = newAuto
 	}
 
-	if equalIgnoringNewNoteLinkStrict(newBody, existing.Content) {
+	if domain.EqualIgnoringNewNoteLinkStrict(newBody, existing.Content) {
 		return fmt.Sprintf("%s: unchanged", hubTitle), upsertUnchanged, nil
 	}
-	if err = overwriteWithRetry(ctx, hubID, newBody); err != nil {
+	if err = bearcli.OverwriteWithRetry(ctx, hubID, newBody); err != nil {
 		return "", upsertSkipped, fmt.Errorf("upsertHub %q write: %w", hubTitle, err)
 	}
 	return fmt.Sprintf("%s: updated", hubTitle), upsertChanged, nil
@@ -89,16 +101,24 @@ func (d *Domain) upsertHub(ctx context.Context, bucket string, notes []Note) (st
 // upsertMasterIndex creates or updates the domain's master index note.
 // Preserves the curator zone (below "## ✱ Куратор") on update. Returns a
 // human-readable summary; an err signals the caller to aggregate failures.
-func (d *Domain) upsertMasterIndex(ctx context.Context, groups map[string][]Note) (string, upsertOutcome, error) {
+func upsertMasterIndex(
+	ctx context.Context,
+	d *domain.Domain,
+	groups map[string][]domain.Note,
+) (string, upsertOutcome, error) {
 	newAuto := d.RenderMaster(d, groups)
-	idxID, err := d.FindIndexID(ctx)
+	idxID, err := FindIndexID(ctx, d)
 	if err != nil {
 		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s): %w", d.IndexTitle, err)
 	}
 
 	if idxID == "" {
-		_, err = runBearcli(ctx,
-			[]string{"create", d.IndexTitle, flagFormat, formatJSON, flagFields, fieldsIDTitle},
+		_, err = bearcli.Run(ctx,
+			[]string{
+				"create", d.IndexTitle,
+				bearcli.FlagFormat, bearcli.FormatJSON,
+				bearcli.FlagFields, bearcli.FieldsIDTitle,
+			},
 			newAuto,
 		)
 		if err != nil {
@@ -107,16 +127,16 @@ func (d *Domain) upsertMasterIndex(ctx context.Context, groups map[string][]Note
 		return "index: created", upsertCreated, nil
 	}
 
-	out, err := runBearcli(ctx, []string{"cat", idxID, flagFormat, formatJSON}, "")
+	out, err := bearcli.Run(ctx, []string{"cat", idxID, bearcli.FlagFormat, bearcli.FormatJSON}, "")
 	if err != nil {
 		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s) cat: %w", d.IndexTitle, err)
 	}
-	var existing Note
+	var existing domain.Note
 	if err = json.Unmarshal(out, &existing); err != nil {
 		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s) parse: %w", d.IndexTitle, err)
 	}
 
-	_, manual := SplitMarker(existing.Content)
+	_, manual := domain.SplitMarker(existing.Content)
 	var newBody string
 	if manual != "" {
 		newBody = newAuto + "\n" + manual
@@ -124,27 +144,41 @@ func (d *Domain) upsertMasterIndex(ctx context.Context, groups map[string][]Note
 		newBody = newAuto
 	}
 
-	if equalIgnoringNewNoteLinkStrict(newBody, existing.Content) {
+	if domain.EqualIgnoringNewNoteLinkStrict(newBody, existing.Content) {
 		return "index: unchanged", upsertUnchanged, nil
 	}
-	if err = overwriteWithRetry(ctx, idxID, newBody); err != nil {
+	if err = bearcli.OverwriteWithRetry(ctx, idxID, newBody); err != nil {
 		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s) write: %w", d.IndexTitle, err)
 	}
 	return "index: updated", upsertChanged, nil
 }
 
+func upsertAtomicBacklink(
+	ctx context.Context,
+	d *domain.Domain,
+	noteID, noteTitle, bucket, content string,
+) (string, error) {
+	desired := domain.RenderAtomicCanonical(d, noteTitle, bucket, content)
+	if domain.EqualIgnoringNewNoteLinkStrict(desired, content) {
+		return "", nil
+	}
+	if err := bearcli.OverwriteWithRetry(ctx, noteID, desired); err != nil {
+		return "", fmt.Errorf("upsertAtomicBacklink %q: %w", noteTitle, err)
+	}
+	return fmt.Sprintf("%s → restructured", noteTitle), nil
+}
+
 // atomicsPilotBucket returns the bucket filter for the atomics pass, or "" for
 // "process all". Per-domain `REGEN_ATOMICS_PILOT_<TAG>` takes precedence over
 // the global `REGEN_ATOMICS_PILOT`.
-func (d *Domain) atomicsPilotBucket() string {
+func atomicsPilotBucket(d *domain.Domain) string {
 	if pilot := os.Getenv("REGEN_ATOMICS_PILOT_" + strings.ToUpper(d.TagSuffix())); pilot != "" {
 		return pilot
 	}
 	return os.Getenv("REGEN_ATOMICS_PILOT")
 }
 
-// processAtomic upserts one atomic note's canonical header and logs the
-// outcome. Returns 1/0 in (touched, failed) so the caller can sum.
+// ProcessAtomicForTest exposes processAtomic for external tests.
 //
 // Tag-membership guard (canonical-pingpong fix, 2026-05-14): a domain
 // refuses to canonicalize an atom whose current Tags array does not
@@ -154,11 +188,22 @@ func (d *Domain) atomicsPilotBucket() string {
 // residue that lets a non-owning domain (e.g. quicknote/daily) stamp a
 // note that already belongs to development/noxctl, flipping the
 // canonical body to the wrong domain across multiple FSEvent bursts.
-func (d *Domain) processAtomic(ctx context.Context, n Note, bucket string) (touched, failed int) {
+func ProcessAtomicForTest(
+	ctx context.Context,
+	d *domain.Domain,
+	n domain.Note,
+	bucket string,
+) (touched, failed int) {
+	return processAtomic(ctx, d, n, bucket)
+}
+
+// processAtomic upserts one atomic note's canonical header and logs the
+// outcome. Returns 1/0 in (touched, failed) so the caller can sum.
+func processAtomic(ctx context.Context, d *domain.Domain, n domain.Note, bucket string) (touched, failed int) {
 	if !slices.Contains(n.Tags, d.CanonicalTag) {
 		return 0, 0
 	}
-	result, err := d.upsertAtomicBacklink(ctx, n.ID, n.Title, bucket, n.Content)
+	result, err := upsertAtomicBacklink(ctx, d, n.ID, n.Title, bucket, n.Content)
 	if err != nil {
 		d.Logf("atomic %q: ERROR: %v", n.Title, err)
 		return 0, 1
@@ -170,28 +215,25 @@ func (d *Domain) processAtomic(ctx context.Context, n Note, bucket string) (touc
 	return 0, 0
 }
 
-// ProcessAtomicForTest exposes processAtomic for external tests in tests/bear/.
-// Test seam — production callers MUST use RunRegen. Same precedent as
-// ComputeContentHash on bear/engine/apply.go.
-func (d *Domain) ProcessAtomicForTest(ctx context.Context, n Note, bucket string) (touched, failed int) {
-	return d.processAtomic(ctx, n, bucket)
-}
-
 // runAtomicsPass rewrites each atomic note's header to canonical shape.
 // Honors REGEN_ATOMICS_PILOT=<bucket> (or REGEN_ATOMICS_PILOT_<TAG>=<bucket>
 // for per-domain limited-scope runs). Returns counts of touched/failed atomics
-// so RunRegen can summarize the cycle.
-func (d *Domain) runAtomicsPass(ctx context.Context, groups map[string][]Note) (touched, failed int) {
-	pilot := d.atomicsPilotBucket()
+// so Run can summarize the cycle.
+func runAtomicsPass(
+	ctx context.Context,
+	d *domain.Domain,
+	groups map[string][]domain.Note,
+) (touched, failed int) {
+	pilot := atomicsPilotBucket(d)
 	for bucket, items := range groups {
 		if pilot != "" && bucket != pilot {
 			continue
 		}
 		for _, note := range items {
-			if CheckCtx(ctx) != nil {
+			if domain.CheckCtx(ctx) != nil {
 				return
 			}
-			passTouched, passFailed := d.processAtomic(ctx, note, bucket)
+			passTouched, passFailed := processAtomic(ctx, d, note, bucket)
 			touched += passTouched
 			failed += passFailed
 		}
@@ -206,12 +248,16 @@ func (d *Domain) runAtomicsPass(ctx context.Context, groups map[string][]Note) (
 
 // runHubsPass upserts each per-bucket Tier-2 Hub note. No-op for domains
 // without Tier-2 hubs (d.RenderHub == nil). Returns hub outcome counts.
-func (d *Domain) runHubsPass(ctx context.Context, groups map[string][]Note) (created, changed, unchanged, failed int) {
+func runHubsPass(
+	ctx context.Context,
+	d *domain.Domain,
+	groups map[string][]domain.Note,
+) (created, changed, unchanged, failed int) {
 	if d.RenderHub == nil {
 		return 0, 0, 0, 0
 	}
 	for bucket, items := range groups {
-		summary, outcome, err := d.upsertHub(ctx, bucket, items)
+		summary, outcome, err := upsertHub(ctx, d, bucket, items)
 		if err != nil {
 			d.Logf("ERROR: %v", err)
 			failed++

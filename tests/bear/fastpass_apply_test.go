@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/fastpass"
 	"github.com/barad1tos/noxctl/bear/render"
@@ -111,8 +112,8 @@ func notesJSON(t *testing.T, rows ...map[string]any) string {
 //
 //cyrillic:permit
 func TestApplyTimeBasedPromotion_PromotesAgedAtom_AndRewritesCanonical(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	daily := render.NewFlatListDomain("inbox/daily", "✱ Daily")
 	weekly := render.NewFlatListDomain("inbox/weekly", "✱ Weekly")
@@ -126,7 +127,7 @@ func TestApplyTimeBasedPromotion_PromotesAgedAtom_AndRewritesCanonical(t *testin
 		"created": "2020-01-01T09:00:00Z",
 	})
 	backend := &fastpassApplyBackend{byTag: map[string]string{"inbox/daily": atom, "inbox/weekly": "[]"}}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
 
 	result, err := fastpass.ApplyTimeBasedPromotionResult(ctx, []*domain.Domain{daily, weekly}, nil, rules)
 	if err != nil {
@@ -144,8 +145,8 @@ func TestApplyTimeBasedPromotion_PromotesAgedAtom_AndRewritesCanonical(t *testin
 }
 
 func TestApplyTimeBasedPromotionResult_DoesNotCountNoopCandidateAsChanged(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	daily := render.NewFlatListDomain("inbox/daily", "✱ Daily")
 	weekly := render.NewFlatListDomain("inbox/weekly", "✱ Weekly")
@@ -159,7 +160,7 @@ func TestApplyTimeBasedPromotionResult_DoesNotCountNoopCandidateAsChanged(t *tes
 		"created": "2020-01-01T09:00:00Z",
 	})
 	backend := &fastpassApplyBackend{byTag: map[string]string{"inbox/daily": atom, "inbox/weekly": "[]"}}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
 
 	result, err := fastpass.ApplyTimeBasedPromotionResult(ctx, []*domain.Domain{daily, weekly}, nil, rules)
 	if err != nil {
@@ -180,8 +181,8 @@ func TestApplyTimeBasedPromotionResult_DoesNotCountNoopCandidateAsChanged(t *tes
 //
 //cyrillic:permit
 func TestApplyTimeBasedPromotion_SkipsAtom_WhenCreationDateMissing(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	daily := render.NewFlatListDomain("inbox/daily", "✱ Daily")
 	weekly := render.NewFlatListDomain("inbox/weekly", "✱ Weekly")
@@ -195,7 +196,7 @@ func TestApplyTimeBasedPromotion_SkipsAtom_WhenCreationDateMissing(t *testing.T)
 		"content": "# Без дати\n#inbox/daily | [[✱ Daily]]\n---\nтіло\n",
 	})
 	backend := &fastpassApplyBackend{byTag: map[string]string{"inbox/daily": atom, "inbox/weekly": "[]"}}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
 
 	if err := fastpass.ApplyTimeBasedPromotion(ctx, []*domain.Domain{daily, weekly}, nil, rules); err != nil {
 		t.Fatalf("ApplyTimeBasedPromotion: %v", err)
@@ -213,8 +214,8 @@ type crossDomainMoveFixture struct {
 
 func newCrossDomainMoveFixture(t *testing.T, overwriteErr error) crossDomainMoveFixture {
 	t.Helper()
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	a := render.NewFlatListDomain("inbox/a", "✱ Inbox A")
 	b := render.NewFlatListDomain("inbox/b", "✱ Inbox B")
@@ -260,7 +261,7 @@ func newCrossDomainMoveFixture(t *testing.T, overwriteErr error) crossDomainMove
 //cyrillic:permit
 func TestApplyCrossDomainMoves_RewritesTag_WhenAtomClaimedByOtherMaster(t *testing.T) {
 	fixture := newCrossDomainMoveFixture(t, nil)
-	ctx := domain.ContextWithBackend(context.Background(), fixture.backend)
+	ctx := bearcli.ContextWithBackend(context.Background(), fixture.backend)
 
 	result, err := fastpass.ApplyCrossDomainMovesResult(ctx, fixture.domains, fixture.pins)
 	if err != nil {
@@ -289,8 +290,8 @@ func TestApplyCrossDomainMoves_RewritesTag_WhenAtomClaimedByOtherMaster(t *testi
 //
 //cyrillic:permit
 func TestApplyTimeBasedPromotion_ContinuesSweep_WhenOverwriteFails(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	daily := render.NewFlatListDomain("inbox/daily", "✱ Daily")
 	weekly := render.NewFlatListDomain("inbox/weekly", "✱ Weekly")
@@ -311,7 +312,7 @@ func TestApplyTimeBasedPromotion_ContinuesSweep_WhenOverwriteFails(t *testing.T)
 		byTag:        map[string]string{"inbox/daily": atoms, "inbox/weekly": "[]"},
 		overwriteErr: errors.New("bearcli overwrite: simulated rejection"),
 	}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
 
 	if err := fastpass.ApplyTimeBasedPromotion(ctx, []*domain.Domain{daily, weekly}, nil, rules); err != nil {
 		t.Fatalf("ApplyTimeBasedPromotion must log-and-continue, not return; got %v", err)
@@ -330,7 +331,7 @@ func TestApplyTimeBasedPromotion_ContinuesSweep_WhenOverwriteFails(t *testing.T)
 // half-moved with no signal.
 func TestApplyCrossDomainMoves_ReturnsError_WhenOverwriteFails(t *testing.T) {
 	fixture := newCrossDomainMoveFixture(t, errors.New("bearcli overwrite: simulated rejection"))
-	ctx := domain.ContextWithBackend(context.Background(), fixture.backend)
+	ctx := bearcli.ContextWithBackend(context.Background(), fixture.backend)
 
 	_, err := fastpass.ApplyCrossDomainMovesResult(ctx, fixture.domains, fixture.pins)
 	if err == nil {

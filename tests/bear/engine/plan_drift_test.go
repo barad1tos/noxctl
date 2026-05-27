@@ -17,8 +17,10 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
+	"github.com/barad1tos/noxctl/bear/regen"
 	"github.com/barad1tos/noxctl/bear/render"
 )
 
@@ -84,7 +86,7 @@ func TestPlan_ReportsDriftCreate_WhenMasterMissing(t *testing.T) {
 		// nothing → empty current master → create drift.
 		fake.StageList(t, []map[string]any{planAtomRow()})
 		fake.StageNote(t, atomNoteID, planAtomRow())
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		res, err := engine.Plan(ctx, engine.PlanOpts{Domains: []*domain.Domain{buildWorkDomainForIntegration()}})
 		if err != nil {
@@ -115,7 +117,7 @@ func TestPlan_ReportsDriftReplace_WhenMasterStale(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeWorkBackend()
 		stageMasterWithBody(t, fake, "# ✱ Робота\n\nстарий вміст що не збігається з рендером\n")
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		res, err := engine.Plan(ctx, engine.PlanOpts{Domains: []*domain.Domain{buildWorkDomainForIntegration()}})
 		if err != nil {
@@ -151,7 +153,7 @@ func TestPlan_IssuesZeroOverwrites_ReadOnlyContract(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeWorkBackend()
 		stageMasterWithBody(t, fake, "# ✱ Робота\n\nстарий вміст\n")
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		if _, err := engine.Plan(ctx, engine.PlanOpts{Domains: []*domain.Domain{buildWorkDomainForIntegration()}}); err != nil {
 			t.Fatalf("Plan: %v", err)
@@ -176,12 +178,12 @@ func TestPlan_ReportsClean_WhenMasterMatchesRender(t *testing.T) {
 		fake := newFakeWorkBackend()
 		fake.StageList(t, []map[string]any{planAtomRow()})
 		fake.StageNote(t, atomNoteID, planAtomRow())
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 		d := buildWorkDomainForIntegration()
 
 		// Render the master exactly as apply would, then stage it as the
 		// current Bear master so Plan should see zero drift.
-		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		inputs, err := regen.SnapshotDomainRenderInputs(ctx, d)
 		if err != nil {
 			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
 		}
@@ -207,15 +209,15 @@ func TestPlan_ReportsClean_WhenDuplicateMasterUsesURLLinks(t *testing.T) {
 		fake.StageList(t, []map[string]any{first, second})
 		fake.StageNote(t, "plan-dup-a", first)
 		fake.StageNote(t, "plan-dup-b", second)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 		d := buildWorkDomainForIntegration()
-		registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+		registry, err := regen.BuildCorpusDuplicateRegistry(ctx)
 		if err != nil {
 			t.Fatalf("BuildCorpusDuplicateRegistry: %v", err)
 		}
 		d.Duplicates = registry
 
-		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		inputs, err := regen.SnapshotDomainRenderInputs(ctx, d)
 		if err != nil {
 			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
 		}
@@ -247,9 +249,9 @@ func TestPlan_ReportsHubDrift_WhenDuplicateHubNeedsURLLinks(t *testing.T) {
 		fake.StageList(t, []map[string]any{first, second})
 		fake.StageNote(t, "hub-dup-a", first)
 		fake.StageNote(t, "hub-dup-b", second)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
-		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		inputs, err := regen.SnapshotDomainRenderInputs(ctx, d)
 		if err != nil {
 			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
 		}
@@ -288,15 +290,15 @@ func TestPlan_FeatureDisabledKeepsPlainDuplicateHubLinksClean(t *testing.T) {
 		fake.StageList(t, []map[string]any{first, second})
 		fake.StageNote(t, "hub-feature-a", first)
 		fake.StageNote(t, "hub-feature-b", second)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
-		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		inputs, err := regen.SnapshotDomainRenderInputs(ctx, d)
 		if err != nil {
 			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
 		}
 		master := d.RenderMaster(d, inputs.Groups)
 		plainHub := d.RenderHub(d, "Bucket", inputs.Groups["Bucket"], nil)
-		registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+		registry, err := regen.BuildCorpusDuplicateRegistry(ctx)
 		if err != nil {
 			t.Fatalf("BuildCorpusDuplicateRegistry: %v", err)
 		}

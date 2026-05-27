@@ -8,10 +8,10 @@
 // Production code uses errgroup.WithContext-based applyPerDomain over
 // a per-umbrella dependency graph. These
 // tests drive the real orchestrator with a fake BearcliBackend injected
-// via domain.ContextWithBackend, recording per-call timestamps inside a
+// via bearcli.ContextWithBackend, recording per-call timestamps inside a
 // testing/synctest bubble for deterministic ordering. The bearcli pool
 // is the back-pressure target; tests reset it to a known
-// capacity via domain.ResetBearcliPoolForTest before each Apply.
+// capacity via bearcli.ResetPoolForTest before each Apply.
 package engine_test
 
 import (
@@ -23,12 +23,13 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/state"
 )
 
-// fakeBackend is a deterministic domain.BearcliBackend used by parallel
+// fakeBackend is a deterministic bearcli.Backend used by parallel
 // orchestrator tests. Every Run call:
 //
 // 1. increments inflight (and updates peak); a snapshot is exposed via
@@ -62,7 +63,7 @@ func newFakeBackend(sleep time.Duration) *fakeBackend {
 	return &fakeBackend{perCallSleep: sleep}
 }
 
-// Run satisfies domain.BearcliBackend. Records inflight/peak/timestamps,
+// Run satisfies bearcli.Backend. Records inflight/peak/timestamps,
 // sleeps perCallSleep, and returns a per-kind JSON payload.
 func (f *fakeBackend) Run(ctx context.Context, args []string, _ string) ([]byte, error) {
 	now := f.inflight.Add(1)
@@ -208,8 +209,8 @@ const poolCapacityForParallelTests = 8
 // default the rest of the test corpus assumes).
 func resetPoolForApply(t *testing.T) {
 	t.Helper()
-	domain.ResetBearcliPoolForTest(poolCapacityForParallelTests)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(poolCapacityForParallelTests)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 }
 
 // applyOptsFor builds an ApplyOpts that disables every pre-pass (so
@@ -242,7 +243,7 @@ func TestApplyParallel_SiblingsConcurrent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeBackend(50 * time.Millisecond)
-		ctx := domain.ContextWithBackend(t.Context(), fake)
+		ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 		umbrella := umbrellaStub("library", "✱ Бібліотека", "library/a")
 		leafA := stubDomain("library/a", "[Бібліотека · A]", umbrella.IndexTitle)
@@ -282,7 +283,7 @@ func TestApplyParallel_UmbrellaWaitsOnFamily(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeBackend(20 * time.Millisecond)
-		ctx := domain.ContextWithBackend(t.Context(), fake)
+		ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 		umbrella := umbrellaStub("it", "✱ IT", "it/leaf1")
 		leaf1 := stubDomain("it/leaf1", "[IT · Leaf 1]", umbrella.IndexTitle)
@@ -323,7 +324,7 @@ func TestApplyParallel_FamiliesConcurrent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeBackend(20 * time.Millisecond)
-		ctx := domain.ContextWithBackend(t.Context(), fake)
+		ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 		umbA := umbrellaStub("library", "✱ Бібліотека", "library/a1")
 		leafA1 := stubDomain("library/a1", "[Бібліотека · A1]", umbA.IndexTitle)
@@ -400,7 +401,7 @@ func TestApply_StateSave_Concurrent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeBackend(5 * time.Millisecond)
-		ctx := domain.ContextWithBackend(t.Context(), fake)
+		ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 		umbrella, domains, leafTags := buildStateSaveFixture()
 
@@ -441,7 +442,7 @@ func TestApplyParallel_Idempotent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeBackend(5 * time.Millisecond)
-		ctx := domain.ContextWithBackend(t.Context(), fake)
+		ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 		umbrella := umbrellaStub("llm", "✱ LLM", "llm/a")
 		leafA := stubDomain("llm/a", "[LLM · A]", umbrella.IndexTitle)

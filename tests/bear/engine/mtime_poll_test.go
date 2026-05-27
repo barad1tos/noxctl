@@ -27,6 +27,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 )
@@ -473,7 +474,7 @@ func TestDaemonPoll_FailedCycleRetriesSameToken(t *testing.T) {
 		}
 		resetPoolForApply(t)
 		run := startPollDaemonRun(t, opts, func(ctx context.Context) context.Context {
-			return domain.ContextWithBackend(ctx, failingApplyBackend{})
+			return bearcli.ContextWithBackend(ctx, failingApplyBackend{})
 		})
 
 		run.WaitFor(7 * time.Second)
@@ -551,7 +552,7 @@ func TestDaemonPoll_PendingTokenChangeResetsActiveBurst(t *testing.T) {
 		}
 		resetPoolForApply(t)
 		run := startPollDaemonRun(t, opts, func(ctx context.Context) context.Context {
-			return domain.ContextWithBackend(ctx, emptyApplyBackend{})
+			return bearcli.ContextWithBackend(ctx, emptyApplyBackend{})
 		})
 
 		time.Sleep(450 * time.Millisecond)

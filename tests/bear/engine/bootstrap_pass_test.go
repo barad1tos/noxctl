@@ -25,6 +25,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/fastpass"
 	"github.com/barad1tos/noxctl/bear/render"
@@ -78,7 +79,7 @@ func TestApplyDomainBootstrap_LeafDomain_HubRouted(t *testing.T) {
 			"content": "user-typed preamble line\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
@@ -117,7 +118,7 @@ func TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat(t *testing.T) {
 			"content": "War is peace.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
@@ -154,7 +155,7 @@ func TestApplyDomainBootstrap_LeafDomain_FlatList(t *testing.T) {
 			"content": "Wise grey wanderer.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
@@ -196,7 +197,7 @@ func TestApplyDomainBootstrap_UmbrellaRedirect(t *testing.T) {
 			"content": "Routes prompts between providers.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
@@ -232,7 +233,7 @@ func TestApplyDomainBootstrap_MultipleLeafsMostSpecific(t *testing.T) {
 			"content": "PR review specialist.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
@@ -274,7 +275,7 @@ func TestApplyDomainBootstrap_MultipleLeafsTieSkip(t *testing.T) {
 			"content": "Two equal leaves claim me.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
@@ -310,7 +311,7 @@ func TestApplyDomainBootstrap_AlreadyCanonicalNoOp(t *testing.T) {
 			"content": canonical,
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
@@ -348,7 +349,7 @@ func TestApplyDomainBootstrap_StructuralNoteSkip(t *testing.T) {
 			"content": "# ✱ LLM\n\n## Розділи (4)\n- [[✱ LLM Агенти]] (10)\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
@@ -394,7 +395,7 @@ func TestApplyDomainBootstrap_SubTagBucketNoOp(t *testing.T) {
 			"content": subTagged,
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
@@ -445,7 +446,7 @@ func TestApplyDomainBootstrap_AlreadyBucketedNoOp(t *testing.T) {
 			"content": bucketed,
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
@@ -476,7 +477,7 @@ func TestApplyDomainBootstrap_NoManagedTagSkip(t *testing.T) {
 			"content": "Not our note.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
@@ -527,7 +528,7 @@ func TestApplyDomainBootstrap_DefensiveUmbrellaGuard(t *testing.T) {
 			"content": "umbrella tag only — must trigger guard.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		n, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
 		if err != nil {
@@ -563,7 +564,7 @@ func TestApplyDomainBootstrap_LoopGuard_SkipsAfterCap(t *testing.T) {
 			"content": "Wise grey wanderer.\n",
 		}})
 		fake := newFakeAutoTagBackend(payload)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 		const noteCap = 5
 		driveBootstrapNTimes(t, ctx, domainsByTag, noteCap, 1)

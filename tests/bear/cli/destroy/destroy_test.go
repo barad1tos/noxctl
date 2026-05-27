@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/render"
@@ -223,8 +224,8 @@ func TestRunDestroy_ReturnsErrTagNotManaged_WhenTagAbsentFromCatalog(t *testing.
 //
 //cyrillic:permit
 func TestRunDestroy_Aborts_WhenConfirmationMismatches(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	fake := &destroyFake{listPayload: destroyListJSON(
 		t,
@@ -234,7 +235,7 @@ func TestRunDestroy_Aborts_WhenConfirmationMismatches(t *testing.T) {
 			"content": "# Вірш\n#library/test | [[✱ Test]]\n---\nтіло\n",
 		},
 	)}
-	ctx := domain.ContextWithBackend(context.Background(), fake)
+	ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 	var out, errBuf bytes.Buffer
 	err := cli.RunDestroy(ctx, cli.DestroyOptions{
@@ -260,8 +261,8 @@ func TestRunDestroy_Aborts_WhenConfirmationMismatches(t *testing.T) {
 //
 //cyrillic:permit
 func TestRunDestroy_TrashesMasterAndStripsAtoms_OnAutoApprove(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	fake := &destroyFake{listPayload: destroyListJSON(
 		t,
@@ -271,7 +272,7 @@ func TestRunDestroy_TrashesMasterAndStripsAtoms_OnAutoApprove(t *testing.T) {
 			"content": "# Вірш\n#library/test | [[✱ Test]]\n---\nтіло\n",
 		},
 	)}
-	ctx := domain.ContextWithBackend(context.Background(), fake)
+	ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 	var out, errBuf bytes.Buffer
 	err := cli.RunDestroy(ctx, cli.DestroyOptions{
@@ -305,8 +306,8 @@ func TestRunDestroy_TrashesMasterAndStripsAtoms_OnAutoApprove(t *testing.T) {
 //
 //cyrillic:permit
 func TestRunDestroy_ReportsFailures_WhenTrashFails(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	fake := &destroyFake{
 		trashErr: errors.New("bearcli trash: simulated rejection"),
@@ -319,7 +320,7 @@ func TestRunDestroy_ReportsFailures_WhenTrashFails(t *testing.T) {
 			},
 		),
 	}
-	ctx := domain.ContextWithBackend(context.Background(), fake)
+	ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 	var out, errBuf bytes.Buffer
 	err := cli.RunDestroy(ctx, cli.DestroyOptions{

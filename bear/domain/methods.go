@@ -1,19 +1,16 @@
 package domain
 
-// Domain methods + the runBearcli shim. Split from domain.go to keep
-// type declarations in one file and per-Domain behavior in another.
+// Domain methods. Split from domain.go to keep type declarations in one file
+// and per-Domain behavior in another.
 // Every method here takes a *Domain receiver; pure helpers that just
 // pass a *Domain as argument live in their topic-specific files
 // (sections.go, factory.go, etc.).
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
-
-	"github.com/barad1tos/noxctl/bear/bearcli"
 )
 
 // IsFlatList reports whether this domain is the flat-list shape
@@ -183,14 +180,4 @@ func (d *Domain) skipNote(n Note) bool {
 		return true
 	}
 	return false
-}
-
-// runBearcli is the in-package shim over bearcli.Run. The real
-// implementation and the kindFromArgs classifier moved to
-// bear/bearcli during PR-H2; this shim exists so existing call sites
-// in bear/ (Domain methods like listNotes, findNoteByTitle,
-// upsertHub) keep compiling against the lowercase package-internal
-// name without a rename churn through every caller.
-func runBearcli(ctx context.Context, args []string, stdin string) ([]byte, error) {
-	return bearcli.Run(ctx, args, stdin)
 }

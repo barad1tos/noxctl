@@ -21,6 +21,7 @@ import (
 
 	"github.com/barad1tos/noxctl/bear/audit"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/regen"
 )
 
 // PlanOpts bundles inputs to engine.Plan. Mirrors ApplyOpts shape but
@@ -144,7 +145,7 @@ func seedDuplicateRegistry(ctx context.Context, domains []*domain.Domain, stderr
 		return
 	}
 	clearDuplicateRegistries(domains)
-	registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+	registry, err := regen.BuildCorpusDuplicateRegistry(ctx)
 	if err != nil {
 		// Defense in depth: planSinglePath already defaults nil
 		// stderr to os.Stderr, but callers landing here through
@@ -170,7 +171,7 @@ func clearDuplicateRegistries(domains []*domain.Domain) {
 
 // computeDomainDelta returns one domain's plan entry by reading
 // current Bear state (FetchMasterContent) and rendering desired state
-// via domain.SnapshotDomainRenderInputs + d.RenderMaster, comparing via
+// via regen.SnapshotDomainRenderInputs + d.RenderMaster, comparing via
 // domain.EqualIgnoringNewNoteLinkStrict (master flavor — URL-shape drift
 // surfaces as a real diff). Mirrors bear/upserts.go::upsertMasterIndex
 // with overwriteWithRetry calls replaced by Diff{} appends.
@@ -181,12 +182,12 @@ func clearDuplicateRegistries(domains []*domain.Domain) {
 func computeDomainDelta(ctx context.Context, d *domain.Domain, verbose bool) (DomainPlan, error) {
 	dp := DomainPlan{Tag: d.Tag, Status: StatusClean, Changes: make([]Diff, 0)}
 
-	inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+	inputs, err := regen.SnapshotDomainRenderInputs(ctx, d)
 	if err != nil {
 		return dp, fmt.Errorf("computeDomainDelta(%s) inputs: %w", d.Tag, err)
 	}
 	desiredAuto := d.RenderMaster(d, inputs.Groups)
-	currentMaster, err := domain.FetchMasterContent(ctx, d)
+	currentMaster, err := regen.FetchMasterContent(ctx, d)
 	if err != nil {
 		return dp, fmt.Errorf("computeDomainDelta(%s) master read: %w", d.Tag, err)
 	}
@@ -242,14 +243,14 @@ func computeDomainDelta(ctx context.Context, d *domain.Domain, verbose bool) (Do
 func appendHubDiffs(
 	ctx context.Context,
 	d *domain.Domain,
-	inputs domain.RenderInputs,
+	inputs regen.RenderInputs,
 	dp DomainPlan,
 	verbose bool,
 ) (DomainPlan, error) {
 	if d.RenderHub == nil {
 		return dp, nil
 	}
-	currentHubs, err := domain.FetchHubContents(ctx, d)
+	currentHubs, err := regen.FetchHubContents(ctx, d)
 	if err != nil {
 		return dp, fmt.Errorf("computeDomainDelta(%s) hub read: %w", d.Tag, err)
 	}

@@ -155,9 +155,9 @@ type DaemonOpts struct {
 	//
 	// Test seam: the fast-pass tick body calls
 	// fastpass.ApplyForeignTagEscape + fastpass.ApplyDailyDefaultTag, which both
-	// route through domain.runBearcli + BackendFromContext(ctx). DaemonOpts
+	// route through bearcli.Run + BackendFromContext(ctx). DaemonOpts
 	// gains NO parallel field for fake injection — tests stamp the seam
-	// on ctx via domain.ContextWithBackend.
+	// on ctx via bearcli.ContextWithBackend.
 	AutoTagPollInterval time.Duration
 }
 

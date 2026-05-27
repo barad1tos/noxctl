@@ -3,7 +3,7 @@
 // `verify.Run` short-circuits on catalog-load failure (StatusError →
 // early return). To isolate the daemon-log / plan-parity / apply-
 // idempotency checks per-test, every scenario needs (a) a valid TOML
-// catalog file and (b) a `domain.BearcliBackend` stamped on the context
+// catalog file and (b) a `bearcli.Backend` stamped on the context
 // that returns benign responses for every bearcli call the checks
 // trigger. Both helpers live here so the per-check tests stay focused
 // on their actual contract.
@@ -17,8 +17,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cli/verify"
-	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // minimalCatalogTOML is the smallest valid `noxctl.toml` that loads
@@ -47,7 +47,7 @@ func writeMinimalCatalog(t *testing.T) string {
 	return path
 }
 
-// benignBearcliBackend is a `domain.BearcliBackend` impl that returns
+// benignBearcliBackend is a `bearcli.Backend` impl that returns
 // shape-valid empty responses for every bearcli command the verify
 // checks issue. Unknown verbs error out so a future engine call site
 // (new "tag" / "replace" / "delete" command) surfaces in tests
@@ -114,7 +114,7 @@ func listFields(args []string) string {
 // context the test passes to verify.Run.
 func ctxWithBenignBackend(t *testing.T) context.Context {
 	t.Helper()
-	return domain.ContextWithBackend(t.Context(), &benignBearcliBackend{})
+	return bearcli.ContextWithBackend(t.Context(), &benignBearcliBackend{})
 }
 
 // buildAllFourStatusesResult returns a Result with exactly one check

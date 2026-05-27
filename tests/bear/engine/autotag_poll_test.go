@@ -1,18 +1,18 @@
 // Package engine_test — auto-tag fast-pass tests for the daemon.
 //
 // Validates the 7th-case fast-pass body, the skip-while-regen-in-progress
-// behavior, the BearcliBackend semaphore (respected via domain.runBearcli,
+// behavior, the BearcliBackend semaphore (respected via bearcli.Run,
 // no bypass), and the disabled-poll path (AutoTagPollInterval == 0 → no
 // ticker, no work). Drives the real Daemon.Run select loop with a fake
-// FsWatcher and a fake domain.BearcliBackend stamped on ctx via
-// domain.ContextWithBackend. All tests wrap the body in
+// FsWatcher and a fake bearcli.Backend stamped on ctx via
+// bearcli.ContextWithBackend. All tests wrap the body in
 // testing/synctest.Test so time.NewTicker and the virtual clock advance
 // deterministically.
 //
-// Test seam: domain.BearcliBackend is the SAME seam used by
+// Test seam: bearcli.Backend is the SAME seam used by
 // tests/bear/engine/apply_parallel_test.go. Both ApplyForeignTagEscape
 // and ApplyDailyDefaultTag route their bearcli list/overwrite calls
-// through domain.runBearcli, which consults BackendFromContext(ctx) and
+// through bearcli.Run, which consults BackendFromContext(ctx) and
 // dispatches to the fake. DaemonOpts gains ZERO new test fields — the
 // seam is one layer deeper than the daemon, so the daemon never has to
 // know about test fakes.
@@ -42,12 +42,13 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
-// fakeAutoTagBackend records every domain.runBearcli call routed through
+// fakeAutoTagBackend records every bearcli.Run call routed through
 // the BearcliBackend seam. Returns canned JSON for "list" (one
 // untagged note unless overridden), and {"id":..."ok":true} stub for
 // "overwrite". Test scenarios pre-populate listPayload + assert via
@@ -76,7 +77,7 @@ func newFakeAutoTagBackend(notes []byte) *fakeAutoTagBackend {
 	return &fakeAutoTagBackend{listPayload: notes}
 }
 
-// Run satisfies domain.BearcliBackend.
+// Run satisfies bearcli.Backend.
 func (f *fakeAutoTagBackend) Run(_ context.Context, args []string, stdin string) ([]byte, error) {
 	f.count.Add(1)
 	kind := "other"
@@ -245,7 +246,7 @@ func startDaemonRun(t *testing.T, fake *fakeAutoTagBackend, opts engine.DaemonOp
 
 	buf := captureLog(t)
 	ctx, cancel := context.WithCancel(t.Context())
-	ctx = domain.ContextWithBackend(ctx, fake)
+	ctx = bearcli.ContextWithBackend(ctx, fake)
 	t.Cleanup(cancel)
 
 	if before != nil {
@@ -456,7 +457,7 @@ func TestDaemonAutoTagPoll_PreservesReadOnlyDBEvents(t *testing.T) {
 		t.Cleanup(func() { _ = d.Close() })
 		buf := captureLog(t)
 		ctx, cancel := context.WithCancel(t.Context())
-		ctx = domain.ContextWithBackend(ctx, fake)
+		ctx = bearcli.ContextWithBackend(ctx, fake)
 		t.Cleanup(cancel)
 		errCh := make(chan error, 1)
 		go func() { errCh <- d.Run(ctx) }()
@@ -485,7 +486,7 @@ func TestDaemonAutoTagPoll_SkipsWhileBurstActive(t *testing.T) {
 		t.Cleanup(func() { _ = d.Close() })
 		buf := captureLog(t)
 		ctx, cancel := context.WithCancel(t.Context())
-		ctx = domain.ContextWithBackend(ctx, fake)
+		ctx = bearcli.ContextWithBackend(ctx, fake)
 		t.Cleanup(cancel)
 		errCh := make(chan error, 1)
 		go func() { errCh <- d.Run(ctx) }()

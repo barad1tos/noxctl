@@ -10,7 +10,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/regen"
 )
 
 // TestAtomicWriteJSON_WritesJSONWithRequestedPerm round-trips a small
@@ -224,10 +226,10 @@ func TestAtomicWikilink_NonEmptyTitleStaysWikilink(t *testing.T) {
 }
 
 func TestAtomicWikilink_UnmanagedCorpusCollisionUsesURL(t *testing.T) {
-	domain.ResetBearcliPoolForTest(2)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
-	ctx := domain.ContextWithBackend(t.Context(), unmanagedDuplicateRegistryBackend{})
-	registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+	bearcli.ResetPoolForTest(2)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+	ctx := bearcli.ContextWithBackend(t.Context(), unmanagedDuplicateRegistryBackend{})
+	registry, err := regen.BuildCorpusDuplicateRegistry(ctx)
 	if err != nil {
 		t.Fatalf("BuildCorpusDuplicateRegistry: %v", err)
 	}
@@ -241,10 +243,10 @@ func TestAtomicWikilink_UnmanagedCorpusCollisionUsesURL(t *testing.T) {
 }
 
 func TestAtomicWikilink_GeneratedTitleCollisionUsesURL(t *testing.T) {
-	domain.ResetBearcliPoolForTest(2)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
-	ctx := domain.ContextWithBackend(t.Context(), generatedTitleDuplicateRegistryBackend{})
-	registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+	bearcli.ResetPoolForTest(2)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+	ctx := bearcli.ContextWithBackend(t.Context(), generatedTitleDuplicateRegistryBackend{})
+	registry, err := regen.BuildCorpusDuplicateRegistry(ctx)
 	if err != nil {
 		t.Fatalf("BuildCorpusDuplicateRegistry: %v", err)
 	}
