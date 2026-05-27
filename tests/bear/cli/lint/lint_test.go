@@ -120,6 +120,22 @@ func brokenH1ListPayload(t *testing.T) []byte {
 	return raw
 }
 
+func fixableMultiCanonicalListPayload(t *testing.T) []byte {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{{
+		"id":    "note-fixable",
+		"title": "Fixable",
+		"content": "# Fixable\n#test/notes | [[✱ Notes]]\n" +
+			"#test/notes | [[✱ Notes]]\n---\nbody\n",
+		"tags":    []string{"#test/notes"},
+		"created": "2026-05-23T12:00:00Z",
+	}})
+	if err != nil {
+		t.Fatalf("marshal fixable payload: %v", err)
+	}
+	return raw
+}
+
 // flatListDomainForTest constructs a minimal flat-list domain that
 // exercises the lint pass. Real catalogs ship richer wiring; this
 // fixture keeps the test surface narrow to the lint heuristics
@@ -664,6 +680,23 @@ func TestRun_ApplyMode_RuntimeErrorTakesPrecedenceOverLintFailure(t *testing.T) 
 	}
 }
 
+func TestRun_ApplyMode_DomainAutoFixFailureReturnsLintError(t *testing.T) {
+	armBearcliPool(t)
+	fake := &overwriteFailFakeBearcli{
+		fakeBearcli:  newFakeBearcli(fixableMultiCanonicalListPayload(t)),
+		overwriteErr: errors.New("bearcli overwrite: simulated failure"),
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+	assertWrappedErr(t, "domain autofix failure", err,
+		cli.ErrLintFailed, "per-domain lint apply failed for 1")
+	if got := fake.countKind("overwrite"); got != 1 {
+		t.Fatalf("overwrite calls = %d, want 1 failed domain autofix attempt", got)
+	}
+}
+
 func TestRun_ApplyMode_DuplicatePass_TotalTagFailure(t *testing.T) {
 	armBearcliPool(t)
 	fake := &duplicateTagAddFailFakeBearcli{
@@ -822,6 +855,34 @@ func TestRun_AuditMode_ScanFailure_ReturnsErrorAndSyntheticFinding(t *testing.T)
 		}
 	}
 	t.Errorf("synthetic Finding Detail not flattened onto single line; got %q", out)
+}
+
+func TestRun_AuditMode_DuplicateScanFailureReturnsSyntheticFinding(t *testing.T) {
+	armBearcliPool(t)
+	corpusErr := errors.New("bearcli duplicate list --location notes boom")
+	fake := &secondCorpusListFailFakeBearcli{
+		partialTagAddFailFakeBearcli: &partialTagAddFailFakeBearcli{
+			fakeBearcli: newFakeBearcli(brokenH1ListPayload(t)),
+		},
+		corpusErr: corpusErr,
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
+	if err == nil {
+		t.Fatalf("RunLint audit-mode with failing duplicate scan: err = nil, want wrapped scan error")
+	}
+	if !strings.Contains(err.Error(), "duplicate-title scan") {
+		t.Errorf("err = %v, want message mentioning 'duplicate-title scan'", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "(duplicate-title scan failed)") {
+		t.Errorf("audit output missing synthetic duplicate-title scan Finding; got %q", out)
+	}
+	if strings.Contains(out, "(orphan scan failed)") {
+		t.Errorf("audit output reported orphan scan failure; got %q", out)
+	}
 }
 
 // mutatingFakeBearcli wraps fakeBearcli and rewrites listPayload after
@@ -1013,6 +1074,19 @@ func (f *secondCorpusListFailFakeBearcli) Run(ctx context.Context, args []string
 		}
 	}
 	return f.partialTagAddFailFakeBearcli.Run(ctx, args, stdin)
+}
+
+type overwriteFailFakeBearcli struct {
+	*fakeBearcli
+	overwriteErr error
+}
+
+func (f *overwriteFailFakeBearcli) Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
+	if len(args) > 0 && args[0] == "overwrite" {
+		_, _ = f.fakeBearcli.Run(ctx, args, stdin)
+		return nil, f.overwriteErr
+	}
+	return f.fakeBearcli.Run(ctx, args, stdin)
 }
 
 type duplicateTagAddFailFakeBearcli struct {

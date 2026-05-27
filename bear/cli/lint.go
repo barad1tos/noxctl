@@ -63,13 +63,25 @@ var ErrLintFailed = errors.New("noxctl lint: reported failures")
 func RunLint(ctx context.Context, stdout io.Writer, domains []*domain.Domain, apply bool) error {
 	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
 	if apply {
-		audit.LintApplyDomains(ctx, domains)
+		_, domainFailed, domainErr := audit.LintApplyDomains(ctx, domains)
+		if errors.Is(domainErr, context.Canceled) {
+			orphanErr := runApplyOrphanPass(ctx, domains)
+			if orphanErr != nil {
+				return orphanErr
+			}
+			return domainErr
+		}
+		var domainLintErr error
+		if domainFailed > 0 {
+			domainLintErr = fmt.Errorf("%w: per-domain lint apply failed for %d atom(s)",
+				ErrLintFailed, domainFailed)
+		}
 		orphanErr := runApplyOrphanPass(ctx, domains)
 		if errors.Is(orphanErr, context.Canceled) {
 			return orphanErr
 		}
 		duplicateErr := runApplyDuplicatePass(ctx, domains)
-		return joinApplyErrors(orphanErr, duplicateErr)
+		return joinApplyErrors(domainErr, domainLintErr, orphanErr, duplicateErr)
 	}
 	findings := audit.Scan(ctx, domains)
 	findings, orphanErr := appendOrphanFindings(ctx, findings, domains)
@@ -78,10 +90,10 @@ func RunLint(ctx context.Context, stdout io.Writer, domains []*domain.Domain, ap
 	return errors.Join(orphanErr, duplicateErr)
 }
 
-func joinApplyErrors(orphanErr, duplicateErr error) error {
+func joinApplyErrors(errs ...error) error {
 	var runtimeErrs []error
 	var lintErrs []error
-	for _, err := range []error{orphanErr, duplicateErr} {
+	for _, err := range errs {
 		if err == nil {
 			continue
 		}

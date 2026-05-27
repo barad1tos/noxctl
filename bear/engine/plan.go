@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/barad1tos/noxctl/bear/audit"
@@ -42,6 +43,11 @@ type PlanOpts struct {
 	// Stderr is the verbose-trace target. Defaults to os.Stderr when
 	// nil. Tests inject a bytes.Buffer here.
 	Stderr io.Writer
+
+	// Features mirrors ApplyOpts.Features for read-path behavior that
+	// affects rendered bytes. Nil means AllFeaturesOn, matching apply's
+	// default catalog behavior.
+	Features *Features
 }
 
 // Plan walks opts.Domains and returns a *PlanResult.
@@ -61,7 +67,12 @@ func planSinglePath(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
 	if opts.Stderr == nil {
 		opts.Stderr = os.Stderr
 	}
-	seedDuplicateRegistry(ctx, opts.Domains, opts.Stderr)
+	features := planFeatures(opts)
+	if features.DuplicateRegistry {
+		seedDuplicateRegistry(ctx, opts.Domains, opts.Stderr)
+	} else {
+		clearDuplicateRegistries(opts.Domains)
+	}
 	result := newEmptyPlanResult(len(opts.Domains))
 	for _, d := range opts.Domains {
 		if ctx.Err() != nil {
@@ -113,6 +124,13 @@ func translateUntracked(b audit.UntrackedReport) UntrackedReport {
 	return UntrackedReport{TagFamilies: fams, TotalNotes: b.TotalNotes}
 }
 
+func planFeatures(opts PlanOpts) Features {
+	if opts.Features == nil {
+		return AllFeaturesOn()
+	}
+	return *opts.Features
+}
+
 // seedDuplicateRegistry primes `Domain.Duplicates` on every domain so
 // `AtomicWikilink` emits the `[Title](bear://x-callback-url/open-note?id=X)`
 // disambiguation form for cross-corpus duplicate titles. Without it
@@ -125,6 +143,7 @@ func seedDuplicateRegistry(ctx context.Context, domains []*domain.Domain, stderr
 	if len(domains) == 0 {
 		return
 	}
+	clearDuplicateRegistries(domains)
 	registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
 	if err != nil {
 		// Defense in depth: planSinglePath already defaults nil
@@ -143,6 +162,12 @@ func seedDuplicateRegistry(ctx context.Context, domains []*domain.Domain, stderr
 	}
 }
 
+func clearDuplicateRegistries(domains []*domain.Domain) {
+	for _, d := range domains {
+		d.Duplicates = nil
+	}
+}
+
 // computeDomainDelta returns one domain's plan entry by reading
 // current Bear state (FetchMasterContent) and rendering desired state
 // via domain.SnapshotDomainRenderInputs + d.RenderMaster, comparing via
@@ -150,11 +175,9 @@ func seedDuplicateRegistry(ctx context.Context, domains []*domain.Domain, stderr
 // surfaces as a real diff). Mirrors bear/upserts.go::upsertMasterIndex
 // with overwriteWithRetry calls replaced by Diff{} appends.
 //
-// Hub layer is summary-only — full per-hub diff fidelity requires
-// re-rendering each hub via d.RenderHub, which needs helpers
-// (parseHubBulletIdentifiers) currently unexported. The master-level
-// diff is the user-visible signal we design around; per-hub fidelity
-// is a documented gap.
+// Hub-routed domains are compared at the Tier-2 hub layer too; apply
+// rewrites those notes independently, so plan must preview hub drift
+// even when the master itself is already clean.
 func computeDomainDelta(ctx context.Context, d *domain.Domain, verbose bool) (DomainPlan, error) {
 	dp := DomainPlan{Tag: d.Tag, Status: StatusClean, Changes: make([]Diff, 0)}
 
@@ -209,7 +232,86 @@ func computeDomainDelta(ctx context.Context, d *domain.Domain, verbose bool) (Do
 		dp.Changes = append(dp.Changes, diff)
 		dp.Status = StatusDrift
 	}
+	dp, err = appendHubDiffs(ctx, d, inputs, dp, verbose)
+	if err != nil {
+		return dp, err
+	}
 	return dp, nil
+}
+
+func appendHubDiffs(
+	ctx context.Context,
+	d *domain.Domain,
+	inputs domain.RenderInputs,
+	dp DomainPlan,
+	verbose bool,
+) (DomainPlan, error) {
+	if d.RenderHub == nil {
+		return dp, nil
+	}
+	currentHubs, err := domain.FetchHubContents(ctx, d)
+	if err != nil {
+		return dp, fmt.Errorf("computeDomainDelta(%s) hub read: %w", d.Tag, err)
+	}
+	for _, bucket := range sortedGroupBuckets(inputs.Groups) {
+		hubTitle := d.HubTitle(bucket)
+		currentHub := currentHubs[hubTitle]
+		desiredHub := renderDesiredHub(d, bucket, inputs.Groups[bucket], currentHub)
+		diff, ok := hubDiff(hubTitle, bucket, currentHub, desiredHub, verbose)
+		if !ok {
+			continue
+		}
+		dp.Changes = append(dp.Changes, diff)
+		dp.Status = StatusDrift
+	}
+	return dp, nil
+}
+
+func sortedGroupBuckets(groups map[string][]domain.Note) []string {
+	buckets := make([]string, 0, len(groups))
+	for bucket := range groups {
+		buckets = append(buckets, bucket)
+	}
+	sort.Strings(buckets)
+	return buckets
+}
+
+func renderDesiredHub(d *domain.Domain, bucket string, notes []domain.Note, currentHub string) string {
+	var existingOrder map[string][]string
+	autoZone, manual := domain.SplitMarker(currentHub)
+	if currentHub != "" {
+		existingOrder = domain.ParseHubOrder(autoZone)
+	}
+	desiredAuto := d.RenderHub(d, bucket, notes, existingOrder)
+	desiredHub := desiredAuto
+	if manual != "" {
+		desiredHub = desiredAuto + "\n" + manual
+	}
+	return domain.StripNewNoteURLsFromBody(desiredHub)
+}
+
+func hubDiff(hubTitle, bucket, currentHub, desiredHub string, verbose bool) (Diff, bool) {
+	switch {
+	case currentHub == "":
+		return Diff{
+			Kind:    DiffCreate,
+			Target:  "hub",
+			Title:   hubTitle,
+			Summary: fmt.Sprintf("hub %s will be created", hubTitle),
+		}, true
+	case !domain.EqualIgnoringNewNoteLinkStrict(desiredHub, currentHub):
+		diff := Diff{
+			Kind:    DiffReplace,
+			Target:  "hub",
+			Title:   hubTitle,
+			Summary: fmt.Sprintf("hub changed (%s)", bucket),
+		}
+		if verbose {
+			diff.Detail = []string{"before:", currentHub, "after:", desiredHub}
+		}
+		return diff, true
+	}
+	return Diff{}, false
 }
 
 // newEmptyPlanResult builds the JSON-stable empty *PlanResult shape:

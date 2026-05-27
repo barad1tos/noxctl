@@ -79,6 +79,14 @@ func RenderSectionGroup(b *strings.Builder, d *Domain, top string, subMap map[st
 	}
 }
 
+// ParseHubOrder reads a Hub note's auto-zone and returns the bullet identifier
+// order per section path. Plain wikilinks contribute titles; URL-form links
+// contribute note IDs. Unsectioned bullets keyed by ""; H3 by "<top>"; H4 by
+// "<top>/<sub>". Used outside domain by engine.Plan to preview Hub rewrites.
+func ParseHubOrder(autoZone string) map[string][]string {
+	return parseHubOrder(autoZone)
+}
+
 // parseHubOrder reads a Hub note's auto-zone and returns the bullet identifier
 // order per section path. Plain wikilinks contribute titles; URL-form links
 // contribute note IDs. Unsectioned bullets keyed by ""; H3 by "<top>"; H4 by

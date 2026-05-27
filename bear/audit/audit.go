@@ -12,6 +12,7 @@ package audit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -155,19 +156,23 @@ func LogAuditFindings(findings []Finding, logf func(format string, args ...any))
 // guard at the top of each iteration short-circuits before any bearcli
 // I/O, so a canceled sweep stops deterministically instead of racing the
 // pool semaphore for one more list+overwrite round.
-func LintApplyDomains(ctx context.Context, domains []*domain.Domain) {
+func LintApplyDomains(ctx context.Context, domains []*domain.Domain) (fixedTotal, failedTotal int, runErr error) {
 	for _, d := range domains {
-		if err := domain.CheckCtx(ctx); err != nil {
-			return
+		if ctxErr := domain.CheckCtx(ctx); ctxErr != nil {
+			return fixedTotal, failedTotal, fmt.Errorf("lint --apply domain pass: %w", ctxErr)
 		}
 		notes, err := bearcli.ListNotesForTag(ctx, d.Tag)
 		if err != nil {
 			log.Printf("lint --apply: %s: list failed: %v", d.Tag, err)
+			runErr = errors.Join(runErr, fmt.Errorf("lint --apply %s list: %w", d.Tag, err))
 			continue
 		}
 		fixed, failed := AutoFixDomain(ctx, d, notes)
+		fixedTotal += fixed
+		failedTotal += failed
 		if fixed > 0 || failed > 0 {
 			d.Logf("lint --apply: %d fixed, %d failed", fixed, failed)
 		}
 	}
+	return fixedTotal, failedTotal, runErr
 }
