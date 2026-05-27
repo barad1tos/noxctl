@@ -60,6 +60,12 @@ const (
 	// the operator has full context for manual triage (rename the stray,
 	// delete it, or move the atom to a proper domain).
 	LintOrphanFamily LintCategory = "orphan-family"
+	// LintDuplicateTitle — two or more Bear notes share the same title.
+	// Bear resolves `[[Title]]` by title only, so duplicate titles make
+	// wikilinks ambiguous. Corpus-level concern: the DomainTag on each
+	// Finding is empty. Apply mode tags each untriaged owner with
+	// `#orphans/duplicate-title`; renaming remains manual.
+	LintDuplicateTitle LintCategory = "duplicate-title"
 )
 
 // Finding is one anomaly detected by the lint pass. Multiple findings can
@@ -84,6 +90,9 @@ func SortFindings(findings []Finding) {
 		if findings[i].Category != findings[j].Category {
 			return findings[i].Category < findings[j].Category
 		}
-		return findings[i].Title < findings[j].Title
+		if findings[i].Title != findings[j].Title {
+			return findings[i].Title < findings[j].Title
+		}
+		return findings[i].NoteID < findings[j].NoteID
 	})
 }

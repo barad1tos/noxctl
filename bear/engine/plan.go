@@ -122,7 +122,10 @@ func translateUntracked(b audit.UntrackedReport) UntrackedReport {
 // plain wikilinks (matches the apply-side log-and-continue pattern at
 // `bear/engine/apply.go`).
 func seedDuplicateRegistry(ctx context.Context, domains []*domain.Domain, stderr io.Writer) {
-	registry, err := domain.BuildDuplicateRegistry(ctx, domains)
+	if len(domains) == 0 {
+		return
+	}
+	registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
 	if err != nil {
 		// Defense in depth: planSinglePath already defaults nil
 		// stderr to os.Stderr, but callers landing here through

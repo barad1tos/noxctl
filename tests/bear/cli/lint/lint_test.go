@@ -275,6 +275,30 @@ func orphanFamilyListPayload(t *testing.T, tags []string) []byte {
 	return raw
 }
 
+func duplicateTitleListPayload(t *testing.T) []byte {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{
+		{
+			"id":      "note-dup-a",
+			"title":   "Duplicated",
+			"content": "",
+			"tags":    []string{"#test/notes"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+		{
+			"id":      "note-dup-b",
+			"title":   "Duplicated",
+			"content": "",
+			"tags":    []string{"#test/archive"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal duplicate-title payload: %v", err)
+	}
+	return raw
+}
+
 // TestRun_AuditMode_OrphanFamilyAppearsInOutput verifies the read-only
 // composition: the corpus orphan scan runs alongside the per-domain
 // audit scan, the stray-family finding lands in the printed report,
@@ -302,6 +326,30 @@ func TestRun_AuditMode_OrphanFamilyAppearsInOutput(t *testing.T) {
 	}
 	if got := fake.countKind("tags"); got != 0 {
 		t.Errorf("audit mode issued %d tags calls; want 0 (read-only contract)", got)
+	}
+}
+
+func TestRun_AuditMode_DuplicateTitleAppearsInOutput(t *testing.T) {
+	armBearcliPool(t)
+	fake := newFakeBearcli(duplicateTitleListPayload(t))
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false,
+		"audit-mode duplicate-title finding")
+
+	out := buf.String()
+	if !strings.Contains(out, "duplicate-title:") {
+		t.Errorf("audit output missing duplicate-title category; got %q", out)
+	}
+	if !strings.Contains(out, "Duplicated") || !strings.Contains(out, "note-dup-a") {
+		t.Errorf("audit output missing duplicate-title detail; got %q", out)
+	}
+	if got := fake.countKind("overwrite"); got != 0 {
+		t.Errorf("audit mode wrote %d overwrites; want 0", got)
+	}
+	if got := fake.countKind("tags"); got != 0 {
+		t.Errorf("audit mode issued %d tags calls; want 0", got)
 	}
 }
 
@@ -363,6 +411,37 @@ func TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent(t *testing.T) {
 	if got := fake2.countKind("tags"); got != 0 {
 		t.Errorf("idempotency violated: apply mode tags-call count on already-tagged atom = %d, want 0",
 			got)
+	}
+}
+
+func TestRun_ApplyMode_DuplicateTitleTagEmitted(t *testing.T) {
+	armBearcliPool(t)
+	fake := newFakeBearcli(duplicateTitleListPayload(t))
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true,
+		"apply-mode duplicate-title tagging")
+
+	if got := fake.countKind("tags"); got != 2 {
+		t.Fatalf("apply mode tags-call count = %d, want 2 duplicate-title tag calls", got)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	for _, call := range fake.calls {
+		if call.Kind != "tags" {
+			continue
+		}
+		wantArgs := []string{"tags", "add", call.Args[2], "orphans/duplicate-title"}
+		for index, want := range wantArgs {
+			if call.Args[index] != want {
+				t.Fatalf("tags call args[%d] = %q, want %q (full args=%v)",
+					index, call.Args[index], want, call.Args)
+			}
+		}
+	}
+	if buf.Len() != 0 {
+		t.Errorf("apply mode leaked stdout: %q", buf.String())
 	}
 }
 

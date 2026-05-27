@@ -121,8 +121,8 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			log.Printf("pins: save failed: %v (in-memory state preserved)", err)
 		}
 	}
-	if opts.Features.DuplicateRegistry {
-		registry, err := domain.BuildDuplicateRegistry(ctx, opts.Domains)
+	if opts.Features.DuplicateRegistry && len(opts.Domains) > 0 {
+		registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
 		if err != nil {
 			log.Printf("duplicates: registry build failed: %v (continuing with plain wikilinks)", err)
 			result.PrePasses["duplicate_registry"] = PrePassCounts{Failed: 1}

@@ -172,7 +172,7 @@ func uniqueFamilies(strays []string) []string {
 }
 
 // quoteJoin renders a string slice as a comma-separated list of
-// double-quoted items (e.g. `"quicknotes", "scratch"`). Used by the
+// double-quoted items (e.g. `"quick notes", "scratch"`). Used by the
 // multi-family Detail formatter so each family name shows up verbatim
 // in the operator report.
 func quoteJoin(items []string) string {
@@ -253,21 +253,50 @@ func ApplyOrphanFamilies(ctx context.Context, findings []Finding) (tagged, faile
 		if f.Category != LintOrphanFamily {
 			continue
 		}
-		if tagErr := bearcli.AddTag(ctx, f.NoteID, "orphans"); tagErr != nil {
-			log.Printf("audit: orphan-tag %s (id=%s) failed: %v", f.Title, f.NoteID, tagErr)
-			failed++
-			if shouldAbortOnTotalFailure(tagged, failed) {
-				return tagged, failed, fmt.Errorf(
-					"%w: %d/%d initial attempts failed; bearcli verb drift or permissions issue",
-					ErrApplyAllFailed, failed, batchAbortThreshold,
-				)
-			}
-			continue
+		taggedDelta, failedDelta, tagErr := applyFindingTag(ctx, f, orphanTagApply, tagged, failed)
+		tagged += taggedDelta
+		failed += failedDelta
+		if tagErr != nil {
+			return tagged, failed, tagErr
 		}
-		log.Printf("audit: orphan-tagged: %s (id=%s)", f.Title, f.NoteID)
-		tagged++
 	}
 	return tagged, failed, nil
+}
+
+type tagApplyLabels struct {
+	tag          string
+	failLabel    string
+	successLabel string
+	abortDetail  string
+}
+
+var orphanTagApply = tagApplyLabels{
+	tag:          "orphans",
+	failLabel:    "orphan-tag",
+	successLabel: "orphan-tagged",
+	abortDetail:  "initial attempts failed; bearcli verb drift or permissions issue",
+}
+
+func applyFindingTag(
+	ctx context.Context,
+	finding Finding,
+	labels tagApplyLabels,
+	tagged int,
+	failed int,
+) (taggedDelta int, failedDelta int, err error) {
+	if tagErr := bearcli.AddTag(ctx, finding.NoteID, labels.tag); tagErr != nil {
+		log.Printf("audit: %s %s (id=%s) failed: %v", labels.failLabel, finding.Title, finding.NoteID, tagErr)
+		nextFailed := failed + 1
+		if shouldAbortOnTotalFailure(tagged, nextFailed) {
+			return 0, 1, fmt.Errorf(
+				"%w: %d/%d %s",
+				ErrApplyAllFailed, nextFailed, batchAbortThreshold, labels.abortDetail,
+			)
+		}
+		return 0, 1, nil
+	}
+	log.Printf("audit: %s: %s (id=%s)", labels.successLabel, finding.Title, finding.NoteID)
+	return 1, 0, nil
 }
 
 // batchAbortThreshold is the count of consecutive starting failures

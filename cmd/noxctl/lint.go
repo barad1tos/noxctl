@@ -27,10 +27,11 @@ invocation cannot modify the vault. Pass --apply to rewrite the
 Fixable rows in place.
 
 With --apply, the fixable findings (broken-H1 titles, malformed
-canonical tag-lines) are rewritten through bearcli. Non-fixable
-findings (unsafe-title, missing-canonical that requires user input)
-are logged for manual review. Re-running on a clean corpus produces
-no writes.`,
+canonical tag-lines) are rewritten through bearcli. Duplicate-title
+findings are triaged with #orphans/duplicate-title; note renaming
+remains manual. Non-fixable findings (unsafe-title,
+missing-canonical that requires user input) are logged for manual
+review. Re-running on a clean corpus produces no writes.`,
 	RunE: runLint,
 }
 
