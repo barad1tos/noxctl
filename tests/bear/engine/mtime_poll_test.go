@@ -27,6 +27,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
+	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 )
 
@@ -501,6 +502,39 @@ func TestDaemonPoll_GatedTokenChangeRetriesAfterGate(t *testing.T) {
 
 		if got := countCycles(buf); got != 2 {
 			t.Errorf("cycle count = %d, want 2 (gated token change must stay pending until the gate closes)\nlog:\n%s",
+				got, buf.String())
+		}
+	})
+}
+
+func TestDaemonPoll_FailedCycleRetriesSameToken(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		base := time.Now()
+		stat := &fakeStat{mtimes: []time.Time{base}}
+		opts := pollOptsFor(t, stat, 1*time.Second, 50*time.Millisecond)
+		opts.SelfWriteEpsilon = 100 * time.Millisecond
+		opts.Domains = []*domain.Domain{minimalApplyDomain("test/failing", "Test Failing")}
+		opts.DatabaseChangeTokenFn = func(string, os.FileInfo) (string, error) {
+			return "v1", nil
+		}
+		resetPoolForApply(t)
+		fw := newFakeWatcher()
+		d := engine.NewDaemonWithWatcher(opts, fw)
+		t.Cleanup(func() { _ = d.Close() })
+
+		buf := captureLog(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		ctx = domain.ContextWithBackend(ctx, failingApplyBackend{})
+		t.Cleanup(cancel)
+		errCh := make(chan error, 1)
+		go func() { errCh <- d.Run(ctx) }()
+
+		time.Sleep(7 * time.Second)
+		cancel()
+		<-errCh
+
+		if got := countCycles(buf); got != 2 {
+			t.Errorf("cycle count = %d, want 2 (failed apply must leave the pending DB token retryable)\nlog:\n%s",
 				got, buf.String())
 		}
 	})

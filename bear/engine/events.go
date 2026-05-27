@@ -354,8 +354,21 @@ func (d *Daemon) cycleOnce(ctx context.Context, reason string) bool {
 	// bypasses AcquireApply + sentinel — see deadlock note above.
 	applyOpts := d.opts.ApplyOpts
 	applyOpts.SkipFlock = true
-	if _, applyErr := Apply(ctx, applyOpts); applyErr != nil {
+	result, applyErr := Apply(ctx, applyOpts)
+	if applyErr != nil {
 		log.Printf("daemon cycle: %v", applyErr)
+		return false
+	}
+	if result == nil {
+		log.Printf("daemon cycle returned no result; preserving database baseline for retry")
+		return false
+	}
+	if result.Interrupted {
+		log.Printf("daemon cycle interrupted; preserving database baseline for retry")
+		return false
+	}
+	if result.AnyFailed() {
+		log.Printf("daemon cycle reported failed work; preserving database baseline for retry")
 		return false
 	}
 	return true
