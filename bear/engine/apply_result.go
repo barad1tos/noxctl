@@ -38,15 +38,15 @@ type DomainCounts struct {
 }
 
 // DomainCountsFromRegen converts the per-domain pipeline result into
-// the PLAY RECAP shape. Today RunRegen exposes atomic rewrites and
-// failures; master/hub create/update fidelity remains a separate
-// future improvement.
+// the PLAY RECAP shape.
 func DomainCountsFromRegen(result domain.RegenResult) DomainCounts {
 	counts := DomainCounts{
-		Changed: result.AtomicsTouched,
-		Failed:  result.Failed(),
+		Created:   result.Created(),
+		Changed:   result.Changed(),
+		Unchanged: result.Unchanged(),
+		Failed:    result.Failed(),
 	}
-	if counts.Changed == 0 && counts.Failed == 0 {
+	if counts.Created == 0 && counts.Changed == 0 && counts.Unchanged == 0 && counts.Failed == 0 {
 		counts.Unchanged = 1
 	}
 	return counts

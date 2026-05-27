@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/cli/verify"
@@ -51,22 +52,46 @@ func writeMinimalCatalog(t *testing.T) string {
 // checks issue. Unknown verbs error out so a future engine call site
 // (new "tag" / "replace" / "delete" command) surfaces in tests
 // instead of being silently absorbed.
-type benignBearcliBackend struct{}
+type benignBearcliBackend struct {
+	mu            sync.Mutex
+	masterCreated bool
+	masterContent string
+}
 
-func (benignBearcliBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+func (b *benignBearcliBackend) Run(_ context.Context, args []string, stdin string) ([]byte, error) {
 	if len(args) == 0 {
 		return []byte("{}"), nil
 	}
 	switch args[0] {
 	case "list":
+		if listFields(args) == "id,title" {
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			if b.masterCreated {
+				return []byte(`[{"id":"master-1","title":"✱ Test"}]`), nil
+			}
+		}
 		return []byte("[]"), nil
+	case "cat":
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		return fmt.Appendf(nil, `{"id":"master-1","title":"✱ Test","content":%q}`, b.masterContent), nil
 	case "show":
 		// optimistic-concurrency hash + empty body. Empty body
 		// means "no master / no content" — engine.Plan's
 		// computeDomainDelta then sees `currentMaster == ""` and
 		// emits a Create diff, but tests on daemon-log don't care.
 		return []byte(`{"hash":"deadbeef","content":""}`), nil
-	case "create", "overwrite":
+	case "create":
+		b.mu.Lock()
+		b.masterCreated = true
+		b.masterContent = stdin
+		b.mu.Unlock()
+		return []byte(`{"id":"master-1","title":"✱ Test"}`), nil
+	case "overwrite":
+		b.mu.Lock()
+		b.masterContent = stdin
+		b.mu.Unlock()
 		return []byte(`{"ok":true}`), nil
 	}
 	// Fail loud on unknown verbs so a future engine call site
@@ -75,12 +100,21 @@ func (benignBearcliBackend) Run(_ context.Context, args []string, _ string) ([]b
 	return nil, fmt.Errorf("benignBearcliBackend: unhandled bearcli args %v", args)
 }
 
+func listFields(args []string) string {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--fields" {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
 // ctxWithBenignBackend stamps the benign backend onto t.Context()
 // so verify.Run's bearcli calls become hermetic no-ops. Returns the
 // context the test passes to verify.Run.
 func ctxWithBenignBackend(t *testing.T) context.Context {
 	t.Helper()
-	return domain.ContextWithBackend(t.Context(), benignBearcliBackend{})
+	return domain.ContextWithBackend(t.Context(), &benignBearcliBackend{})
 }
 
 // buildAllFourStatusesResult returns a Result with exactly one check

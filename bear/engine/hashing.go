@@ -31,6 +31,17 @@ func applyFinalize(ctx context.Context, opts ApplyOpts, st *state.State, result 
 		}
 		return result, nil
 	}
+	if result.AnyFailed() {
+		// Leave LastApply at prior value; preserve InProgress so the next apply
+		// can warn that the prior run did not finish successfully.
+		if saveErr := st.Save(opts.StatePath); saveErr != nil {
+			log.Printf("apply: final state.Save (failed) failed: %v", saveErr)
+		}
+		if opts.WithMetrics {
+			result.Metrics = domain.BearcliMetricsSnapshot()
+		}
+		return result, nil
+	}
 	result.CompletedAt = time.Now().UTC()
 	st.LastApply = result.CompletedAt
 	st.InProgress = state.InProgress{} // clear

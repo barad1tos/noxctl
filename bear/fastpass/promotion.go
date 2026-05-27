@@ -167,8 +167,20 @@ func boundaryStart(boundary string, now time.Time) time.Time {
 //
 //nolint:lll
 func ApplyTimeBasedPromotion(ctx context.Context, domains []*domain.Domain, pins *domain.PinRegistry, rules []PromotionRule) error {
+	_, err := ApplyTimeBasedPromotionResult(ctx, domains, pins, rules)
+	return err
+}
+
+// ApplyTimeBasedPromotionResult is ApplyTimeBasedPromotion with per-note
+// failure counts for apply recap and exit-status decisions.
+func ApplyTimeBasedPromotionResult(
+	ctx context.Context,
+	domains []*domain.Domain,
+	pins *domain.PinRegistry,
+	rules []PromotionRule,
+) (PassResult, error) {
 	if len(rules) == 0 {
-		return nil
+		return PassResult{}, nil
 	}
 	now := time.Now()
 	domainByTag := indexPromotionDomains(domains, rules)
@@ -184,10 +196,12 @@ func ApplyTimeBasedPromotion(ctx context.Context, domains []*domain.Domain, pins
 
 	atoms := make([]atomToProcess, 0)
 	seen := make(map[string]struct{})
+	result := PassResult{}
 	for _, source := range domainByTag {
 		notes, err := bearcli.ListNotesForTag(ctx, source.Tag)
 		if err != nil {
 			log.Printf("time-promotion: list %s failed: %v", source.Tag, err)
+			result.Failed++
 			continue
 		}
 		for _, atom := range notes {
@@ -201,11 +215,16 @@ func ApplyTimeBasedPromotion(ctx context.Context, domains []*domain.Domain, pins
 
 	for _, item := range atoms {
 		if err := domain.CheckCtx(ctx); err != nil {
-			return err
+			return result, err
 		}
-		processAtomForPromotion(ctx, item.atom, item.source, domainByTag, pins, now, ruleIndex)
+		switch processAtomForPromotion(ctx, item.atom, item.source, domainByTag, pins, now, ruleIndex) {
+		case passChanged:
+			result.Changed++
+		case passFailed:
+			result.Failed++
+		}
 	}
-	return nil
+	return result, nil
 }
 
 // processAtomForPromotion handles a single atom in the time-promotion
@@ -220,29 +239,31 @@ func processAtomForPromotion(
 	pins *domain.PinRegistry,
 	now time.Time,
 	ruleIndex map[string]PromotionRule,
-) {
+) passOutcome {
 	if domain.IsAuxNote(source, atom) {
-		return
+		return passSkipped
 	}
 	if atom.Created.IsZero() {
 		log.Printf("time-promotion: %q has no creation date; skipping", atom.Title)
-		return
+		return passSkipped
 	}
 	if pins.IsPinned(atom.ID, now) {
-		return
+		return passSkipped
 	}
 	newTag, shouldMove := promoteByCalendarIndexed(source.Tag, atom.Created, now, ruleIndex)
 	if !shouldMove {
-		return
+		return passSkipped
 	}
 	target := domainByTag[newTag]
 	if target == nil {
 		log.Printf("time-promotion: %q would move to %q but no domain registered", atom.Title, newTag)
-		return
+		return passSkipped
 	}
 	if err := promoteAtomToDomain(ctx, atom, source, target); err != nil {
 		log.Printf("time-promotion: %q failed: %v", atom.Title, err)
+		return passFailed
 	}
+	return passChanged
 }
 
 // indexPromotionDomains returns a map keyed by Tag of every domain

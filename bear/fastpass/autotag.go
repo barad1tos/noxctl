@@ -36,6 +36,16 @@ import (
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
+// PassResult reports write outcomes from one fast-pass sweep.
+type PassResult struct {
+	Changed int
+	Failed  int
+}
+
+func changedCount(result PassResult, err error) (int, error) {
+	return result.Changed, err
+}
+
 // ApplyDailyDefaultTag scans every note in the `notes` location, finds the
 // ones with no tags at all, and stamps each with `#quicknote/daily` so the
 // user's capture-without-thinking-about-tags flow (Bear's compose-from-
@@ -65,8 +75,14 @@ import (
 // produced bearcli writes that need to be self-gated downstream by
 // the daemon's self-write epsilon.
 func ApplyDailyDefaultTag(ctx context.Context, dailyDomain *domain.Domain) (int, error) {
+	return changedCount(ApplyDailyDefaultTagResult(ctx, dailyDomain))
+}
+
+// ApplyDailyDefaultTagResult is ApplyDailyDefaultTag with per-note failure
+// counts for apply recap and exit-status decisions.
+func ApplyDailyDefaultTagResult(ctx context.Context, dailyDomain *domain.Domain) (PassResult, error) {
 	if dailyDomain == nil {
-		return 0, fmt.Errorf("ApplyDailyDefaultTag: dailyDomain is nil")
+		return PassResult{}, fmt.Errorf("ApplyDailyDefaultTag: dailyDomain is nil")
 	}
 	out, err := bearcli.Run(
 		ctx,
@@ -74,16 +90,16 @@ func ApplyDailyDefaultTag(ctx context.Context, dailyDomain *domain.Domain) (int,
 		"",
 	)
 	if err != nil {
-		return 0, fmt.Errorf("ApplyDailyDefaultTag list: %w", err)
+		return PassResult{}, fmt.Errorf("ApplyDailyDefaultTag list: %w", err)
 	}
 	var notes []domain.AutoTagNote
 	if err = json.Unmarshal(out, &notes); err != nil {
-		return 0, fmt.Errorf("ApplyDailyDefaultTag parse: %w", err)
+		return PassResult{}, fmt.Errorf("ApplyDailyDefaultTag parse: %w", err)
 	}
-	stamped := 0
+	result := PassResult{}
 	for _, note := range notes {
 		if err = domain.CheckCtx(ctx); err != nil {
-			return stamped, err
+			return result, err
 		}
 		if len(note.Tags) > 0 {
 			continue
@@ -91,13 +107,14 @@ func ApplyDailyDefaultTag(ctx context.Context, dailyDomain *domain.Domain) (int,
 		newContent := dailyDomain.RenderCanonicalForBootstrap(note.Content)
 		if err = bearcli.OverwriteWithRetry(ctx, note.ID, newContent); err != nil {
 			log.Printf("auto-tag %q failed: %v", note.Title, err)
+			result.Failed++
 			continue
 		}
 		log.Printf("auto-tag: %s → #quicknote/daily", note.Title)
-		stamped++
+		result.Changed++
 	}
-	if stamped > 0 {
-		log.Printf("auto-tag: %d untagged note(s) stamped with #quicknote/daily", stamped)
+	if result.Changed > 0 {
+		log.Printf("auto-tag: %d untagged note(s) stamped with #quicknote/daily", result.Changed)
 	}
-	return stamped, nil
+	return result, nil
 }

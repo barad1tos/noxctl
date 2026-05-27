@@ -56,6 +56,9 @@ func runWithSignalContext(cmd *cobra.Command, fn func(ctx context.Context) error
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := fn(ctx); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return errInterrupted
+		}
 		return err
 	}
 	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {

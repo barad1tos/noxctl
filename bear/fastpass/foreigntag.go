@@ -151,41 +151,57 @@ func firstForeignTagFromTags(tags []string) string {
 // pre-pass produced bearcli writes that need to be self-gated downstream
 // (fast-pass gate fix).
 func ApplyForeignTagEscape(ctx context.Context, domainsByTag map[string]*domain.Domain) (int, error) {
+	result, err := ApplyForeignTagEscapeResult(ctx, domainsByTag)
+	return result.Changed, err
+}
+
+// ApplyForeignTagEscapeResult is ApplyForeignTagEscape with per-note failure
+// counts for apply recap and exit-status decisions.
+func ApplyForeignTagEscapeResult(ctx context.Context, domainsByTag map[string]*domain.Domain) (PassResult, error) {
 	out, err := bearcli.Run(
 		ctx,
 		[]string{"list", "--location", "notes", bearcli.FlagFormat, bearcli.FormatJSON, bearcli.FlagFields, "id,title,tags,content"}, //nolint:lll
 		"",
 	)
 	if err != nil {
-		return 0, fmt.Errorf("ApplyForeignTagEscape list: %w", err)
+		return PassResult{}, fmt.Errorf("ApplyForeignTagEscape list: %w", err)
 	}
 	var notes []domain.AutoTagNote
 	if err = json.Unmarshal(out, &notes); err != nil {
-		return 0, fmt.Errorf("ApplyForeignTagEscape parse: %w", err)
+		return PassResult{}, fmt.Errorf("ApplyForeignTagEscape parse: %w", err)
 	}
-	escaped := 0
+	result := PassResult{}
 	for _, note := range notes {
 		if err = domain.CheckCtx(ctx); err != nil {
-			return escaped, err
+			return result, err
 		}
-		if processForeignTagEscape(ctx, note, domainsByTag) {
-			escaped++
+		switch processForeignTagEscape(ctx, note, domainsByTag) {
+		case passChanged:
+			result.Changed++
+		case passFailed:
+			result.Failed++
 		}
 	}
-	if escaped > 0 {
-		log.Printf("foreign-tag escape: %d note(s) released from quicknote", escaped)
+	if result.Changed > 0 {
+		log.Printf("foreign-tag escape: %d note(s) released from quicknote", result.Changed)
 	}
-	return escaped, nil
+	return result, nil
 }
 
-// processForeignTagEscape handles one note's substitution. Returns true
-// when the note was actually rewritten. Logs failures with note context
-// so one bad atom doesn't stall the orchestrator loop.
+type passOutcome int
+
+const (
+	passSkipped passOutcome = iota
+	passChanged
+	passFailed
+)
+
+// processForeignTagEscape handles one note's substitution.
 //
 //nolint:lll
-func processForeignTagEscape(ctx context.Context, note domain.AutoTagNote, domainsByTag map[string]*domain.Domain) bool {
+func processForeignTagEscape(ctx context.Context, note domain.AutoTagNote, domainsByTag map[string]*domain.Domain) passOutcome {
 	if !hasQuicknoteTag(note.Tags) || !HasForeignQuicknoteTag(note.Tags) {
-		return false
+		return passSkipped
 	}
 	foreignTag := FindForeignTagInBody(note.Content)
 	if foreignTag == "" {
@@ -193,11 +209,11 @@ func processForeignTagEscape(ctx context.Context, note domain.AutoTagNote, domai
 	}
 	if foreignTag == "" {
 		log.Printf("foreign-tag escape %q: no foreign tag identified, skipping", note.Title)
-		return false
+		return passSkipped
 	}
 	stripped := SubstituteQuicknoteInBody(note.Content, foreignTag)
 	if stripped == note.Content {
-		return false
+		return passSkipped
 	}
 	newContent := stripped
 	if destDomain := domainsByTag[strings.TrimPrefix(foreignTag, "#")]; destDomain != nil {
@@ -209,10 +225,10 @@ func processForeignTagEscape(ctx context.Context, note domain.AutoTagNote, domai
 	}
 	if writeErr := bearcli.OverwriteWithRetry(ctx, note.ID, newContent); writeErr != nil {
 		log.Printf("foreign-tag escape %q failed: %v", note.Title, writeErr)
-		return false
+		return passFailed
 	}
 	log.Printf("foreign-tag escape: %s — %s replaced quicknote tag", note.Title, foreignTag)
-	return true
+	return passChanged
 }
 
 // hasQuicknoteTag reports whether `tags` contains at least one tag in

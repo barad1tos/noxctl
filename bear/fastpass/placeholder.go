@@ -23,9 +23,19 @@ import (
 // rewritten, the marker is gone, so the next tick skips the same
 // note. Returns the number of notes actually rewritten.
 func ApplyPlaceholderRefresh(ctx context.Context, domainsByTag map[string]*domain.Domain) (int, error) {
+	result, err := ApplyPlaceholderRefreshResult(ctx, domainsByTag)
+	if err != nil {
+		return 0, err
+	}
+	return result.Changed, nil
+}
+
+// ApplyPlaceholderRefreshResult is ApplyPlaceholderRefresh with per-note
+// failure counts for apply recap and exit-status decisions.
+func ApplyPlaceholderRefreshResult(ctx context.Context, domainsByTag map[string]*domain.Domain) (PassResult, error) {
 	placeholderToDomains := buildPlaceholderIndex(domainsByTag)
 	if len(placeholderToDomains) == 0 {
-		return 0, nil
+		return PassResult{}, nil
 	}
 
 	out, err := bearcli.Run(
@@ -40,25 +50,28 @@ func ApplyPlaceholderRefresh(ctx context.Context, domainsByTag map[string]*domai
 		"",
 	)
 	if err != nil {
-		return 0, fmt.Errorf("ApplyPlaceholderRefresh list: %w", err)
+		return PassResult{}, fmt.Errorf("ApplyPlaceholderRefresh list: %w", err)
 	}
 	var notes []domain.AutoTagNote
 	if err = json.Unmarshal(out, &notes); err != nil {
-		return 0, fmt.Errorf("ApplyPlaceholderRefresh parse: %w", err)
+		return PassResult{}, fmt.Errorf("ApplyPlaceholderRefresh parse: %w", err)
 	}
 
-	refreshed := 0
+	result := PassResult{}
 	stamp := domain.NowForNewNoteLink().Format(domain.H1DatetimeFormat)
 	//nolint:dupl // mirrors sibling fastpass loop; shared scan pattern
 	for _, note := range notes {
 		if err = domain.CheckCtx(ctx); err != nil {
-			return refreshed, err
+			return result, err
 		}
-		if refreshOnePlaceholder(ctx, note, placeholderToDomains, stamp) {
-			refreshed++
+		switch refreshOnePlaceholder(ctx, note, placeholderToDomains, stamp) {
+		case passChanged:
+			result.Changed++
+		case passFailed:
+			result.Failed++
 		}
 	}
-	return refreshed, nil
+	return result, nil
 }
 
 // buildPlaceholderIndex inverts domainsByTag into placeholder→[]*domain.Domain.
@@ -88,25 +101,25 @@ func refreshOnePlaceholder(
 	note domain.AutoTagNote,
 	placeholderToDomains map[string][]*domain.Domain,
 	stamp string,
-) bool {
+) passOutcome {
 	candidates, ok := placeholderToDomains[note.Title]
 	if !ok {
-		return false
+		return passSkipped
 	}
 	d := matchDomainByTag(note.Tags, candidates)
 	if d == nil {
-		return false
+		return passSkipped
 	}
 	newContent, didRefresh := refreshPlaceholderH1(note.Content, d.EffectiveQuickPlaceholderH1(), stamp)
 	if !didRefresh {
-		return false
+		return passSkipped
 	}
 	if err := bearcli.OverwriteWithRetry(ctx, note.ID, newContent); err != nil {
 		log.Printf("placeholder refresh %q failed: %v", note.Title, err)
-		return false
+		return passFailed
 	}
 	log.Printf("placeholder refresh: %s → # %s", note.Title, stamp)
-	return true
+	return passChanged
 }
 
 // ApplyQuicknotePlaceholderRefresh is the legacy entry point retained

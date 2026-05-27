@@ -17,12 +17,18 @@ import (
 // callers a machine-readable failure signal for recap and verification
 // gates.
 type RegenResult struct {
-	Buckets        int
-	AtomicsTouched int
-	AtomicsFailed  int
-	HubsFailed     int
-	MasterFailed   int
-	ListFailed     bool
+	Buckets         int
+	AtomicsTouched  int
+	AtomicsFailed   int
+	HubsCreated     int
+	HubsChanged     int
+	HubsUnchanged   int
+	HubsFailed      int
+	MasterCreated   int
+	MasterChanged   int
+	MasterUnchanged int
+	MasterFailed    int
+	ListFailed      bool
 }
 
 // Failed returns the total failure count observed during the regen run.
@@ -32,6 +38,21 @@ func (r RegenResult) Failed() int {
 		failed++
 	}
 	return failed
+}
+
+// Created returns the number of structural notes created by the regen run.
+func (r RegenResult) Created() int {
+	return r.HubsCreated + r.MasterCreated
+}
+
+// Changed returns the number of existing notes rewritten by the regen run.
+func (r RegenResult) Changed() int {
+	return r.AtomicsTouched + r.HubsChanged + r.MasterChanged
+}
+
+// Unchanged returns the number of structural notes that were already current.
+func (r RegenResult) Unchanged() int {
+	return r.HubsUnchanged + r.MasterUnchanged
 }
 
 // RunRegen reconciles one Domain's Bear corpus end-to-end: list its
@@ -80,11 +101,12 @@ func (d *Domain) RunRegen(ctx context.Context) RegenResult {
 	if !d.SkipAtomicsPass {
 		result.AtomicsTouched, result.AtomicsFailed = d.runAtomicsPass(ctx, groups)
 	}
-	result.HubsFailed = d.runHubsPass(ctx, groups)
-	if summary, masterErr := d.upsertMasterIndex(ctx, groups); masterErr != nil {
+	result.HubsCreated, result.HubsChanged, result.HubsUnchanged, result.HubsFailed = d.runHubsPass(ctx, groups)
+	if summary, masterOutcome, masterErr := d.upsertMasterIndex(ctx, groups); masterErr != nil {
 		d.Logf("ERROR: %v", masterErr)
 		result.MasterFailed = 1
 	} else {
+		incrementOutcome(masterOutcome, &result.MasterCreated, &result.MasterChanged, &result.MasterUnchanged)
 		d.Logf("%s", summary)
 	}
 	totalFailed := result.Failed()

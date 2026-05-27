@@ -27,11 +27,19 @@ import (
 // on our own writes. Returns the number of notes actually rewritten
 // (zero when every candidate is already canonical or no notes match).
 func ApplyDomainBootstrap(ctx context.Context, domainsByTag map[string]*domain.Domain) (int, error) {
+	result, runErr := ApplyDomainBootstrapResult(ctx, domainsByTag)
+	changed := result.Changed
+	return changed, runErr
+}
+
+// ApplyDomainBootstrapResult is ApplyDomainBootstrap with per-note failure
+// counts for apply recap and exit-status decisions.
+func ApplyDomainBootstrapResult(ctx context.Context, domainsByTag map[string]*domain.Domain) (PassResult, error) {
 	if len(domainsByTag) == 0 {
-		return 0, nil
+		return PassResult{}, nil
 	}
 	if bootstrapLoop.disabledSnapshot() {
-		return 0, nil
+		return PassResult{}, nil
 	}
 	out, err := bearcli.Run(
 		ctx,
@@ -39,27 +47,30 @@ func ApplyDomainBootstrap(ctx context.Context, domainsByTag map[string]*domain.D
 		"",
 	)
 	if err != nil {
-		return 0, fmt.Errorf("ApplyDomainBootstrap list: %w", err)
+		return PassResult{}, fmt.Errorf("ApplyDomainBootstrap list: %w", err)
 	}
 	var notes []domain.AutoTagNote
 	if err = json.Unmarshal(out, &notes); err != nil {
-		return 0, fmt.Errorf("ApplyDomainBootstrap parse: %w", err)
+		return PassResult{}, fmt.Errorf("ApplyDomainBootstrap parse: %w", err)
 	}
-	rewritten := 0
+	result := PassResult{}
 	warned := make(map[string]struct{}) // log-once-per-tick per note ID
 	//nolint:dupl // mirrors sibling fastpass loop; shared scan pattern
 	for _, note := range notes {
 		if err = domain.CheckCtx(ctx); err != nil {
-			return rewritten, err
+			return result, err
 		}
-		if applyDomainBootstrapOne(ctx, note, domainsByTag, warned) {
-			rewritten++
+		switch applyDomainBootstrapOne(ctx, note, domainsByTag, warned) {
+		case passChanged:
+			result.Changed++
+		case passFailed:
+			result.Failed++
 		}
 	}
-	if rewritten > 0 {
-		log.Printf("domain-bootstrap: %d note(s) canonicalized", rewritten)
+	if result.Changed > 0 {
+		log.Printf("domain-bootstrap: %d note(s) canonicalized", result.Changed)
 	}
-	return rewritten, nil
+	return result, nil
 }
 
 // applyDomainBootstrapOne handles one note's match → guard → render →
@@ -71,7 +82,7 @@ func applyDomainBootstrapOne(
 	note domain.AutoTagNote,
 	domainsByTag map[string]*domain.Domain,
 	warned map[string]struct{},
-) bool {
+) passOutcome {
 	// Structural-note guard: titles prefixed with `✱ ` mark hub/master/
 	// umbrella index notes (project convention). They're owned end-to-
 	// end by the per-domain regen path (`WriteMasterHeader`, hub-tier
@@ -81,11 +92,11 @@ func applyDomainBootstrapOne(
 	// `DefaultChild` leaf canonical to their bodies (and triggering
 	// Bear to auto-tag them with the leaf sub-tag).
 	if strings.HasPrefix(note.Title, "✱ ") {
-		return false
+		return passSkipped
 	}
 	d := matchOwningDomain(note.Tags, domainsByTag, note.ID, warned)
 	if d == nil {
-		return false
+		return passSkipped
 	}
 	// Defensive guard: `matchOwningDomain` MUST have resolved
 	// umbrella → DefaultChild via `ResolveURLDomain`. This branch is
@@ -95,7 +106,7 @@ func applyDomainBootstrapOne(
 	if d.SkipAtomicsPass {
 		log.Printf("domain-bootstrap: BUG — umbrella %q leaked past matchOwningDomain "+
 			"for note %q; skipping", d.Tag, note.ID)
-		return false
+		return passSkipped
 	}
 	// Loop-prevention guard: when the note's body ALREADY carries a
 	// canonical tag-line for the leaf, drift fix-up (bucket shifts, URL
@@ -107,7 +118,7 @@ func applyDomainBootstrapOne(
 	// across a 50 min window before the kill-switch fired.
 	// The bootstrap pass MUST only stamp truly fresh notes.
 	if hasCanonicalLineForLeaf(note.Content, d.Tag) {
-		return false
+		return passSkipped
 	}
 	// Defense-in-depth: even with the hasCanonicalLineForLeaf guard,
 	// a future render bug could re-introduce a loop. The `bootstrapLoop`
@@ -116,19 +127,19 @@ func applyDomainBootstrapOne(
 	// and emergency-disables the whole pass once
 	// `bootstrapStuckEmergencyCap` distinct notes hit that cap.
 	if bootstrapLoop.shouldSkipNote(note.ID) {
-		return false
+		return passSkipped
 	}
 	canonical := d.RenderCanonicalForBootstrap(note.Content)
 	if domain.EqualIgnoringNewNoteLinkStrict(note.Content, canonical) {
-		return false
+		return passSkipped
 	}
 	if err := bearcli.OverwriteWithRetry(ctx, note.ID, canonical); err != nil {
 		log.Printf("domain-bootstrap %q: %v", note.Title, err)
-		return false
+		return passFailed
 	}
 	bootstrapLoop.recordRewrite(note.ID, note.Title)
 	log.Printf("domain-bootstrap: %s → canonical %s", note.Title, d.Tag)
-	return true
+	return passChanged
 }
 
 // Loop-detection limits — defense-in-depth against future render

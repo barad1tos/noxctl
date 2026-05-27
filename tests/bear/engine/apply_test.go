@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
@@ -15,6 +16,7 @@ import (
 
 func TestApply_NoStateFileLoadsCleanly(t *testing.T) {
 	dir := t.TempDir()
+	ctx := domain.ContextWithBackend(context.Background(), emptyApplyBackend{})
 	opts := engine.ApplyOpts{
 		Domains:   nil,
 		Pins:      nil,
@@ -22,7 +24,7 @@ func TestApply_NoStateFileLoadsCleanly(t *testing.T) {
 		LockPath:  filepath.Join(dir, ".lock"),
 		Features:  engine.AllFeaturesOn(),
 	}
-	result, err := engine.Apply(context.Background(), opts)
+	result, err := engine.Apply(ctx, opts)
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -65,8 +67,10 @@ func TestApply_FeaturesGate_DisablesPrePass(t *testing.T) {
 
 func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 	dir := t.TempDir()
+	daily := minimalApplyDomain("stub/daily", "Stub Daily")
+	ctx := domain.ContextWithBackend(context.Background(), emptyApplyBackend{})
 	opts := engine.ApplyOpts{
-		Domains:   nil,
+		Domains:   []*domain.Domain{daily},
 		StatePath: filepath.Join(dir, "state.json"),
 		LockPath:  filepath.Join(dir, ".lock"),
 		Features:  engine.AllFeaturesOn(),
@@ -77,11 +81,22 @@ func TestApply_FeaturesGate_EnablesPrePass(t *testing.T) {
 		// AllFeaturesOn actually exercises every pre-pass row here.
 		DailyDefaultTag: "stub/daily",
 	}
-	result, err := engine.Apply(context.Background(), opts)
+	result, err := engine.Apply(ctx, opts)
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	for _, name := range []string{"foreign_tag", "auto_tag", "cross_domain", "time_promotion", "duplicate_registry"} {
+	if result.AnyFailed() {
+		t.Fatalf("AnyFailed = true, want false for hermetic enabled pre-pass test: %#v", result.PrePasses)
+	}
+	for _, name := range []string{
+		"foreign_tag",
+		"auto_tag",
+		"cross_domain",
+		"time_promotion",
+		"domain_bootstrap",
+		"placeholder_refresh",
+		"duplicate_registry",
+	} {
 		if _, ok := result.PrePasses[name]; !ok {
 			t.Errorf("pre-pass %q missing from result.PrePasses", name)
 		}
@@ -94,23 +109,52 @@ func (failingApplyBackend) Run(_ context.Context, _ []string, _ string) ([]byte,
 	return nil, errors.New("bearcli unavailable")
 }
 
-func TestApply_DomainListFailureSurfacesInResult(t *testing.T) {
-	dir := t.TempDir()
-	d := &domain.Domain{
-		Tag:          "test/failing",
-		CanonicalTag: "#test/failing",
-		IndexTitle:   "Test Failing",
+type emptyApplyBackend struct{}
+
+func (emptyApplyBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) == 0 {
+		return []byte(`[]`), nil
+	}
+	switch args[0] {
+	case "list":
+		return []byte(`[]`), nil
+	case "create":
+		return []byte(`{"id":"created","title":"created","content":"","tags":[]}`), nil
+	case "cat", "show":
+		return []byte(`{"id":"created","title":"created","content":"","hash":"h","tags":[]}`), nil
+	case "overwrite":
+		return []byte(`{"ok":true}`), nil
+	default:
+		return []byte(`[]`), nil
+	}
+}
+
+func minimalApplyDomain(tag, indexTitle string) *domain.Domain {
+	return &domain.Domain{
+		Tag:          tag,
+		CanonicalTag: "#" + tag,
+		IndexTitle:   indexTitle,
 		ParseMeta: func(_ *domain.Domain, _ string) domain.AtomicMeta {
 			return domain.AtomicMeta{}
 		},
 		RenderMaster: func(_ *domain.Domain, _ map[string][]domain.Note) string {
-			return ""
+			return "# " + indexTitle + "\n"
 		},
 	}
+}
+
+func TestApply_DomainListFailureSurfacesInResult(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	priorLastApply := time.Date(2026, 5, 26, 12, 0, 0, 0, time.UTC)
+	if err := (&state.State{Version: state.SchemaVersion, LastApply: priorLastApply}).Save(statePath); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+	d := minimalApplyDomain("test/failing", "Test Failing")
 	ctx := domain.ContextWithBackend(context.Background(), failingApplyBackend{})
 	opts := engine.ApplyOpts{
 		Domains:   []*domain.Domain{d},
-		StatePath: filepath.Join(dir, "state.json"),
+		StatePath: statePath,
 		LockPath:  filepath.Join(dir, ".lock"),
 		Features:  engine.Features{},
 	}
@@ -123,6 +167,42 @@ func TestApply_DomainListFailureSurfacesInResult(t *testing.T) {
 	}
 	if got := result.Domains[d.Tag].Failed; got != 1 {
 		t.Errorf("Failed = %d, want 1", got)
+	}
+	after, err := state.Load(statePath)
+	if err != nil {
+		t.Fatalf("Load state: %v", err)
+	}
+	if !after.LastApply.Equal(priorLastApply) {
+		t.Errorf("LastApply = %s, want prior %s", after.LastApply, priorLastApply)
+	}
+	if after.InProgress.Verb != "apply" {
+		t.Errorf("InProgress.Verb = %q, want apply after failed run", after.InProgress.Verb)
+	}
+	if !result.CompletedAt.IsZero() {
+		t.Errorf("CompletedAt = %s, want zero after failed run", result.CompletedAt)
+	}
+}
+
+func TestApply_MasterCreateSurfacesInDomainCounts(t *testing.T) {
+	dir := t.TempDir()
+	d := minimalApplyDomain("test/master-create", "Test Master Create")
+	ctx := domain.ContextWithBackend(context.Background(), emptyApplyBackend{})
+	opts := engine.ApplyOpts{
+		Domains:   []*domain.Domain{d},
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{},
+	}
+	result, err := engine.Apply(ctx, opts)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	counts := result.Domains[d.Tag]
+	if counts.Created != 1 {
+		t.Errorf("Created = %d, want 1 for master create", counts.Created)
+	}
+	if counts.Unchanged != 0 {
+		t.Errorf("Unchanged = %d, want 0 when master was created", counts.Unchanged)
 	}
 }
 
@@ -142,6 +222,7 @@ func TestApply_DomainListFailureSurfacesInResult(t *testing.T) {
 //     domain without declaring `[meta].daily_default_tag`.
 func TestApply_AutoTagGatedOnDailyDefaultTag(t *testing.T) {
 	dir := t.TempDir()
+	ctx := domain.ContextWithBackend(context.Background(), emptyApplyBackend{})
 	opts := engine.ApplyOpts{
 		Domains:   nil,
 		StatePath: filepath.Join(dir, "state.json"),
@@ -149,9 +230,12 @@ func TestApply_AutoTagGatedOnDailyDefaultTag(t *testing.T) {
 		Features:  engine.AllFeaturesOn(),
 		// DailyDefaultTag deliberately empty.
 	}
-	result, err := engine.Apply(context.Background(), opts)
+	result, err := engine.Apply(ctx, opts)
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
+	}
+	if result.AnyFailed() {
+		t.Fatalf("AnyFailed = true, want false for hermetic auto-tag gate test: %#v", result.PrePasses)
 	}
 	if _, ok := result.PrePasses["auto_tag"]; ok {
 		t.Error("pre-pass \"auto_tag\" ran despite empty DailyDefaultTag")

@@ -21,7 +21,7 @@ type prePassSpec struct {
 	enabled bool
 	name    string // PrePasses-map key, e.g. "foreign_tag"
 	label   string // log prefix, e.g. "foreign-tag escape"
-	fn      func() error
+	fn      func() (PrePassCounts, error)
 }
 
 func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
@@ -59,52 +59,55 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			enabled: opts.Features.ForeignTagEscape,
 			name:    "foreign_tag",
 			label:   "foreign-tag escape",
-			fn: func() error {
-				_, err := fastpass.ApplyForeignTagEscape(ctx, domainsByTag)
-				return err
+			fn: func() (PrePassCounts, error) {
+				passResult, err := fastpass.ApplyForeignTagEscapeResult(ctx, domainsByTag)
+				return prePassCountsFromFastPass(passResult), err
 			},
 		},
 		{
 			enabled: dailyTagOn,
 			name:    "auto_tag",
 			label:   "auto-tag",
-			fn: func() error {
-				_, err := fastpass.ApplyDailyDefaultTag(ctx, domainsByTag[opts.DailyDefaultTag])
-				return err
+			fn: func() (PrePassCounts, error) {
+				passResult, err := fastpass.ApplyDailyDefaultTagResult(ctx, domainsByTag[opts.DailyDefaultTag])
+				return prePassCountsFromFastPass(passResult), err
 			},
 		},
 		{
 			enabled: opts.Features.DomainBootstrap,
 			name:    "domain_bootstrap",
 			label:   "domain-bootstrap canonicalize",
-			fn: func() error {
-				_, err := fastpass.ApplyDomainBootstrap(ctx, domainsByTag)
-				return err
+			fn: func() (PrePassCounts, error) {
+				passResult, err := fastpass.ApplyDomainBootstrapResult(ctx, domainsByTag)
+				return prePassCountsFromFastPass(passResult), err
 			},
 		},
 		{
 			enabled: opts.Features.AutoTagDefault,
 			name:    "placeholder_refresh",
 			label:   "placeholder refresh",
-			fn: func() error {
-				_, err := fastpass.ApplyPlaceholderRefresh(ctx, domainsByTag)
-				return err
+			fn: func() (PrePassCounts, error) {
+				passResult, err := fastpass.ApplyPlaceholderRefreshResult(ctx, domainsByTag)
+				return prePassCountsFromFastPass(passResult), err
 			},
 		},
 		{
 			enabled: opts.Features.CrossDomainMoves,
 			name:    "cross_domain",
 			label:   "cross-domain moves",
-			fn: func() error {
-				return fastpass.ApplyCrossDomainMoves(ctx, opts.Domains, opts.Pins)
+			fn: func() (PrePassCounts, error) {
+				return PrePassCounts{OK: 1}, fastpass.ApplyCrossDomainMoves(ctx, opts.Domains, opts.Pins)
 			},
 		},
 		{
 			enabled: opts.Features.TimePromotion,
 			name:    "time_promotion",
 			label:   "time-promotion",
-			fn: func() error {
-				return fastpass.ApplyTimeBasedPromotion(ctx, opts.Domains, opts.Pins, opts.PromotionRules)
+			fn: func() (PrePassCounts, error) {
+				passResult, err := fastpass.ApplyTimeBasedPromotionResult(
+					ctx, opts.Domains, opts.Pins, opts.PromotionRules,
+				)
+				return prePassCountsFromFastPass(passResult), err
 			},
 		},
 	}
@@ -137,10 +140,22 @@ func runPrePass(spec prePassSpec, result *ApplyResult) {
 	if !spec.enabled {
 		return
 	}
-	if err := spec.fn(); err != nil {
+	counts, err := spec.fn()
+	if err != nil {
 		log.Printf("%s failed: %v (continuing per-domain regen)", spec.label, err)
-		result.PrePasses[spec.name] = PrePassCounts{Failed: 1}
+		counts.Failed++
+		result.PrePasses[spec.name] = counts
 		return
 	}
-	result.PrePasses[spec.name] = PrePassCounts{OK: 1}
+	if counts.OK == 0 && counts.Changed == 0 && counts.Failed == 0 {
+		counts.OK = 1
+	}
+	result.PrePasses[spec.name] = counts
+}
+
+func prePassCountsFromFastPass(result fastpass.PassResult) PrePassCounts {
+	return PrePassCounts{
+		Changed: result.Changed,
+		Failed:  result.Failed,
+	}
 }
