@@ -164,6 +164,21 @@ func runPrePass(spec prePassSpec, result *ApplyResult) {
 	result.PrePasses[spec.name] = counts
 }
 
+// RunPrePassForTest exposes pre-pass result classification to external tests.
+func RunPrePassForTest(
+	result *ApplyResult,
+	enabled bool,
+	name, label string,
+	fn func() (PrePassCounts, error),
+) {
+	runPrePass(prePassSpec{
+		enabled: enabled,
+		name:    name,
+		label:   label,
+		fn:      fn,
+	}, result)
+}
+
 func prePassCountsFromFastPass(result fastpass.PassResult) PrePassCounts {
 	return PrePassCounts{
 		Changed: result.Changed,

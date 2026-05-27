@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -53,18 +50,7 @@ func pinPaths() (legacy, target string) {
 // SIGINT → 130. Adding more behavior here would obscure the
 // per-subcommand control flow.
 func runWithSignalContext(cmd *cobra.Command, fn func(ctx context.Context) error) error {
-	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if err := fn(ctx); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return errInterrupted
-		}
-		return err
-	}
-	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return errInterrupted
-	}
-	return nil
+	return cliutil.RunWithSignalContext(cmd.Context(), errInterrupted, fn)
 }
 
 // runLintSweep is the shared body for `noxctl audit` (apply=false)

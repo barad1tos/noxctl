@@ -1,21 +1,18 @@
-package engine
+package engine_test
 
 import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/barad1tos/noxctl/bear/engine"
 )
 
 func TestRunPrePass_ContextCancelDoesNotCountFailure(t *testing.T) {
-	result := &ApplyResult{PrePasses: make(map[string]PrePassCounts)}
-	runPrePass(prePassSpec{
-		enabled: true,
-		name:    "foreign_tag",
-		label:   "foreign-tag escape",
-		fn: func() (PrePassCounts, error) {
-			return PrePassCounts{Changed: 1}, context.Canceled
-		},
-	}, result)
+	result := &engine.ApplyResult{PrePasses: make(map[string]engine.PrePassCounts)}
+	engine.RunPrePassForTest(result, true, "foreign_tag", "foreign-tag escape", func() (engine.PrePassCounts, error) {
+		return engine.PrePassCounts{Changed: 1}, context.Canceled
+	})
 
 	counts := result.PrePasses["foreign_tag"]
 	if counts.Changed != 1 || counts.Failed != 0 {
@@ -27,15 +24,10 @@ func TestRunPrePass_ContextCancelDoesNotCountFailure(t *testing.T) {
 }
 
 func TestRunPrePass_PreservesStructuredFailureCount(t *testing.T) {
-	result := &ApplyResult{PrePasses: make(map[string]PrePassCounts)}
-	runPrePass(prePassSpec{
-		enabled: true,
-		name:    "cross_domain",
-		label:   "cross-domain moves",
-		fn: func() (PrePassCounts, error) {
-			return PrePassCounts{Changed: 1, Failed: 1}, errors.New("pre-pass failed")
-		},
-	}, result)
+	result := &engine.ApplyResult{PrePasses: make(map[string]engine.PrePassCounts)}
+	engine.RunPrePassForTest(result, true, "cross_domain", "cross-domain moves", func() (engine.PrePassCounts, error) {
+		return engine.PrePassCounts{Changed: 1, Failed: 1}, errors.New("pre-pass failed")
+	})
 
 	counts := result.PrePasses["cross_domain"]
 	if counts.Changed != 1 || counts.Failed != 1 {

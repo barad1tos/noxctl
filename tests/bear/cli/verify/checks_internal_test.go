@@ -1,9 +1,10 @@
-package verify
+package verify_test
 
 import (
 	"strings"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/cli/verify"
 	"github.com/barad1tos/noxctl/bear/engine"
 )
 
@@ -17,11 +18,11 @@ func TestClassifySecondApplyPass_FailureWinsOverWrites(t *testing.T) {
 		},
 	}
 
-	check, done := classifySecondApplyPass("apply-idempotency", second)
+	check, done := verify.ClassifySecondApplyPassForTest("apply-idempotency", second)
 	if !done {
 		t.Fatal("done = false, want classification")
 	}
-	if check.Status != StatusError {
+	if check.Status != verify.StatusError {
 		t.Fatalf("status = %v, want StatusError", check.Status)
 	}
 	if strings.Contains(check.Message, "wrote") {
