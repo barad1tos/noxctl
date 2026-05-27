@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/audit"
+	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/render"
 )
 
 // duplicateFixture mirrors the bearcli `list --fields id,title,tags`
@@ -46,21 +48,26 @@ func TestAggregateDuplicateTitlesFromJSON_FlagsEveryDuplicateOwner(t *testing.T)
 	}
 }
 
-func TestAggregateDuplicateTitlesFromJSON_SkipsAlreadyOrphanTaggedOwners(t *testing.T) {
+func TestAggregateDuplicateTitlesFromJSON_SkipsOnlyDuplicateTitleTaggedOwners(t *testing.T) {
 	notes := []duplicateFixture{
 		{ID: "note-a", Title: "Same Title", Tags: []string{"#work/tasks", "#orphans/duplicate-title"}},
-		{ID: "note-b", Title: "Same Title", Tags: []string{"#library/quotes"}},
+		{ID: "note-b", Title: "Same Title", Tags: []string{"#orphans"}},
+		{ID: "note-c", Title: "Same Title", Tags: []string{"#library/quotes"}},
 	}
 	findings, err := audit.AggregateDuplicateTitlesFromJSON(mustMarshalNotes(t, notes))
 	if err != nil {
 		t.Fatalf("AggregateDuplicateTitlesFromJSON: %v", err)
 	}
-	if got, want := len(findings), 1; got != want {
-		t.Fatalf("findings len = %d, want %d (already orphan-tagged note skipped); got %v",
+	if got, want := len(findings), 2; got != want {
+		t.Fatalf("findings len = %d, want %d (only duplicate-title-tagged note skipped); got %v",
 			got, want, findings)
 	}
-	if findings[0].NoteID != "note-b" {
-		t.Fatalf("remaining finding NoteID = %q, want note-b", findings[0].NoteID)
+	gotIDs := []string{findings[0].NoteID, findings[1].NoteID}
+	wantIDs := []string{"note-b", "note-c"}
+	for index, want := range wantIDs {
+		if gotIDs[index] != want {
+			t.Fatalf("remaining finding IDs = %v, want %v", gotIDs, wantIDs)
+		}
 	}
 }
 
@@ -91,7 +98,7 @@ func TestScanDuplicateTitles_WrapsBearcliFailure(t *testing.T) {
 	fake := &orphanFakeBearcli{listErr: errors.New("bearcli boom")}
 	ctx := armOrphanFakeBearcli(t, fake)
 
-	findings, err := audit.ScanDuplicateTitles(ctx)
+	findings, err := audit.ScanDuplicateTitles(ctx, nil)
 
 	if err == nil {
 		t.Fatalf("ScanDuplicateTitles err = nil, want wrapped list error")
@@ -101,6 +108,45 @@ func TestScanDuplicateTitles_WrapsBearcliFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ScanDuplicateTitles list") {
 		t.Fatalf("err = %v, want ScanDuplicateTitles list context", err)
+	}
+}
+
+func TestScanDuplicateTitles_MarksManagedAuxNotesNonFixable(t *testing.T) {
+	fake := &orphanFakeBearcli{listPayload: mustMarshalNotes(t, []duplicateFixture{
+		{
+			ID:    "note-atom",
+			Title: "Same Title",
+			Tags:  []string{"#test/notes"},
+		},
+		{
+			ID:      "note-hub",
+			Title:   "Same Title",
+			Content: "# Same Title\n#test/notes | [[✱ Notes]]\n---\n## Items (1)\n- [[Atom]]\n",
+			Tags:    []string{"#test/notes"},
+		},
+	})}
+	ctx := armOrphanFakeBearcli(t, fake)
+	d := render.NewHubRoutedDomain(
+		"test/notes", "✱ Notes", "Unknown", "Items",
+		func(_ *domain.Domain, _ map[string][]domain.Note) string { return "" },
+	)
+
+	findings, err := audit.ScanDuplicateTitles(ctx, []*domain.Domain{d})
+	if err != nil {
+		t.Fatalf("ScanDuplicateTitles: %v", err)
+	}
+	if got, want := len(findings), 2; got != want {
+		t.Fatalf("findings len = %d, want %d (%v)", got, want, findings)
+	}
+	fixableByID := map[string]bool{}
+	for _, finding := range findings {
+		fixableByID[finding.NoteID] = finding.Fixable
+	}
+	if !fixableByID["note-atom"] {
+		t.Fatalf("atom Fixable = false, want true")
+	}
+	if fixableByID["note-hub"] {
+		t.Fatalf("managed hub Fixable = true, want false so lint --apply does not tag generated notes")
 	}
 }
 

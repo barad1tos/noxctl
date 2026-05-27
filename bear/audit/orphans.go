@@ -66,11 +66,19 @@ const (
 // Returns nil + wrapped error on parse failure so callers can
 // distinguish "input was malformed" from "input had zero findings".
 func AggregateOrphanFamiliesFromJSON(jsonBytes []byte, managed map[string]struct{}) ([]Finding, error) {
-	var notes []domain.AutoTagNote
-	if err := json.Unmarshal(jsonBytes, &notes); err != nil {
-		return nil, fmt.Errorf("AggregateOrphanFamiliesFromJSON parse: %w", err)
+	notes, err := decodeAuditNotesJSON[domain.AutoTagNote](jsonBytes, "AggregateOrphanFamiliesFromJSON")
+	if err != nil {
+		return nil, err
 	}
 	return aggregateOrphanFamilies(notes, managed), nil
+}
+
+func decodeAuditNotesJSON[T any](jsonBytes []byte, label string) ([]T, error) {
+	var notes []T
+	if err := json.Unmarshal(jsonBytes, &notes); err != nil {
+		return nil, fmt.Errorf("%s parse: %w", label, err)
+	}
+	return notes, nil
 }
 
 // aggregateOrphanFamilies is the pure-logic core: walks the supplied

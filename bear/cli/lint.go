@@ -64,10 +64,12 @@ func RunLint(ctx context.Context, stdout io.Writer, domains []*domain.Domain, ap
 	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
 	if apply {
 		audit.LintApplyDomains(ctx, domains)
-		if err := runApplyOrphanPass(ctx, domains); err != nil {
-			return err
+		orphanErr := runApplyOrphanPass(ctx, domains)
+		if errors.Is(orphanErr, context.Canceled) {
+			return orphanErr
 		}
-		return runApplyDuplicatePass(ctx, domains)
+		duplicateErr := runApplyDuplicatePass(ctx, domains)
+		return errors.Join(orphanErr, duplicateErr)
 	}
 	findings := audit.Scan(ctx, domains)
 	findings, orphanErr := appendOrphanFindings(ctx, findings, domains)
@@ -115,14 +117,11 @@ func runApplyOrphanPass(ctx context.Context, domains []*domain.Domain) error {
 }
 
 func runApplyDuplicatePass(ctx context.Context, domains []*domain.Domain) error {
-	if len(domains) == 0 {
-		return nil
-	}
 	if err := domain.CheckCtx(ctx); err != nil {
 		log.Printf("lint --apply: duplicate-title pass skipped: %v", err)
 		return fmt.Errorf("lint --apply duplicate-title pass: %w", err)
 	}
-	duplicateFindings, scanErr := audit.ScanDuplicateTitles(ctx)
+	duplicateFindings, scanErr := audit.ScanDuplicateTitles(ctx, domains)
 	if scanErr != nil {
 		log.Printf("lint --apply: duplicate-title scan failed: %v", scanErr)
 		return fmt.Errorf("lint --apply duplicate-title scan: %w", scanErr)
@@ -161,7 +160,10 @@ func appendOrphanFindings(
 		return findings, nil
 	}
 	if err := domain.CheckCtx(ctx); err != nil {
-		return findings, nil
+		return appendScanFailureFinding(
+			findings, audit.LintOrphanFamily, "(orphan scan failed)",
+			"lint audit orphan scan", err,
+		)
 	}
 	orphanFindings, orphanErr := audit.ScanOrphanFamilies(ctx, domains)
 	if orphanErr != nil {
@@ -181,13 +183,13 @@ func appendDuplicateFindings(
 	findings []audit.Finding,
 	domains []*domain.Domain,
 ) ([]audit.Finding, error) {
-	if len(domains) == 0 {
-		return findings, nil
-	}
 	if err := domain.CheckCtx(ctx); err != nil {
-		return findings, nil
+		return appendScanFailureFinding(
+			findings, audit.LintDuplicateTitle, "(duplicate-title scan failed)",
+			"lint audit duplicate-title scan", err,
+		)
 	}
-	duplicateFindings, scanErr := audit.ScanDuplicateTitles(ctx)
+	duplicateFindings, scanErr := audit.ScanDuplicateTitles(ctx, domains)
 	if scanErr != nil {
 		log.Printf("lint: duplicate-title scan failed: %v", scanErr)
 		return appendScanFailureFinding(

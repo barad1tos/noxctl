@@ -88,6 +88,18 @@ func (f *fakeBearcli) countKind(kind string) int {
 	return n
 }
 
+func (f *fakeBearcli) countTagValue(tag string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, c := range f.calls {
+		if c.Kind == "tags" && len(c.Args) >= 4 && c.Args[3] == tag {
+			n++
+		}
+	}
+	return n
+}
+
 // brokenH1ListPayload returns the JSON shape `bearcli list --tag X`
 // emits for one note with a broken-H1 title — the canonical lint
 // finding the audit pass surfaces. Tagged under the flat-list domain
@@ -200,10 +212,9 @@ func TestRun_ApplyMode_InvokesAutoFix(t *testing.T) {
 
 // TestRun_CanceledContext_Aborts pins the SIGINT-like cancellation
 // contract: a ctx already canceled at entry produces no panic, no
-// hang, and the bearcli backend records zero list calls because the
-// per-domain loop bails on the ctx.Err check before issuing any
-// I/O. Scan's contract is that a canceled context short-
-// circuits each domain's listNotes call.
+// hang, returns a context error, and the bearcli backend records zero
+// list calls because every scan bails on the ctx.Err check before
+// issuing any I/O.
 func TestRun_CanceledContext_Aborts(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(brokenH1ListPayload(t))
@@ -211,11 +222,10 @@ func TestRun_CanceledContext_Aborts(t *testing.T) {
 	cancel() // canceled before Run even starts
 
 	var buf bytes.Buffer
-	// Audit mode swallows scan failures (per-domain Scan returns
-	// what it has, orphan scan appends a synthetic finding). The
-	// canceled context surfaces through the empty list-call count
-	// below, not as a RunLint return value.
-	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false, "audit-mode canceled ctx")
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunLint canceled ctx err = %v, want context.Canceled", err)
+	}
 
 	// Honoring cancellation means the listNotes path saw ctx.Err
 	// and skipped the bearcli round-trip. Without this assertion the
@@ -241,8 +251,8 @@ func TestRun_EmptyDomains_RendersEmptyTally(t *testing.T) {
 	if !strings.Contains(buf.String(), "0 findings across 0 domains") {
 		t.Errorf("empty-domain tally missing; got %q", buf.String())
 	}
-	if got := fake.countKind("list"); got != 0 {
-		t.Errorf("empty domain set should issue 0 list calls; got %d", got)
+	if got := fake.countKind("list"); got != 1 {
+		t.Errorf("empty domain set should issue 1 duplicate-title corpus list call; got %d", got)
 	}
 }
 
@@ -299,6 +309,30 @@ func duplicateTitleListPayload(t *testing.T) []byte {
 	return raw
 }
 
+func duplicateOrphanListPayload(t *testing.T) []byte {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{
+		{
+			"id":      "note-dup-orphan-a",
+			"title":   "Duplicated Orphan",
+			"content": "",
+			"tags":    []string{"#test/notes", "#strayfamily/a"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+		{
+			"id":      "note-dup-orphan-b",
+			"title":   "Duplicated Orphan",
+			"content": "",
+			"tags":    []string{"#test/notes", "#strayfamily/b"},
+			"created": "2026-05-23T12:00:00Z",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal duplicate-orphan payload: %v", err)
+	}
+	return raw
+}
+
 // TestRun_AuditMode_OrphanFamilyAppearsInOutput verifies the read-only
 // composition: the corpus orphan scan runs alongside the per-domain
 // audit scan, the stray-family finding lands in the printed report,
@@ -350,6 +384,23 @@ func TestRun_AuditMode_DuplicateTitleAppearsInOutput(t *testing.T) {
 	}
 	if got := fake.countKind("tags"); got != 0 {
 		t.Errorf("audit mode issued %d tags calls; want 0", got)
+	}
+}
+
+func TestRun_AuditMode_EmptyDomains_DuplicateTitleAppearsInOutput(t *testing.T) {
+	armBearcliPool(t)
+	fake := newFakeBearcli(duplicateTitleListPayload(t))
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	runLintExpectOK(t, ctx, &buf, nil, false, "audit-mode empty-domain duplicate-title finding")
+
+	out := buf.String()
+	if !strings.Contains(out, "duplicate-title:") {
+		t.Errorf("empty-domain audit output missing duplicate-title category; got %q", out)
+	}
+	if got := fake.countKind("list"); got != 1 {
+		t.Errorf("empty-domain duplicate-title audit list calls = %d, want 1", got)
 	}
 }
 
@@ -445,6 +496,26 @@ func TestRun_ApplyMode_DuplicateTitleTagEmitted(t *testing.T) {
 	}
 }
 
+func TestRun_ApplyMode_OrphanPartialFailure_StillTagsDuplicateTitles(t *testing.T) {
+	armBearcliPool(t)
+	fake := &partialTagAddFailFakeBearcli{
+		fakeBearcli: newFakeBearcli(duplicateOrphanListPayload(t)),
+	}
+	ctx := domain.ContextWithBackend(t.Context(), fake)
+
+	var buf bytes.Buffer
+	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
+	assertWrappedErr(t, "partial orphan failure still runs duplicate pass", err,
+		cli.ErrLintFailed, "orphan tag-add failed for 1")
+
+	if got := fake.countKind("tags"); got != 4 {
+		t.Fatalf("tags-call count = %d, want 4 (2 orphan attempts + 2 duplicate-title attempts)", got)
+	}
+	if got := fake.countTagValue("orphans/duplicate-title"); got != 2 {
+		t.Fatalf("duplicate-title tag calls = %d, want 2", got)
+	}
+}
+
 // TestRun_ApplyMode_PoolInitializedFromCold pins the production path
 // (RunLint) MUST arm the bearcli concurrency pool itself — earlier
 // tests pre-armed via armBearcliPool, so dropping the SetConcurrency
@@ -470,21 +541,20 @@ func TestRun_ApplyMode_PoolInitializedFromCold(t *testing.T) {
 	}
 }
 
-// TestRun_ApplyMode_EmptyDomains_NoBearcliCalls pins the short-circuit
-// guard in runApplyOrphanPass: an empty domain catalog must skip the
-// corpus orphan scan entirely. Without the guard, RunLint would issue
-// a `list --location notes` round-trip just to discover there is
-// nothing to tag.
-func TestRun_ApplyMode_EmptyDomains_NoBearcliCalls(t *testing.T) {
+// TestRun_ApplyMode_EmptyDomains_TagsDuplicateTitles pins the empty-
+// catalog split: orphan-family scanning still needs managed domains,
+// but duplicate-title scanning is corpus-level and can triage notes
+// even before any domain is configured.
+func TestRun_ApplyMode_EmptyDomains_TagsDuplicateTitles(t *testing.T) {
 	armBearcliPool(t)
-	fake := newFakeBearcli([]byte(`[]`))
+	fake := newFakeBearcli(duplicateTitleListPayload(t))
 	ctx := domain.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, nil, true, "apply-mode empty domains")
 
-	if got := fake.count.Load(); got != 0 {
-		t.Errorf("apply mode with no domains issued %d bearcli calls; want 0", got)
+	if got := fake.countKind("tags"); got != 2 {
+		t.Errorf("apply mode with no domains tags-call count = %d, want 2 duplicate-title tags", got)
 	}
 }
 

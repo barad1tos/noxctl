@@ -7,12 +7,10 @@ package audit
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 
-	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -22,36 +20,30 @@ const duplicateTitleTag = "orphans/duplicate-title"
 // aggregateDuplicateTitles. It accepts the `bearcli list --location notes`
 // JSON shape with id, title, and tags.
 func AggregateDuplicateTitlesFromJSON(jsonBytes []byte) ([]Finding, error) {
-	var notes []domain.AutoTagNote
-	if err := json.Unmarshal(jsonBytes, &notes); err != nil {
-		return nil, fmt.Errorf("AggregateDuplicateTitlesFromJSON parse: %w", err)
+	notes, err := decodeAuditNotesJSON[domain.Note](jsonBytes, "AggregateDuplicateTitlesFromJSON")
+	if err != nil {
+		return nil, err
 	}
-	return aggregateDuplicateTitles(notes), nil
+	return aggregateDuplicateTitles(notes, nil), nil
 }
 
 // ScanDuplicateTitles walks the full Bear notes corpus and returns one finding
 // for each untriaged note whose title is shared by at least one other note.
-func ScanDuplicateTitles(ctx context.Context) ([]Finding, error) {
-	out, err := bearcli.Run(ctx,
-		[]string{
-			"list", "--location", "notes",
-			bearcli.FlagFormat, bearcli.FormatJSON,
-			bearcli.FlagFields, "id,title,tags",
-		},
-		"")
+func ScanDuplicateTitles(ctx context.Context, domains []*domain.Domain) ([]Finding, error) {
+	notes, err := domain.ListCorpusNotes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("ScanDuplicateTitles list: %w", err)
 	}
-	return AggregateDuplicateTitlesFromJSON(out)
+	return aggregateDuplicateTitles(notes, domains), nil
 }
 
-func aggregateDuplicateTitles(notes []domain.AutoTagNote) []Finding {
+func aggregateDuplicateTitles(notes []domain.Note, domains []*domain.Domain) []Finding {
 	groups := duplicateTitleGroups(notes)
 	var findings []Finding
 	for _, group := range groups {
 		detail := formatDuplicateTitleDetail(group)
 		for _, note := range group {
-			if hasOrphansTag(note.Tags) {
+			if hasDuplicateTitleTag(note.Tags) {
 				continue
 			}
 			findings = append(findings, Finding{
@@ -59,7 +51,7 @@ func aggregateDuplicateTitles(notes []domain.AutoTagNote) []Finding {
 				Title:    note.Title,
 				Category: LintDuplicateTitle,
 				Detail:   detail,
-				Fixable:  true,
+				Fixable:  !isManagedAuxNote(note, domains),
 			})
 		}
 	}
@@ -67,8 +59,8 @@ func aggregateDuplicateTitles(notes []domain.AutoTagNote) []Finding {
 	return findings
 }
 
-func duplicateTitleGroups(notes []domain.AutoTagNote) [][]domain.AutoTagNote {
-	byTitle := make(map[string][]domain.AutoTagNote)
+func duplicateTitleGroups(notes []domain.Note) [][]domain.Note {
+	byTitle := make(map[string][]domain.Note)
 	for _, note := range notes {
 		title := strings.TrimSpace(note.Title)
 		if title == "" {
@@ -76,20 +68,56 @@ func duplicateTitleGroups(notes []domain.AutoTagNote) [][]domain.AutoTagNote {
 		}
 		byTitle[title] = append(byTitle[title], note)
 	}
-	groups := make([][]domain.AutoTagNote, 0)
+	groups := make([][]domain.Note, 0)
 	for _, group := range byTitle {
 		if len(group) > 1 {
+			slices.SortFunc(group, compareDuplicateNotes)
 			groups = append(groups, group)
 		}
 	}
+	slices.SortFunc(groups, func(a, b []domain.Note) int {
+		return strings.Compare(a[0].Title, b[0].Title)
+	})
 	return groups
 }
 
-func hasOrphansTag(tags []string) bool {
-	return slices.ContainsFunc(tags, isOrphansTag)
+func compareDuplicateNotes(a, b domain.Note) int {
+	if a.Title != b.Title {
+		return strings.Compare(a.Title, b.Title)
+	}
+	return strings.Compare(a.ID, b.ID)
 }
 
-func formatDuplicateTitleDetail(group []domain.AutoTagNote) string {
+func hasDuplicateTitleTag(tags []string) bool {
+	return slices.ContainsFunc(tags, func(tag string) bool {
+		normalized := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(tag)), "#")
+		return normalized == duplicateTitleTag
+	})
+}
+
+func isManagedAuxNote(note domain.Note, domains []*domain.Domain) bool {
+	for _, d := range domains {
+		if d == nil || !hasDomainTag(note.Tags, d.Tag) {
+			continue
+		}
+		if domain.IsAuxNote(d, note) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasDomainTag(tags []string, domainTag string) bool {
+	for _, tag := range tags {
+		normalized := strings.TrimPrefix(strings.TrimSpace(tag), "#")
+		if normalized == domainTag {
+			return true
+		}
+	}
+	return false
+}
+
+func formatDuplicateTitleDetail(group []domain.Note) string {
 	parts := make([]string, 0, len(group))
 	for _, note := range group {
 		parts = append(parts, fmt.Sprintf("%s tags=%s", note.ID, formatTags(note.Tags)))
