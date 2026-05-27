@@ -95,24 +95,69 @@ type autoTagPass struct {
 // fast-pass failure is not a user-visible event, the operator sees
 // it in the daemon log. Use `noxctl verify --check daemon-log` to
 // gate on the post-startup error rate.
-func (d *Daemon) handleAutoTagTick(ctx context.Context) {
+func (d *Daemon) handleAutoTagSelectTick(
+	ctx context.Context,
+	quietTimer, maxTimer *time.Timer,
+	burstActive *bool,
+	lastMtime *time.Time,
+) bool {
+	handled, closed := d.handleQueuedWatcherEvent(quietTimer, maxTimer, burstActive)
+	if closed {
+		return true
+	}
+	if handled {
+		return false
+	}
+	d.handleAutoTagLoopTick(ctx, *burstActive, lastMtime)
+	return false
+}
+
+func (d *Daemon) handleQueuedWatcherEvent(quietTimer, maxTimer *time.Timer, burstActive *bool) (bool, bool) {
+	select {
+	case event, ok := <-d.watcher.Events():
+		if !ok {
+			return false, true
+		}
+		d.handleEvent(event, quietTimer, maxTimer, burstActive)
+		return true, false
+	default:
+		return false, false
+	}
+}
+
+func (d *Daemon) handleAutoTagLoopTick(ctx context.Context, burstActive bool, lastMtime *time.Time) {
+	if burstActive {
+		return
+	}
+	wrote, ran := d.handleAutoTagTick(ctx)
+	if !ran {
+		return
+	}
+	d.drainQueuedWatcherEvents()
+	d.updatePollBaseline(lastMtime)
+	if wrote == 0 {
+		return
+	}
+	d.cycleOnce(ctx, "auto-tag fast-pass wrote changes")
+	d.updatePollBaseline(lastMtime)
+}
+
+func (d *Daemon) handleAutoTagTick(ctx context.Context) (int, bool) {
 	d.regenMu.Lock()
 	if d.regenInProgress {
 		d.regenMu.Unlock()
-		return
+		return 0, false
 	}
 	d.regenInProgress = true
 	d.regenMu.Unlock()
 
-	// self-write gate fix: we set regenInProgress in-line above
-	// (matches markRegenStart's semantics) but DO NOT call markRegenEnd
-	// at exit — that would bump regenEndTime every 2s, keeping
-	// effectiveSelfWriteEpsilon's 7s window perpetually open and
-	// starving the FSEvent path of any user-driven cycle. Instead, we
-	// clear regenInProgress unconditionally on exit and bump
-	// regenEndTime ONLY when we actually wrote something through
-	// bearcli. A no-write tick produces no FSEvent and thus needs no
-	// gate window.
+	// We set regenInProgress in-line above (matching markRegenStart's
+	// semantics) so watcher events delivered during the fast-pass are
+	// classified as daemon-originated. The Run loop drains queued watcher
+	// events and refreshes the poll baseline after this method returns;
+	// that keeps read-only bearcli side effects from starting a full regen.
+	// Only actual writes extend the post-write gate and request a follow-up
+	// full apply.
 	// canonical-bootstrap wiring: build the tag→*Domain lookup
 	// once per tick so both pre-pass paths can write destination-canonical
 	// form in a single bearcli call.
@@ -163,6 +208,20 @@ func (d *Daemon) handleAutoTagTick(ctx context.Context) {
 		d.regenEndTime = time.Now()
 	}
 	d.regenMu.Unlock()
+	return wrote, true
+}
+
+func (d *Daemon) drainQueuedWatcherEvents() {
+	for {
+		select {
+		case _, ok := <-d.watcher.Events():
+			if !ok {
+				return
+			}
+		default:
+			return
+		}
+	}
 }
 
 // updatePollBaseline re-stats database.sqlite immediately after cycleOnce
@@ -267,7 +326,15 @@ func (d *Daemon) isSelfTriggered() bool {
 	if d.regenInProgress {
 		return true
 	}
-	return time.Now().Before(d.regenEndTime.Add(d.effectiveSelfWriteEpsilon()))
+	now := time.Now()
+	if !now.Before(d.regenEndTime.Add(d.effectiveSelfWriteEpsilon())) {
+		return false
+	}
+	// A gated DB event proves Bear is still flushing work caused by this
+	// daemon. Slide the watermark forward so later delivery of the same
+	// delayed SQLite activity does not escape the original gate window.
+	d.regenEndTime = now
+	return true
 }
 
 // effectiveSelfWriteEpsilon widens the self-write gate when polling is

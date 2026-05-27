@@ -29,12 +29,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
@@ -50,6 +53,7 @@ import (
 // the BearcliPool semaphore itself is exercised by TestApplyParallel_*).
 type fakeAutoTagBackend struct {
 	listPayload []byte // canned response for "list"
+	onRun       func([]string)
 
 	mu    sync.Mutex
 	calls []fakeAutoTagCall
@@ -75,7 +79,11 @@ func (f *fakeAutoTagBackend) Run(_ context.Context, args []string, stdin string)
 	}
 	f.mu.Lock()
 	f.calls = append(f.calls, fakeAutoTagCall{Kind: kind, Args: append([]string(nil), args...), Body: stdin})
+	onRun := f.onRun
 	f.mu.Unlock()
+	if onRun != nil {
+		onRun(append([]string(nil), args...))
+	}
 	switch kind {
 	case "list":
 		return f.listPayload, nil
@@ -226,12 +234,80 @@ func TestDaemonAutoTagPoll_TickFires(t *testing.T) {
 			t.Errorf("overwrite count = %d, want >= 1 (one note stamped #quicknote/daily per tick)\nlog:\n%s",
 				got, buf.String())
 		}
-		if cycles := countCycles(buf); cycles != 0 {
-			t.Errorf("cycle count = %d, want 0 (fast-pass MUST NOT invoke cycleOnce)\nlog:\n%s",
+		if cycles := countCycles(buf); cycles < 1 {
+			t.Errorf("cycle count = %d, want >= 1 (fast-pass writes must request a full apply)\nlog:\n%s",
 				cycles, buf.String())
 		}
 		if listN := fake.CountKind("list"); listN < 1 {
 			t.Errorf("list call count = %d, want >= 1 (fast-pass must list notes each tick)", listN)
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_DrainsReadOnlyDBEvents(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend([]byte("[]"))
+		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
+		fw := newFakeWatcher()
+		dbPath := filepath.Join(opts.BearDBDir, "database.sqlite")
+		var injected atomic.Bool
+		fake.onRun = func(args []string) {
+			if len(args) == 0 || args[0] != "list" || !injected.CompareAndSwap(false, true) {
+				return
+			}
+			fw.events <- fsnotify.Event{Op: fsnotify.Write, Name: dbPath}
+		}
+
+		resetPoolForApply(t)
+		d := engine.NewDaemonWithWatcher(opts, fw)
+		t.Cleanup(func() { _ = d.Close() })
+		buf := captureLog(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		ctx = domain.ContextWithBackend(ctx, fake)
+		t.Cleanup(cancel)
+		errCh := make(chan error, 1)
+		go func() { errCh <- d.Run(ctx) }()
+
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+		<-errCh
+
+		if listN := fake.CountKind("list"); listN < 1 {
+			t.Fatalf("list call count = %d, want >= 1", listN)
+		}
+		if cycles := countCycles(buf); cycles != 0 {
+			t.Errorf("cycle count = %d, want 0 (read-only auto-tag DB noise must be drained)\nlog:\n%s",
+				cycles, buf.String())
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_SkipsWhileBurstActive(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend([]byte("[]"))
+		opts := autoTagOptsFor(t, 50*time.Millisecond, engine.AllFeaturesOn())
+		opts.DebouncePause = 200 * time.Millisecond
+		fw := newFakeWatcher()
+		d := engine.NewDaemonWithWatcher(opts, fw)
+		t.Cleanup(func() { _ = d.Close() })
+		buf := captureLog(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		ctx = domain.ContextWithBackend(ctx, fake)
+		t.Cleanup(cancel)
+		errCh := make(chan error, 1)
+		go func() { errCh <- d.Run(ctx) }()
+
+		fw.events <- fsnotify.Event{
+			Op:   fsnotify.Write,
+			Name: filepath.Join(opts.BearDBDir, "database.sqlite"),
+		}
+		time.Sleep(150 * time.Millisecond)
+		cancel()
+		<-errCh
+
+		if got := fake.TotalCalls(); got != 0 {
+			t.Errorf("backend calls while burstActive=true = %d, want 0 (full apply is already pending)\nlog:\n%s",
+				got, buf.String())
 		}
 	})
 }
@@ -415,10 +491,9 @@ func TestDaemonAutoTagPoll_FourPassesInOrder(t *testing.T) {
 		run.WaitFor(300 * time.Millisecond) // one virtual tick at 200ms
 		buf := run.Buf
 
-		if got := fake.CountKind("list"); got != 4 {
-			t.Errorf("list call count = %d, want 4 "+
-				"(foreign-tag + daily-default + domain-bootstrap + placeholder-refresh, "+
-				"one each per tick)\nlog:\n%s", got, buf.String())
+		if got := fake.CountKind("list"); got < 4 {
+			t.Errorf("list call count = %d, want >= 4 "+
+				"(foreign-tag + daily-default + domain-bootstrap + placeholder-refresh)\nlog:\n%s", got, buf.String())
 		}
 		if got := fake.CountKind("overwrite"); got < 1 {
 			t.Errorf("overwrite count = %d, want >= 1 (domain-bootstrap must canonicalize the aphorism note)\nlog:\n%s",
@@ -453,8 +528,8 @@ func TestDaemonAutoTagPoll_DailyDefaultTagEmptyGate(t *testing.T) {
 		run.WaitFor(300 * time.Millisecond) // one virtual tick at 200ms
 		buf := run.Buf
 
-		if got := fake.CountKind("list"); got != 3 {
-			t.Errorf("list call count = %d, want 3 (DailyDefaultTag=\"\" → daily-default skipped; "+
+		if got := fake.CountKind("list"); got < 3 {
+			t.Errorf("list call count = %d, want >= 3 (DailyDefaultTag=\"\" → daily-default skipped; "+
 				"foreign-tag + domain-bootstrap + placeholder-refresh must still run)\nlog:\n%s",
 				got, buf.String())
 		}

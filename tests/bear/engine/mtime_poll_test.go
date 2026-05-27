@@ -221,11 +221,14 @@ func TestDaemonPoll_SelfWriteGate(t *testing.T) {
 		stat := &fakeStat{mtimes: []time.Time{
 			base,                             // tick 1 (T=1s)
 			base.Add(10 * time.Millisecond),  // updatePollBaseline after cycle 1
-			base.Add(500 * time.Millisecond), // tick 2 (T=2s) — gated
-			base.Add(1 * time.Second),        // tick 3 (T=3s) — gated
-			base.Add(10 * time.Second),       // tick 4 (T=4s) — gated
+			base.Add(500 * time.Millisecond), // tick 2 (T=2s) — gated, slides
+			base.Add(1 * time.Second),        // tick 3 (T=3s) — gated, slides
+			base.Add(10 * time.Second),       // tick 4 (T=4s) — gated, slides
 			base.Add(10 * time.Second),       // tick 5 (T=5s) — no advance
-			base.Add(20 * time.Second),       // tick 6 (T=6s) — past gate, fires
+			base.Add(10 * time.Second),       // tick 6 (T=6s) — no advance
+			base.Add(10 * time.Second),       // tick 7 (T=7s) — no advance
+			base.Add(10 * time.Second),       // tick 8 (T=8s) — no advance
+			base.Add(20 * time.Second),       // tick 9 (T=9s) — past slid gate, fires
 		}}
 		opts := pollOptsFor(t, stat, 1*time.Second, 50*time.Millisecond)
 		opts.SelfWriteEpsilon = 100 * time.Millisecond
@@ -239,15 +242,14 @@ func TestDaemonPoll_SelfWriteGate(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() { errCh <- d.Run(ctx) }()
 
-		// 7s covers all 6 poll ticks plus cycle 2's debounce settle.
-		time.Sleep(7 * time.Second)
+		// 10s covers all 9 poll ticks plus cycle 2's debounce settle.
+		time.Sleep(10 * time.Second)
 		cancel()
 		<-errCh
 
 		if got := countCycles(buf); got != 2 {
-			t.Errorf("cycle count = %d, want 2 (cycle 1 from tick 1;"+
-				" ticks 2-5 within effective gate window must suppress;"+
-				" tick 6 past gate must fire cycle 2)\nlog:\n%s", got, buf.String())
+			t.Errorf("cycle count = %d, want 2 (suppressed ticks slide the gate;"+
+				" a new mtime after the quiet gap must still fire cycle 2)\nlog:\n%s", got, buf.String())
 		}
 	})
 }
@@ -301,6 +303,46 @@ func TestDaemonPoll_DebounceReset(t *testing.T) {
 
 		if got := countCycles(buf); got != 1 {
 			t.Errorf("cycle count = %d, want 1 (FSEvent + 2 poll ticks should all reset the SAME quietTimer)\nlog:\n%s",
+				got, buf.String())
+		}
+	})
+}
+
+// TestDaemonPoll_SelfWriteGateSlidesOnSuppressedEvents asserts:
+// if a poll-detected daemon-originated mtime advance lands inside the
+// effective self-write gate, a later FSEvent for the same delayed SQLite
+// activity is still suppressed even after the original post-cycle window.
+func TestDaemonPoll_SelfWriteGateSlidesOnSuppressedEvents(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		base := time.Now()
+		stat := &fakeStat{mtimes: []time.Time{
+			base,
+			base.Add(1 * time.Second),
+		}}
+		opts := pollOptsFor(t, stat, 1*time.Second, 50*time.Millisecond)
+		opts.SelfWriteEpsilon = 100 * time.Millisecond
+		fw := newFakeWatcher()
+		d := engine.NewDaemonWithWatcher(opts, fw)
+		t.Cleanup(func() { _ = d.Close() })
+
+		buf := captureLog(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		t.Cleanup(cancel)
+		errCh := make(chan error, 1)
+		go func() { errCh <- d.Run(ctx) }()
+
+		dbPath := filepath.Join(opts.BearDBDir, "database.sqlite")
+		fw.events <- fsnotify.Event{Op: fsnotify.Write, Name: dbPath}
+
+		time.Sleep(4500 * time.Millisecond)
+		fw.events <- fsnotify.Event{Op: fsnotify.Write, Name: dbPath}
+
+		time.Sleep(1 * time.Second)
+		cancel()
+		<-errCh
+
+		if got := countCycles(buf); got != 1 {
+			t.Errorf("cycle count = %d, want 1 (suppressed delayed write must extend self-write gate)\nlog:\n%s",
 				got, buf.String())
 		}
 	})

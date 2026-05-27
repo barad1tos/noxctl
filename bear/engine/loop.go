@@ -95,13 +95,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 			// no fast-path for poll.
 			d.handlePollTick(quietTimer, maxTimer, &burstActive, &lastMtime)
 		case <-autoTagTick:
-			// Run ONLY the four fast-passes (foreign-tag escape, daily-
-			// default, domain-bootstrap, placeholder-refresh — in that
-			// order) — NEVER the full per-domain regen cycle. Skips
-			// silently if a regen is already in progress. Self-write
-			// gate is honored because handleAutoTagTick wraps the work
-			// in markRegenStart/markRegenEnd.
-			d.handleAutoTagTick(ctx)
+			if d.handleAutoTagSelectTick(ctx, quietTimer, maxTimer, &burstActive, &lastMtime) {
+				return nil
+			}
 		case err, ok := <-d.watcher.Errors():
 			if !ok {
 				return nil
