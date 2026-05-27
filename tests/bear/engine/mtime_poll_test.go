@@ -12,6 +12,7 @@ package engine_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io/fs"
 	"log"
 	"os"
@@ -31,7 +32,7 @@ import (
 
 func TestSQLiteNoteChangeToken_ReadOnlyAndSemantic(t *testing.T) {
 	if _, err := exec.LookPath("sqlite3"); err != nil {
-		t.Skipf("sqlite3 not installed: %v", err)
+		t.Fatalf("sqlite3 not installed: %v", err)
 	}
 	dbPath := filepath.Join(t.TempDir(), "database.sqlite")
 	runSQLiteForTokenTest(t, dbPath, `
@@ -54,6 +55,7 @@ create table ZSFNOTETAG (
 create table Z_5TAGS (Z_5NOTES integer, Z_13TAGS integer);
 insert into ZSFNOTE values (1, 1, 1, 10.0, 0, 0, 0);
 insert into ZSFNOTETAG values (1, 1, 10.0, 'quicknote', 'quicknote');
+insert into ZSFNOTETAG values (2, 1, 10.0, 'ideas', 'ideas');
 insert into Z_5TAGS values (1, 1);
 `)
 
@@ -85,6 +87,32 @@ insert into Z_5TAGS values (1, 1);
 	}
 	if token1 == token2 {
 		t.Fatalf("token did not change after semantic note update: %q", token1)
+	}
+
+	runSQLiteForTokenTest(t, dbPath, `update ZSFNOTETAG set ZMODIFICATIONDATE = 30.0, ZTITLE = 'daily' where Z_PK = 2;`)
+	tagInfo, err := os.Stat(dbPath)
+	if err != nil {
+		t.Fatalf("stat after tag update: %v", err)
+	}
+	token3, err := engine.SQLiteNoteChangeToken(dbPath, tagInfo)
+	if err != nil {
+		t.Fatalf("SQLiteNoteChangeToken after tag update: %v", err)
+	}
+	if token2 == token3 {
+		t.Fatalf("token did not change after semantic tag update: %q", token2)
+	}
+
+	runSQLiteForTokenTest(t, dbPath, `insert into Z_5TAGS values (1, 2);`)
+	linkInfo, err := os.Stat(dbPath)
+	if err != nil {
+		t.Fatalf("stat after link update: %v", err)
+	}
+	token4, err := engine.SQLiteNoteChangeToken(dbPath, linkInfo)
+	if err != nil {
+		t.Fatalf("SQLiteNoteChangeToken after link update: %v", err)
+	}
+	if token3 == token4 {
+		t.Fatalf("token did not change after semantic note-tag link update: %q", token3)
 	}
 }
 
@@ -276,12 +304,12 @@ func TestDaemonPoll_ZeroDisables(t *testing.T) {
 // handleEvent → quietTimer.Reset(50ms).
 // - T=+1050ms (cycle 1 fires): updateDatabaseBaseline stat call 2 →
 // base+10ms, baseline mtime=base+10ms. Gate closes at roughly +5100ms.
-// - Tick 2 (T=2s, stat call 3 → base+500ms): advances baseline mtime, then
-// handleEvent → isSelfTriggered ⇒ true ⇒ suppressed, NO cycle.
-// - Ticks 3-5 (T=3-5s, stat calls 4-6 → base+10s): no advance.
-// - Tick 6 (T=6s, stat call 7 → base+20s): advanced vs baseline mtime,
-// T=6s > gate close ⇒ NOT suppressed ⇒ quietTimer.Reset(50ms) →
-// cycle 2 at ~T=6050ms.
+// - Tick 2 (T=2s, stat call 3 → base+500ms): records a pending candidate,
+// then handleEvent → isSelfTriggered ⇒ true ⇒ suppressed, NO cycle.
+// - Ticks 3-5 (T=3-5s): retry the same pending candidate while the gate
+// stays closed, with no extra StatFn reads.
+// - Tick 6 (T=6s): replays the pending candidate after the original gate
+// closes ⇒ quietTimer.Reset(50ms) → cycle 2 at ~T=6050ms.
 //
 // Final countCycles == 2.
 func TestDaemonPoll_SelfWriteGate(t *testing.T) {
@@ -291,10 +319,7 @@ func TestDaemonPoll_SelfWriteGate(t *testing.T) {
 			base,                             // tick 1 (T=1s)
 			base.Add(10 * time.Millisecond),  // updateDatabaseBaseline after cycle 1
 			base.Add(500 * time.Millisecond), // tick 2 (T=2s) — gated
-			base.Add(10 * time.Second),       // tick 3 (T=3s) — no advance
-			base.Add(10 * time.Second),       // tick 4 (T=4s) — no advance
-			base.Add(10 * time.Second),       // tick 5 (T=5s) — no advance
-			base.Add(20 * time.Second),       // tick 6 (T=6s) — past gate, fires
+			base.Add(10 * time.Second),       // updateDatabaseBaseline after cycle 2
 		}}
 		opts := pollOptsFor(t, stat, 1*time.Second, 50*time.Millisecond)
 		opts.SelfWriteEpsilon = 100 * time.Millisecond
@@ -396,6 +421,86 @@ func TestDaemonPoll_TokenChangeAfterGateTriggersCycle(t *testing.T) {
 
 		if got := countCycles(buf); got != 2 {
 			t.Errorf("cycle count = %d, want 2 (token change after gate must trigger cycle 2)\nlog:\n%s",
+				got, buf.String())
+		}
+	})
+}
+
+func TestDaemonPoll_TokenReadFailureRetriesSameMtime(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		base := time.Now()
+		stat := &fakeStat{mtimes: []time.Time{
+			base,                            // tick 1: startup catch-up
+			base.Add(10 * time.Millisecond), // baseline after cycle 1
+			base.Add(20 * time.Second),      // tick 2: token read fails
+		}}
+		opts := pollOptsFor(t, stat, 1*time.Second, 50*time.Millisecond)
+		opts.SelfWriteEpsilon = 100 * time.Millisecond
+		var tokenCalls atomic.Int64
+		opts.DatabaseChangeTokenFn = func(string, os.FileInfo) (string, error) {
+			switch tokenCalls.Add(1) {
+			case 1, 2:
+				return "v1", nil
+			case 3:
+				return "", errors.New("sqlite busy")
+			default:
+				return "v2", nil
+			}
+		}
+		fw := newFakeWatcher()
+		d := engine.NewDaemonWithWatcher(opts, fw)
+		t.Cleanup(func() { _ = d.Close() })
+
+		buf := captureLog(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		t.Cleanup(cancel)
+		errCh := make(chan error, 1)
+		go func() { errCh <- d.Run(ctx) }()
+
+		time.Sleep(7 * time.Second)
+		cancel()
+		<-errCh
+
+		if got := countCycles(buf); got != 2 {
+			t.Errorf("cycle count = %d, want 2 (failed token read must not consume the mtime advance)\nlog:\n%s",
+				got, buf.String())
+		}
+	})
+}
+
+func TestDaemonPoll_GatedTokenChangeRetriesAfterGate(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		base := time.Now()
+		stat := &fakeStat{mtimes: []time.Time{
+			base,                            // tick 1: startup catch-up
+			base.Add(10 * time.Millisecond), // baseline after cycle 1
+			base.Add(20 * time.Second),      // tick 2: real token change while self-write gate is open
+		}}
+		opts := pollOptsFor(t, stat, 1*time.Second, 50*time.Millisecond)
+		opts.SelfWriteEpsilon = 100 * time.Millisecond
+		var tokenCalls atomic.Int64
+		opts.DatabaseChangeTokenFn = func(string, os.FileInfo) (string, error) {
+			if tokenCalls.Add(1) <= 2 {
+				return "v1", nil
+			}
+			return "v2", nil
+		}
+		fw := newFakeWatcher()
+		d := engine.NewDaemonWithWatcher(opts, fw)
+		t.Cleanup(func() { _ = d.Close() })
+
+		buf := captureLog(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		t.Cleanup(cancel)
+		errCh := make(chan error, 1)
+		go func() { errCh <- d.Run(ctx) }()
+
+		time.Sleep(7 * time.Second)
+		cancel()
+		<-errCh
+
+		if got := countCycles(buf); got != 2 {
+			t.Errorf("cycle count = %d, want 2 (gated token change must stay pending until the gate closes)\nlog:\n%s",
 				got, buf.String())
 		}
 	})

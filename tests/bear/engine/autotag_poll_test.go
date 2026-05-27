@@ -29,6 +29,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,6 +56,7 @@ import (
 type fakeAutoTagBackend struct {
 	listPayload []byte // canned response for "list"
 	onRun       func([]string)
+	failList    atomic.Int64
 
 	mu    sync.Mutex
 	calls []fakeAutoTagCall
@@ -87,6 +89,9 @@ func (f *fakeAutoTagBackend) Run(_ context.Context, args []string, stdin string)
 	}
 	switch kind {
 	case "list":
+		if f.failList.Load() > 0 && f.failList.Add(-1) >= 0 {
+			return nil, errors.New("list failed")
+		}
 		f.mu.Lock()
 		payload := append([]byte(nil), f.listPayload...)
 		f.mu.Unlock()
@@ -108,6 +113,10 @@ func (f *fakeAutoTagBackend) SetListPayload(notes []byte) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.listPayload = append([]byte(nil), notes...)
+}
+
+func (f *fakeAutoTagBackend) FailNextList() {
+	f.failList.Add(1)
 }
 
 func (f *fakeAutoTagBackend) TotalCalls() int64 {
@@ -221,9 +230,9 @@ func (r *daemonRun) WaitFor(dur time.Duration) {
 
 // TestDaemonAutoTagPoll_TickFires asserts: a fast-pass tick invokes
 // ApplyForeignTagEscape + ApplyDailyDefaultTag via the BearcliBackend
-// seam — but NEVER invokes cycleOnce. With one untagged note injected
-// via the fake list payload, the daily-default pass stamps it (one
-// "overwrite" call), and no "regen trigger:" log line is emitted.
+// seam. With one untagged note injected via the fake list payload, the
+// daily-default pass stamps it (one "overwrite" call), then the daemon
+// runs one follow-up apply.
 func TestDaemonAutoTagPoll_TickFires(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fake := newFakeAutoTagBackend(untaggedListPayload(t))
@@ -285,6 +294,25 @@ func TestDaemonAutoTagPoll_MtimeNoiseWithoutTokenChangeSkipsBearcli(t *testing.T
 
 		if got := fake.TotalCalls(); got != 0 {
 			t.Errorf("backend calls while only DB mtime changes = %d, want 0\nlog:\n%s", got, run.Buf.String())
+		}
+	})
+}
+
+func TestDaemonAutoTagPoll_FastPassFailureRetriesSameToken(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fake := newFakeAutoTagBackend([]byte("[]"))
+		fake.FailNextList()
+		opts := autoTagOptsFor(t, 100*time.Millisecond, engine.AllFeaturesOn())
+		run := startDaemonRun(t, fake, opts, nil)
+		run.WaitFor(250 * time.Millisecond)
+
+		if got := fake.CountKind("list"); got < 8 {
+			t.Errorf("list call count = %d, want >= 8 (failed fast-pass tick must retry the pending DB token)\nlog:\n%s",
+				got, run.Buf.String())
+		}
+		if cycles := countCycles(run.Buf); cycles != 0 {
+			t.Errorf("cycle count = %d, want 0 (no-write retry should not trigger follow-up apply)\nlog:\n%s",
+				cycles, run.Buf.String())
 		}
 	})
 }
@@ -524,11 +552,8 @@ func fourPassDaemonOpts(t *testing.T, features engine.Features) engine.DaemonOpt
 // when `Features.DomainBootstrap=true`, the per-tick `passes` slice in
 // `handleAutoTagTick` runs all FOUR pre-passes — foreign-tag escape,
 // daily-default, domain-bootstrap, placeholder-refresh — each issuing
-// one `bearcli list` per tick. Drives a single virtual tick under
-// `synctest` and asserts:
-// - `list` count == 4 (one per pass; equality pins the ordinal slot)
-// - `overwrite` count >= 1 (the aphorism note got canonicalized by
-// the 4th pass via the `#library/aphorisms` leaf).
+// one `bearcli list` per tick. The empty payload keeps this focused on
+// pass order: no pass has a note to rewrite, so no follow-up apply runs.
 func TestDaemonAutoTagPoll_FourPassesInOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fake := newFakeAutoTagBackend([]byte("[]"))

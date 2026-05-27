@@ -18,8 +18,35 @@ import (
 )
 
 type databaseBaseline struct {
+	modTime       time.Time
+	token         string
+	pending       bool
+	pendingChange databaseCandidate
+}
+
+type databaseCandidate struct {
 	modTime time.Time
 	token   string
+}
+
+func (b *databaseBaseline) pendingCandidate() (databaseCandidate, bool) {
+	if !b.pending {
+		return databaseCandidate{}, false
+	}
+	return b.pendingChange, true
+}
+
+func (b *databaseBaseline) markPending(candidate databaseCandidate) {
+	b.modTime = candidate.modTime
+	b.pendingChange = candidate
+	b.pending = true
+}
+
+func (b *databaseBaseline) commit(candidate databaseCandidate) {
+	b.modTime = candidate.modTime
+	b.token = candidate.token
+	b.pending = false
+	b.pendingChange = databaseCandidate{}
 }
 
 func (d *Daemon) handleEvent(event fsnotify.Event, quietTimer, maxTimer *time.Timer, burstActive *bool) {
@@ -44,22 +71,15 @@ func (d *Daemon) handleEvent(event fsnotify.Event, quietTimer, maxTimer *time.Ti
 // housekeeping that advances the SQLite file mtime without changing notes.
 func (d *Daemon) handlePollTick(quietTimer, maxTimer *time.Timer, burstActive *bool, baseline *databaseBaseline) {
 	dbPath := filepath.Join(d.opts.BearDBDir, dbFilename)
-	info, err := d.opts.StatFn(dbPath)
+	_, changed, replayPending, err := d.nextDatabaseCandidate(dbPath, baseline)
 	if err != nil {
-		log.Printf("poll: stat %s failed: %v", dbPath, err)
-		return
-	}
-	mt := info.ModTime()
-	if !mt.After(baseline.modTime) {
-		return
-	}
-	baseline.modTime = mt
-	changed, tokenErr := d.advanceDatabaseTokenIfChanged(dbPath, info, baseline)
-	if tokenErr != nil {
-		log.Printf("poll: token %s failed: %v", dbPath, tokenErr)
+		log.Printf("poll: %s failed: %v", dbPath, err)
 		return
 	}
 	if !changed {
+		return
+	}
+	if replayPending && *burstActive {
 		return
 	}
 	d.handleEvent(fsnotify.Event{Op: fsnotify.Write, Name: dbPath}, quietTimer, maxTimer, burstActive)
@@ -67,35 +87,13 @@ func (d *Daemon) handlePollTick(quietTimer, maxTimer *time.Timer, burstActive *b
 
 // autoTagPass is one row in [Daemon.handleAutoTagTick]'s pass slice — a
 // named struct (instead of an anonymous literal) so the slice literal
-// stays readable when the three passes are listed inline.
+// stays readable when the four passes are listed inline.
 type autoTagPass struct {
 	name    string
 	enabled bool
 	fn      func(context.Context) (int, error)
 }
 
-// handleAutoTagTick is the 7th-case body of Daemon.Run. Runs the four
-// fast-passes — ApplyForeignTagEscape, ApplyDailyDefaultTag,
-// ApplyDomainBootstrap, then ApplyPlaceholderRefresh — independent of
-// the full per-domain regen cycle. Order matches engine.Apply's
-// prePassSpec loop in apply.go: foreign-tag escape first so a freshly-
-// stamped daily note cannot be misclassified by the escape pass on
-// the same tick; domain-bootstrap third so notes the daily/escape
-// passes just stamped get their destination-canonical body written in
-// the same tick; placeholder refresh last so it can rewrite the H1
-// marker on notes the daily pass just produced via x-callback
-// bootstrap.
-//
-// The select-case wrapper first routes already-queued watcher events
-// through the normal debounce path. Only an otherwise idle tick whose
-// database mtime advanced runs the fast-pass, which prevents read-only
-// bearcli polling while the vault is idle.
-//
-// Error policy: all pre-passes run regardless of any prior pass's
-// outcome; log-and-continue. Mirrors apply.go::runPrePass.
-//
-// Bearcli semaphore: all pre-pass calls route through
-// domain.runBearcli → SetBearcliConcurrency pool. No bypass.
 func (d *Daemon) handleCycleTimer(
 	ctx context.Context,
 	reason string,
@@ -150,15 +148,30 @@ func (d *Daemon) handleAutoTagLoopTick(
 	pollBaseline, autoTagBaseline *databaseBaseline,
 ) {
 	dbPath := filepath.Join(d.opts.BearDBDir, dbFilename)
-	if *burstActive || d.isRegenInProgress() || !d.advanceDatabaseBaselineIfChanged(dbPath, autoTagBaseline) {
+	if *burstActive || d.isRegenInProgress() {
 		return
 	}
-	wrote, ran := d.handleAutoTagTick(ctx)
+	candidate, changed, _, err := d.nextDatabaseCandidate(dbPath, autoTagBaseline)
+	if err != nil {
+		log.Printf("auto-tag poll: %s failed: %v", dbPath, err)
+		return
+	}
+	if !changed {
+		return
+	}
+	wrote, ran, failed := d.handleAutoTagTick(ctx)
 	if !ran {
 		return
 	}
 	closed := d.handleQueuedWatcherEvents(quietTimer, maxTimer, burstActive)
-	if closed || *burstActive || wrote == 0 {
+	if closed || *burstActive {
+		return
+	}
+	if wrote == 0 {
+		if failed {
+			return
+		}
+		autoTagBaseline.commit(candidate)
 		return
 	}
 	if d.cycleOnce(ctx, "auto-tag fast-pass wrote changes") {
@@ -175,22 +188,31 @@ func (d *Daemon) isRegenInProgress() bool {
 	return d.regenInProgress
 }
 
-func (d *Daemon) handleAutoTagTick(ctx context.Context) (int, bool) {
+// handleAutoTagTick runs the four fast-passes — ApplyForeignTagEscape,
+// ApplyDailyDefaultTag, ApplyDomainBootstrap, then ApplyPlaceholderRefresh —
+// independent of the full per-domain regen cycle. Order matches engine.Apply's
+// prePassSpec loop in apply.go: foreign-tag escape first so a freshly-stamped
+// daily note cannot be misclassified by the escape pass on the same tick;
+// domain-bootstrap third so notes the daily/escape passes just stamped get their
+// destination-canonical body written in the same tick; placeholder refresh last
+// so it can rewrite the H1 marker on notes the daily pass just produced via
+// x-callback bootstrap.
+//
+// Error policy: all pre-passes run regardless of any prior pass's outcome;
+// log-and-continue. The caller keeps the database token pending when any pass
+// fails so a transient bearcli error retries on the next tick.
+//
+// Bearcli semaphore: all pre-pass calls route through domain.runBearcli →
+// SetBearcliConcurrency pool. No bypass.
+func (d *Daemon) handleAutoTagTick(ctx context.Context) (int, bool, bool) {
 	d.regenMu.Lock()
 	if d.regenInProgress {
 		d.regenMu.Unlock()
-		return 0, false
+		return 0, false, false
 	}
 	d.regenInProgress = true
 	d.regenMu.Unlock()
 
-	// We set regenInProgress in-line above (matching markRegenStart's
-	// semantics) so watcher events delivered during the fast-pass are
-	// classified as daemon-originated. The Run loop drains queued watcher
-	// events and refreshes the poll baseline after this method returns;
-	// that keeps read-only bearcli side effects from starting a full regen.
-	// Only actual writes extend the post-write gate and request a follow-up
-	// full apply.
 	// canonical-bootstrap wiring: build the tag→*Domain lookup
 	// once per tick so both pre-pass paths can write destination-canonical
 	// form in a single bearcli call.
@@ -224,12 +246,14 @@ func (d *Daemon) handleAutoTagTick(ctx context.Context) (int, bool) {
 			func(c context.Context) (int, error) { return fastpass.ApplyPlaceholderRefresh(c, domainsByTag) }),
 	}
 	wrote := 0
+	failed := false
 	for _, p := range passes {
 		if !p.enabled {
 			continue
 		}
 		n, err := p.fn(ctx)
 		if err != nil {
+			failed = true
 			log.Printf("auto-tag fast-pass: %s failed: %v (continuing)", p.name, err)
 		}
 		wrote += n
@@ -241,7 +265,7 @@ func (d *Daemon) handleAutoTagTick(ctx context.Context) (int, bool) {
 		d.regenEndTime = time.Now()
 	}
 	d.regenMu.Unlock()
-	return wrote, true
+	return wrote, true, failed
 }
 
 func (d *Daemon) updateDatabaseBaseline(baseline *databaseBaseline) {
@@ -250,46 +274,39 @@ func (d *Daemon) updateDatabaseBaseline(baseline *databaseBaseline) {
 	if err != nil {
 		return
 	}
-	baseline.modTime = info.ModTime()
 	token, tokenErr := d.databaseChangeToken(dbPath, info)
 	if tokenErr != nil {
 		return
 	}
-	baseline.token = token
+	baseline.commit(databaseCandidate{modTime: info.ModTime(), token: token})
 }
 
-func (d *Daemon) advanceDatabaseBaselineIfChanged(dbPath string, baseline *databaseBaseline) bool {
+func (d *Daemon) nextDatabaseCandidate(
+	dbPath string,
+	baseline *databaseBaseline,
+) (databaseCandidate, bool, bool, error) {
+	if candidate, ok := baseline.pendingCandidate(); ok {
+		return candidate, true, true, nil
+	}
 	info, err := d.opts.StatFn(dbPath)
 	if err != nil {
-		return false
+		return databaseCandidate{}, false, false, fmt.Errorf("stat: %w", err)
 	}
 	mt := info.ModTime()
 	if !mt.After(baseline.modTime) {
-		return false
+		return databaseCandidate{}, false, false, nil
 	}
-	baseline.modTime = mt
-	changed, tokenErr := d.advanceDatabaseTokenIfChanged(dbPath, info, baseline)
-	if tokenErr != nil {
-		log.Printf("poll: token %s failed: %v", dbPath, tokenErr)
-		return false
-	}
-	return changed
-}
-
-func (d *Daemon) advanceDatabaseTokenIfChanged(
-	dbPath string,
-	info fs.FileInfo,
-	baseline *databaseBaseline,
-) (bool, error) {
 	token, err := d.databaseChangeToken(dbPath, info)
 	if err != nil {
-		return false, err
+		return databaseCandidate{}, false, false, fmt.Errorf("token: %w", err)
 	}
+	candidate := databaseCandidate{modTime: mt, token: token}
 	if token == baseline.token {
-		return false, nil
+		baseline.commit(candidate)
+		return databaseCandidate{}, false, false, nil
 	}
-	baseline.token = token
-	return true, nil
+	baseline.markPending(candidate)
+	return candidate, true, false, nil
 }
 
 func (d *Daemon) databaseChangeToken(dbPath string, info fs.FileInfo) (string, error) {
