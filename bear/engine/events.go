@@ -285,8 +285,8 @@ func (d *Daemon) isRegenInProgress() bool {
 // log-and-continue. The caller keeps the database token pending when any pass
 // fails so a transient bearcli error retries on the next tick.
 //
-// Bearcli semaphore: all pre-pass calls route through domain.runBearcli →
-// SetBearcliConcurrency pool. No bypass.
+// Bearcli semaphore: all pre-pass calls route through bearcli.SetConcurrency.
+// No bypass.
 func (d *Daemon) handleAutoTagTick(ctx context.Context) (int, bool, bool) {
 	d.regenMu.Lock()
 	if d.regenInProgress {
@@ -493,7 +493,7 @@ func (d *Daemon) markRegenEnd() {
 }
 
 // SetRegenInProgressForTest is a test seam — production code uses
-// markRegenStart/markRegenEnd. Mirrors the SetBearcliConcurrency
+// markRegenStart/markRegenEnd. Mirrors the bearcli.SetConcurrency
 // precedent: a tiny exported helper that lets tests flip an internal
 // flag without orchestrating a real cycle. Honors the regenMu lock so
 // it composes safely with markRegenStart/markRegenEnd if they fire

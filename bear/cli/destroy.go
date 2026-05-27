@@ -13,6 +13,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -55,7 +56,7 @@ func RunDestroy(ctx context.Context, opts DestroyOptions) error {
 		return fmt.Errorf("%w: %q", ErrTagNotManaged, opts.Tag)
 	}
 
-	notes, err := domain.ListNotesForTag(ctx, opts.Tag)
+	notes, err := bearcli.ListNotesForTag(ctx, opts.Tag)
 	if err != nil {
 		return fmt.Errorf("destroy: list notes for tag %q: %w", opts.Tag, err)
 	}
@@ -201,7 +202,7 @@ func apply(
 			_, _ = fmt.Fprintf(stderr, "destroy: canceled mid-sweep (%v)\n", err)
 			return trashed, stripped, failed
 		}
-		if err := domain.TrashNote(ctx, m.ID); err != nil {
+		if err := bearcli.TrashNote(ctx, m.ID); err != nil {
 			_, _ = fmt.Fprintf(stderr, "destroy: trash %q (%s): %v\n", m.Title, m.ID, err)
 			failed++
 			continue
@@ -217,7 +218,7 @@ func apply(
 		if !changed {
 			continue
 		}
-		if err := domain.OverwriteNoteContent(ctx, a.ID, newContent); err != nil {
+		if err := bearcli.OverwriteNoteContent(ctx, a.ID, newContent); err != nil {
 			_, _ = fmt.Fprintf(stderr, "destroy: strip %q (%s): %v\n", a.Title, a.ID, err)
 			failed++
 			continue

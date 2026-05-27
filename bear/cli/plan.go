@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -68,7 +69,7 @@ func ValidateOutput(output string) error {
 // plan's path was missed, surfacing as "bearcli pool not initialized"
 // errors for every domain when `noxctl plan` ran standalone.
 func RunPlan(ctx context.Context, opts PlanOptions) error {
-	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
+	bearcli.SetConcurrency(engine.DefaultBearcliConcurrency)
 
 	domains, catalog, err := LoadDomainsAndCatalog(opts.Args,
 		opts.CfgPath, opts.PinLegacy, opts.PinTarget, opts.Stderr)

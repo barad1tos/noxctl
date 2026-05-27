@@ -9,13 +9,13 @@ import (
 	"log"
 	"time"
 
-	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/bearcli"
 )
 
 // Run is the daemon main loop: wires the FSEvent watcher, the mtime
 // poll fallback, and the autotag fast-pass tick into a single
 // select, driving cycleOnce on each burst-completion. cycleOnce
-// wraps the per-domain RunRegen path with the sentinel-yield and
+// wraps the per-domain regen path with the sentinel-yield and
 // per-instance self-write gate that suppresses FSEvent feedback
 // on our own writes.
 func (d *Daemon) Run(ctx context.Context) error {
@@ -25,16 +25,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// Initialize the bearcli pool before any trigger source fires
 	// (deploy fix). engine.Apply also calls this — sync.Once
-	// inside package domain makes the second call a no-op — but the
+	// inside package bearcli makes the second call a no-op — but the
 	// auto-tag fast-pass calls fastpass.ApplyForeignTagEscape /
 	// fastpass.ApplyDailyDefaultTag directly, bypassing engine.Apply. Without
 	// this pre-loop init, the first 2s fast-pass tick fires before any
 	// FSEvent burst and hits "bearcli pool not initialized".
-	bearcliConcurrency := d.opts.BearcliConcurrency
-	if bearcliConcurrency <= 0 {
-		bearcliConcurrency = DefaultBearcliConcurrency
+	concurrency := d.opts.BearcliConcurrency
+	if concurrency <= 0 {
+		concurrency = DefaultBearcliConcurrency
 	}
-	domain.SetBearcliConcurrency(bearcliConcurrency)
+	bearcli.SetConcurrency(concurrency)
 
 	log.Printf(
 		"noxctl daemon ready; debounce=%s, max-burst=%s, mtime-poll=%s, autotag-poll=%s, watch=%s, domains=%d",

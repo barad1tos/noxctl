@@ -76,8 +76,8 @@ type DaemonConfig struct {
 
 	// BearcliConcurrency is the operator-tuned cap for concurrent bearcli
 	// subprocess invocations. Default 8. Threaded through
-	// engine.ApplyOpts.BearcliConcurrency into domain.SetBearcliConcurrency
-	// at daemon startup. Zero/negative is fatal at LoadDaemon; values >16
+	// engine.ApplyOpts.BearcliConcurrency into bearcli.SetConcurrency at
+	// daemon startup. Zero/negative is fatal at LoadDaemon; values >16
 	// emit a WARN log line but are accepted (soft cap).
 	BearcliConcurrency int
 

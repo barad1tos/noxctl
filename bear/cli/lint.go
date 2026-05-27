@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/barad1tos/noxctl/bear/audit"
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 )
@@ -61,7 +62,7 @@ var ErrLintFailed = errors.New("noxctl lint: reported failures")
 // stdout is parameterized so tests can capture the rendered findings;
 // production wires os.Stdout in the CLI shim.
 func RunLint(ctx context.Context, stdout io.Writer, domains []*domain.Domain, apply bool) error {
-	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
+	bearcli.SetConcurrency(engine.DefaultBearcliConcurrency)
 	if apply {
 		_, domainFailed, domainErr := audit.LintApplyDomains(ctx, domains)
 		if errors.Is(domainErr, context.Canceled) {

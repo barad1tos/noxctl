@@ -1,7 +1,7 @@
 package engine
 
 // Per-domain + per-umbrella iteration — how Apply walks the catalog,
-// groups leaves under their umbrellas, runs RunRegen on each, and
+// groups leaves under their umbrellas, runs regen on each, and
 // persists state.json incrementally.
 
 import (
@@ -14,24 +14,25 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/regen"
 	"github.com/barad1tos/noxctl/bear/state"
 )
 
-// applyPerDomain orchestrates the per-domain RunRegen pipeline via a
+// applyPerDomain orchestrates the per-domain regen pipeline via a
 // per-umbrella errgroup dependency graph. The outer errgroup fans
 // out one goroutine per umbrella family (one entry per nil-keyed
 // standalone group plus one per real umbrella); each family
 // goroutine runs its leaves concurrently in an inner errgroup, then
-// runs the umbrella's own RunRegen after inner.Wait returns.
+// runs the umbrella's own regen after inner.Wait returns.
 // Independent families fan out in parallel; back-pressure on actual
 // bearcli subprocesses lives in the bearcli.SetConcurrency
 // semaphore, NOT at the errgroup layer.
 //
 // state.State map writes and st.Save calls happen under stateMu,
 // held strictly around the mutation and Save call — never during
-// RunRegen or bearcli I/O.
+// regen or bearcli I/O.
 //
-// Per-domain RunRegen failures are log-and-continue (same contract
+// Per-domain regen failures are log-and-continue (same contract
 // as the sequential predecessor); only ctx cancellation propagates
 // as a non-nil errgroup return, which flips
 // result.Interrupted=true on Wait.
@@ -49,7 +50,7 @@ func applyPerDomain(ctx context.Context, opts ApplyOpts, st *state.State, result
 			result.Interrupted = true
 		}
 		// Non-cancel errors are not produced today — per-domain
-		// failures inside RunRegen are log-and-continue, and
+		// failures inside regen are log-and-continue, and
 		// runDomainAndSave only returns ctx.Err. A future fatal
 		// surface would need separate handling here.
 	}
@@ -57,7 +58,7 @@ func applyPerDomain(ctx context.Context, opts ApplyOpts, st *state.State, result
 
 // runFamily orchestrates one umbrella family: its leaves run as siblings
 // in an inner errgroup; once every leaf has returned, the umbrella
-// domain's own RunRegen runs on the same outer-group goroutine. The
+// domain's own regen runs on the same outer-group goroutine. The
 // nil-umbrella case is a standalone-domains bucket — there is no
 // umbrella, only a flat slice of independent leaves to fan out.
 func runFamily(
@@ -92,11 +93,11 @@ func runFamily(
 // pkg.go.dev/golang.org/x/sync/errgroup docs).
 //
 // stateMu is held strictly around the map mutation + st.Save call.
-// Holding it across RunRegen would serialize the orchestrator and
+// Holding it across regen would serialize the orchestrator and
 // defeat the entire wave; holding it across bearcli I/O would block
 // every other writer for the duration of an I/O wait.
 //
-// Per-domain RunRegen failures are log-and-continue (legacy contract
+// Per-domain regen failures are log-and-continue (legacy contract
 // from the sequential applyPerDomain). The only path that returns a
 // non-nil error is ctx cancellation, which propagates up the errgroup
 // so eg.Wait can flip result.Interrupted.
@@ -112,12 +113,12 @@ func runDomainAndSave(
 		return err
 	}
 	start := time.Now()
-	regenResult := d.RunRegen(ctx)
+	regenResult := regen.Run(ctx, d)
 	elapsed := time.Since(start)
 	if opts.DomainTimingHook != nil {
 		opts.DomainTimingHook(d.Tag, elapsed)
 	}
-	// Compute content hash from fresh master + hubs read. RunRegen has
+	// Compute content hash from fresh master + hubs read. regen has
 	// already written the master + hubs through bearcli; the snapshot
 	// re-read captures the canonical post-write state. Returns "" on
 	// read failure — caller preserves prior hash.

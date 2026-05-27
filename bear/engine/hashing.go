@@ -14,6 +14,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/state"
 )
@@ -27,7 +28,7 @@ func applyFinalize(ctx context.Context, opts ApplyOpts, st *state.State, result 
 			log.Printf("apply: final state.Save (interrupted) failed: %v", saveErr)
 		}
 		if opts.WithMetrics {
-			result.Metrics = domain.BearcliMetricsSnapshot()
+			result.Metrics = bearcli.MetricsSnapshot()
 		}
 		return result, nil
 	}
@@ -38,7 +39,7 @@ func applyFinalize(ctx context.Context, opts ApplyOpts, st *state.State, result 
 			log.Printf("apply: final state.Save (failed) failed: %v", saveErr)
 		}
 		if opts.WithMetrics {
-			result.Metrics = domain.BearcliMetricsSnapshot()
+			result.Metrics = bearcli.MetricsSnapshot()
 		}
 		return result, nil
 	}
@@ -49,7 +50,7 @@ func applyFinalize(ctx context.Context, opts ApplyOpts, st *state.State, result 
 		return result, fmt.Errorf("engine.Apply state.Save(complete): %w", err)
 	}
 	if opts.WithMetrics {
-		result.Metrics = domain.BearcliMetricsSnapshot()
+		result.Metrics = bearcli.MetricsSnapshot()
 	}
 	return result, nil
 }
@@ -67,7 +68,7 @@ func computeDomainHash(ctx context.Context, d *domain.Domain) string {
 	return ComputeContentHash(master, hubs)
 }
 
-// snapshotDomainContent fetches the post-RunRegen master + hub bytes
+// snapshotDomainContent fetches the post-regen master + hub bytes
 // for one domain via the exported domain.FetchMasterContent /
 // domain.FetchHubContents wrappers (which in turn call the bearcli
 // boundary inside package domain). Stripped of the [Нова нотатка]

@@ -38,7 +38,7 @@ var applyCmd = &cobra.Command{
 
 Loads noxctl.toml, runs pre-passes (foreign-tag escape, auto-tag,
 cross-domain moves, time-promotion, duplicate registry — toggleable via
-[features]), then iterates domains calling RunRegen for each. Persists
+[features]), then iterates domains through bear/regen. Persists
 per-domain progress to ./.noxctl/state.json incrementally so partial-
 success state is recoverable.
 
