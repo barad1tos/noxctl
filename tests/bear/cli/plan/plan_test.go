@@ -47,6 +47,24 @@ func (planReadFailureFake) Run(_ context.Context, args []string, _ string) ([]by
 	return []byte("[]"), nil
 }
 
+type planCanceledReadFake struct {
+	cancel context.CancelFunc
+}
+
+func (f planCanceledReadFake) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) > 0 && args[0] == "list" && hasPlanArg(args, "--tag") {
+		f.cancel()
+		return nil, context.Canceled
+	}
+	if len(args) > 0 && args[0] == "cat" {
+		return []byte(`{"content":""}`), nil
+	}
+	if len(args) > 0 && args[0] == "show" {
+		return []byte(`{"hash":"deadbeef"}`), nil
+	}
+	return []byte("[]"), nil
+}
+
 func hasPlanArg(args []string, key string) bool {
 	return slices.Contains(args, key)
 }
@@ -260,5 +278,22 @@ func TestRunPlan_ReturnsError_WhenPlanContainsReadFailures(t *testing.T) {
 	out := stdout.String()
 	if !strings.Contains(out, `"errors"`) || !strings.Contains(out, "simulated failure") {
 		t.Fatalf("JSON output did not expose the plan error; got:\n%s", out)
+	}
+}
+
+func TestRunPlan_ReturnsInterrupted_WhenCanceledReadBecomesPlanError(t *testing.T) {
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+
+	parent, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	ctx := bearcli.ContextWithBackend(parent, planCanceledReadFake{cancel: cancel})
+	var stdout bytes.Buffer
+	opts := planOptionsForTest(t, []string{"library/poetry"}, &stdout)
+	opts.Output = "json"
+
+	err := cli.RunPlan(ctx, opts)
+	if !errors.Is(err, cli.ErrInterrupted) {
+		t.Fatalf("RunPlan err = %v, want ErrInterrupted for an operator-canceled read", err)
 	}
 }

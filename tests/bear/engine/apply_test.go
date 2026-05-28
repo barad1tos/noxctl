@@ -147,6 +147,26 @@ func (failingApplyBackend) Run(_ context.Context, _ []string, _ string) ([]byte,
 	return nil, errors.New("bearcli unavailable")
 }
 
+type missingMasterAfterCreateBackend struct{}
+
+func (missingMasterAfterCreateBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) == 0 {
+		return []byte(`[]`), nil
+	}
+	switch args[0] {
+	case "list":
+		return []byte(`[]`), nil
+	case "create":
+		return nil, errors.New("bearcli create failed")
+	case "cat", "show":
+		return []byte(`{"id":"missing","title":"missing","content":"","hash":"h","tags":[]}`), nil
+	case "overwrite":
+		return []byte(`{"ok":true}`), nil
+	default:
+		return []byte(`[]`), nil
+	}
+}
+
 type emptyApplyBackend struct{}
 
 func (emptyApplyBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
@@ -376,6 +396,43 @@ func TestApply_DomainListFailureSurfacesInResult(t *testing.T) {
 	}
 	if !result.CompletedAt.IsZero() {
 		t.Errorf("CompletedAt = %s, want zero after failed run", result.CompletedAt)
+	}
+}
+
+func TestApply_MissingMasterSnapshotPreservesPriorContentHash(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	d := minimalApplyDomain("test/missing-master", "Test Missing Master")
+	priorHash := "previous-content-hash"
+	if err := (&state.State{
+		Version: state.SchemaVersion,
+		Domains: map[string]state.DomainState{
+			d.Tag: {ContentHash: priorHash},
+		},
+	}).Save(statePath); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+
+	ctx := bearcli.ContextWithBackend(context.Background(), missingMasterAfterCreateBackend{})
+	result, err := engine.Apply(ctx, engine.ApplyOpts{
+		Domains:   []*domain.Domain{d},
+		StatePath: statePath,
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{},
+		SkipFlock: true,
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if !result.AnyFailed() {
+		t.Fatal("AnyFailed = false, want failed result after master create failure")
+	}
+	after, err := state.Load(statePath)
+	if err != nil {
+		t.Fatalf("Load state: %v", err)
+	}
+	if got := after.Domains[d.Tag].ContentHash; got != priorHash {
+		t.Fatalf("ContentHash = %q, want prior hash %q after missing-master snapshot", got, priorHash)
 	}
 }
 

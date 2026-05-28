@@ -22,13 +22,17 @@ func RunWithSignalContext(
 	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := fn(ctx); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if isContextDone(err) || isContextDone(ctx.Err()) {
 			return interruptedErr
 		}
 		return err
 	}
-	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+	if isContextDone(ctx.Err()) {
 		return interruptedErr
 	}
 	return nil
+}
+
+func isContextDone(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }

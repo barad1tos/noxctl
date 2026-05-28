@@ -93,7 +93,9 @@ func RunPlan(ctx context.Context, opts PlanOptions) error {
 		return renderErr
 	}
 
-	if result.Interrupted {
+	if result.Interrupted ||
+		errors.Is(sigCtx.Err(), context.Canceled) ||
+		errors.Is(sigCtx.Err(), context.DeadlineExceeded) {
 		return ErrInterrupted
 	}
 	if len(result.Errors) > 0 {

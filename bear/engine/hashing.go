@@ -66,6 +66,10 @@ func computeDomainHash(ctx context.Context, d *domain.Domain) string {
 		log.Printf("apply: snapshot(%s) failed: %v (hash unchanged)", d.Tag, err)
 		return ""
 	}
+	if master == "" {
+		log.Printf("apply: snapshot(%s) missing master content (hash unchanged)", d.Tag)
+		return ""
+	}
 	return ComputeContentHash(master, hubs)
 }
 
