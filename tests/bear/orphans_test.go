@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/audit"
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -29,7 +30,7 @@ import (
 //
 // Mirrors the autotag fake pattern at tests/bear/autotag_test.go —
 // same Backend.Run signature, same context-stamping seam via
-// domain.ContextWithBackend — so future maintainers find the fixture
+// bearcli.ContextWithBackend — so future maintainers find the fixture
 // shape via the same grep.
 type orphanFakeBearcli struct {
 	listPayload []byte
@@ -110,9 +111,9 @@ func argsValueAfter(args []string, key string) string {
 // into the orchestrator under test.
 func armOrphanFakeBearcli(t *testing.T, fake *orphanFakeBearcli) context.Context {
 	t.Helper()
-	domain.ResetBearcliPoolForTest(2)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
-	return domain.ContextWithBackend(t.Context(), fake)
+	bearcli.ResetPoolForTest(2)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+	return bearcli.ContextWithBackend(t.Context(), fake)
 }
 
 // orphanFixture mirrors the bearcli `list --fields id,title,tags` JSON

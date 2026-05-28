@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -68,15 +69,13 @@ func ValidateOutput(output string) error {
 // plan's path was missed, surfacing as "bearcli pool not initialized"
 // errors for every domain when `noxctl plan` ran standalone.
 func RunPlan(ctx context.Context, opts PlanOptions) error {
-	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
+	bearcli.SetConcurrency(engine.DefaultBearcliConcurrency)
 
 	domains, catalog, err := LoadDomainsAndCatalog(opts.Args,
 		opts.CfgPath, opts.PinLegacy, opts.PinTarget, opts.Stderr)
 	if err != nil {
 		return err
 	}
-	features := cliutil.FeaturesFromCatalog(catalog)
-
 	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -84,7 +83,7 @@ func RunPlan(ctx context.Context, opts PlanOptions) error {
 		Domains:  domains,
 		Verbose:  opts.Verbose,
 		Stderr:   opts.Stderr,
-		Features: &features,
+		Features: new(cliutil.FeaturesFromCatalog(catalog)),
 	})
 	if planErr != nil {
 		return planErr
@@ -94,8 +93,13 @@ func RunPlan(ctx context.Context, opts PlanOptions) error {
 		return renderErr
 	}
 
-	if result.Interrupted {
+	if result.Interrupted ||
+		errors.Is(sigCtx.Err(), context.Canceled) ||
+		errors.Is(sigCtx.Err(), context.DeadlineExceeded) {
 		return ErrInterrupted
+	}
+	if len(result.Errors) > 0 {
+		return fmt.Errorf("noxctl plan: %d error(s)", len(result.Errors))
 	}
 	if result.HasDrift() {
 		return ErrDriftDetected

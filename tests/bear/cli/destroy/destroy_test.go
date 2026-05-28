@@ -11,9 +11,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/render"
@@ -27,6 +31,25 @@ type destroyFake struct {
 	trashErr    error // when set, every `trash` call fails (partial-failure path)
 	trashed     []string
 	overwrites  int
+}
+
+type blockingConfirmReader struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func newBlockingConfirmReader() *blockingConfirmReader {
+	return &blockingConfirmReader{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+}
+
+func (r *blockingConfirmReader) Read(_ []byte) (int, error) {
+	r.once.Do(func() { close(r.started) })
+	<-r.release
+	return 0, io.EOF
 }
 
 func (f *destroyFake) Run(_ context.Context, args []string, _ string) ([]byte, error) {
@@ -223,8 +246,8 @@ func TestRunDestroy_ReturnsErrTagNotManaged_WhenTagAbsentFromCatalog(t *testing.
 //
 //cyrillic:permit
 func TestRunDestroy_Aborts_WhenConfirmationMismatches(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	fake := &destroyFake{listPayload: destroyListJSON(
 		t,
@@ -234,7 +257,7 @@ func TestRunDestroy_Aborts_WhenConfirmationMismatches(t *testing.T) {
 			"content": "# Вірш\n#library/test | [[✱ Test]]\n---\nтіло\n",
 		},
 	)}
-	ctx := domain.ContextWithBackend(context.Background(), fake)
+	ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 	var out, errBuf bytes.Buffer
 	err := cli.RunDestroy(ctx, cli.DestroyOptions{
@@ -252,6 +275,45 @@ func TestRunDestroy_Aborts_WhenConfirmationMismatches(t *testing.T) {
 	}
 }
 
+func TestRunDestroy_ReturnsCanceled_WhenConfirmationContextCancels(t *testing.T) {
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+
+	fake := &destroyFake{listPayload: destroyListJSON(
+		t,
+		map[string]any{"id": "m1", "title": "✱ Test", "tags": []string{"#library/test"}, "content": "# ✱ Test\n"},
+	)}
+	parent, cancel := context.WithCancel(context.Background())
+	ctx := bearcli.ContextWithBackend(parent, fake)
+	reader := newBlockingConfirmReader()
+	defer close(reader.release)
+
+	var out, errBuf bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- cli.RunDestroy(ctx, cli.DestroyOptions{
+			Domains: []*domain.Domain{render.NewFlatListDomain("library/test", "✱ Test")},
+			Tag:     "library/test",
+			Stdout:  &out, Stderr: &errBuf,
+			Stdin: reader,
+		})
+	}()
+
+	<-reader.started
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("RunDestroy err = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("RunDestroy did not return after confirmation context cancellation")
+	}
+	if len(fake.trashed) != 0 || fake.overwrites != 0 {
+		t.Fatalf("canceled confirmation mutated notes: trashed=%v overwrites=%d", fake.trashed, fake.overwrites)
+	}
+}
+
 // TestRunDestroy_TrashesMasterAndStripsAtoms_OnAutoApprove pins the happy
 // destroy journey: with --auto-approve, the master/hub note is trashed and
 // each atom's canonical line is stripped (atom body survives). User-facing
@@ -260,8 +322,8 @@ func TestRunDestroy_Aborts_WhenConfirmationMismatches(t *testing.T) {
 //
 //cyrillic:permit
 func TestRunDestroy_TrashesMasterAndStripsAtoms_OnAutoApprove(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	fake := &destroyFake{listPayload: destroyListJSON(
 		t,
@@ -271,7 +333,7 @@ func TestRunDestroy_TrashesMasterAndStripsAtoms_OnAutoApprove(t *testing.T) {
 			"content": "# Вірш\n#library/test | [[✱ Test]]\n---\nтіло\n",
 		},
 	)}
-	ctx := domain.ContextWithBackend(context.Background(), fake)
+	ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 	var out, errBuf bytes.Buffer
 	err := cli.RunDestroy(ctx, cli.DestroyOptions{
@@ -305,8 +367,8 @@ func TestRunDestroy_TrashesMasterAndStripsAtoms_OnAutoApprove(t *testing.T) {
 //
 //cyrillic:permit
 func TestRunDestroy_ReportsFailures_WhenTrashFails(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	fake := &destroyFake{
 		trashErr: errors.New("bearcli trash: simulated rejection"),
@@ -319,7 +381,7 @@ func TestRunDestroy_ReportsFailures_WhenTrashFails(t *testing.T) {
 			},
 		),
 	}
-	ctx := domain.ContextWithBackend(context.Background(), fake)
+	ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 	var out, errBuf bytes.Buffer
 	err := cli.RunDestroy(ctx, cli.DestroyOptions{

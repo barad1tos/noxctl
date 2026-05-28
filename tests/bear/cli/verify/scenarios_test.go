@@ -6,10 +6,13 @@ package verify_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cli/verify"
+	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -43,7 +46,7 @@ func TestRun_DefaultLogPath_UsesHomeBaseline(t *testing.T) {
 // FAIL). Covers checkPlanParity's res.Interrupted branch.
 func TestRun_CtxCanceledMidPlan_PlanParitySurfacesInterrupted(t *testing.T) {
 	catalog := writeMinimalCatalog(t)
-	ctx, cancel := context.WithCancel(domain.ContextWithBackend(t.Context(), &benignBearcliBackend{}))
+	ctx, cancel := context.WithCancel(bearcli.ContextWithBackend(t.Context(), &benignBearcliBackend{}))
 	cancel() // pre-cancel; engine.Plan sees Done immediately.
 
 	var stdout, stderr strings.Builder
@@ -62,6 +65,71 @@ func TestRun_CtxCanceledMidPlan_PlanParitySurfacesInterrupted(t *testing.T) {
 	if !errors.Is(err, verify.ErrVerifyInterrupted) && !errors.Is(err, verify.ErrVerifyRuntimeError) {
 		t.Fatalf("err = %v, want ErrVerifyInterrupted or ErrVerifyRuntimeError", err)
 	}
+}
+
+func TestRun_PlanParityCorpusErrorSurfacesRuntimeError(t *testing.T) {
+	catalog := writeMinimalCatalog(t)
+	masterContent := renderMinimalCatalogMaster(t, catalog)
+	ctx := bearcli.ContextWithBackend(t.Context(), planCorpusErrorCleanDomainBackend{
+		masterContent: masterContent,
+	})
+	var stdout, stderr strings.Builder
+
+	err := verify.Run(ctx, verify.Options{
+		ConfigPath: catalog,
+		LogPath:    writeDaemonLog(t, []string{"2026/05/18 10:00:00 regen-watchd starting"}),
+		Output:     "text",
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+	})
+	if !errors.Is(err, verify.ErrVerifyRuntimeError) {
+		t.Fatalf("err = %v, want ErrVerifyRuntimeError for corpus-level plan errors", err)
+	}
+	line := findCheckLine(t, stdout.String(), "plan-parity")
+	if !strings.Contains(line, "plan reported 1 runtime error") {
+		t.Fatalf("plan-parity line = %q, want runtime-error message", line)
+	}
+}
+
+type planCorpusErrorCleanDomainBackend struct {
+	masterContent string
+}
+
+func (b planCorpusErrorCleanDomainBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) == 0 {
+		return []byte("{}"), nil
+	}
+	switch args[0] {
+	case "list":
+		return b.list(args)
+	case "cat":
+		return fmt.Appendf(nil, `{"id":"master-1","title":"✱ Test","content":%q}`, b.masterContent), nil
+	case "show":
+		return []byte(`{"hash":"deadbeef","content":""}`), nil
+	}
+	return nil, fmt.Errorf("planCorpusErrorCleanDomainBackend: unhandled bearcli args %v", args)
+}
+
+func (planCorpusErrorCleanDomainBackend) list(args []string) ([]byte, error) {
+	if listLocation(args) == "notes" && listFields(args) == "id,title" {
+		return nil, errors.New("duplicate registry simulated failure")
+	}
+	if listFields(args) == "id,title" {
+		return []byte(`[{"id":"master-1","title":"✱ Test"}]`), nil
+	}
+	return []byte("[]"), nil
+}
+
+func renderMinimalCatalogMaster(t *testing.T, catalog string) string {
+	t.Helper()
+	domains, cat, err := config.Load(catalog)
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	if cat.Meta.Locale != "" {
+		domain.SetLocale(cat.Meta.Locale)
+	}
+	return domain.StripNewNoteURLsFromBody(domains[0].RenderMaster(domains[0], map[string][]domain.Note{}))
 }
 
 // TestRun_StrictModeWithCleanCatalog_StrictUpgradeDoesNotFire — with

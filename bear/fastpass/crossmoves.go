@@ -8,6 +8,7 @@ import (
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/regen"
 )
 
 // IsFlatList reports whether the domain renders its master as a single
@@ -72,7 +73,7 @@ func BuildFlatListMasterClaims(ctx context.Context, domains []*domain.Domain) (m
 // from bearcli surface so the caller can decide whether to abort the
 // cycle or fall back to per-domain processing.
 func readDomainMaster(ctx context.Context, d *domain.Domain) (string, error) {
-	idxID, err := d.FindIndexID(ctx)
+	idxID, err := regen.FindIndexID(ctx, d)
 	if err != nil {
 		return "", err
 	}

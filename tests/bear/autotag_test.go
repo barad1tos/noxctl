@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/fastpass"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
@@ -330,8 +331,8 @@ func setupRefreshFixture(t *testing.T, notes ...fakeNote) (*fakeRefreshBackend, 
 		t.Fatalf("marshal: %v", err)
 	}
 	backend := &fakeRefreshBackend{listPayload: payload}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
-	domain.ResetBearcliPoolForTest(1)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
+	bearcli.ResetPoolForTest(1)
 	return backend, ctx
 }
 
@@ -408,8 +409,8 @@ func TestApplyQuicknotePlaceholderRefresh_NonMarkerNote_Skipped(t *testing.T) {
 // Title + tag-set match inside the loop).
 func TestApplyQuicknotePlaceholderRefresh_LegacyForwardsToGenericScan(t *testing.T) {
 	backend := &fakeRefreshBackend{listPayload: []byte("[]")}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
-	domain.ResetBearcliPoolForTest(1)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
+	bearcli.ResetPoolForTest(1)
 
 	_, err := fastpass.ApplyQuicknotePlaceholderRefresh(ctx, testutil.Domain(t, "quicknote/daily"))
 	if err != nil {
@@ -523,8 +524,8 @@ func TestApplyPlaceholderRefresh_SkipsUntaggedNotes(t *testing.T) {
 // is global because placeholders are shared across domains.
 func TestApplyPlaceholderRefresh_ListArgsAreGlobal(t *testing.T) {
 	backend := &fakeRefreshBackend{listPayload: []byte("[]")}
-	ctx := domain.ContextWithBackend(context.Background(), backend)
-	domain.ResetBearcliPoolForTest(1)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
+	bearcli.ResetPoolForTest(1)
 
 	domainsByTag := domain.DomainsByTag([]*domain.Domain{testutil.Domain(t, "quicknote/daily")})
 	_, err := fastpass.ApplyPlaceholderRefresh(ctx, domainsByTag)

@@ -24,12 +24,13 @@ import (
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/audit"
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/render"
 )
 
-// fakeBearcli records every domain.runBearcli call routed through the
+// fakeBearcli records every bearcli.Run call routed through the
 // BearcliBackend seam. Returns canned JSON for "list" and a stub
 // {"ok":true} for "overwrite". Mirrors the shape used by tests/bear/
 // engine/* so the fixture story stays consistent across packages.
@@ -50,7 +51,7 @@ func newFakeBearcli(payload []byte) *fakeBearcli {
 	return &fakeBearcli{listPayload: payload}
 }
 
-// Run satisfies domain.BearcliBackend.
+// Run satisfies bearcli.Backend.
 func (f *fakeBearcli) Run(_ context.Context, args []string, stdin string) ([]byte, error) {
 	f.count.Add(1)
 	kind := "other"
@@ -147,19 +148,19 @@ func flatListDomainForTest() *domain.Domain {
 // armBearcliPool resets the bearcli subprocess semaphore to a small
 // fixed capacity so the lint sweep's bearcli calls actually execute.
 // Production wires this via engine.Apply; tests must do it explicitly
-// before any code path that ends up calling domain.runBearcli.
+// before any code path that ends up calling bearcli.Run.
 //
 // Cleanup resets capacity to 1, NOT the production daemon default
 // (8). bearcliSema is a process-global semaphore, so any subsequent
 // test in this go test binary inherits whatever the previous test
 // left behind. Tests that need a real capacity must call
-// domain.ResetBearcliPoolForTest themselves; cleanup-to-1 is the safe
+// bearcli.ResetPoolForTest themselves; cleanup-to-1 is the safe
 // minimum that surfaces a missing arm as a deterministic block
 // rather than spurious concurrency surprises.
 func armBearcliPool(t *testing.T) {
 	t.Helper()
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 }
 
 // runLintExpectOK invokes cli.RunLint and t.Fatalf's on any returned
@@ -181,7 +182,7 @@ func runLintExpectOK(t *testing.T, ctx context.Context, buf *bytes.Buffer, domai
 func TestRun_AuditMode_PrintsFindingsNoWrites(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(brokenH1ListPayload(t))
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false, "audit-mode happy path")
@@ -206,7 +207,7 @@ func TestRun_AuditMode_PrintsFindingsNoWrites(t *testing.T) {
 func TestRun_ApplyMode_InvokesAutoFix(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(brokenH1ListPayload(t))
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true, "apply-mode happy path")
@@ -234,7 +235,7 @@ func TestRun_ApplyMode_InvokesAutoFix(t *testing.T) {
 func TestRun_CanceledContext_Aborts(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(brokenH1ListPayload(t))
-	ctx, cancel := context.WithCancel(domain.ContextWithBackend(t.Context(), fake))
+	ctx, cancel := context.WithCancel(bearcli.ContextWithBackend(t.Context(), fake))
 	cancel() // canceled before Run even starts
 
 	var buf bytes.Buffer
@@ -259,7 +260,7 @@ func TestRun_CanceledContext_Aborts(t *testing.T) {
 // grep for a count regardless of catalog size.
 func TestRun_EmptyDomains_RendersEmptyTally(t *testing.T) {
 	fake := newFakeBearcli([]byte(`[]`))
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, nil, false, "empty-domains tally")
@@ -442,7 +443,7 @@ func TestRun_AuditMode_OrphanFamilyAppearsInOutput(t *testing.T) {
 	payload := orphanFamilyListPayload(t,
 		[]string{"#test/notes", "#strayfamily/sub"})
 	fake := newFakeBearcli(payload)
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false, "audit-mode orphan finding")
@@ -465,7 +466,7 @@ func TestRun_AuditMode_OrphanFamilyAppearsInOutput(t *testing.T) {
 func TestRun_AuditMode_DuplicateTitleAppearsInOutput(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(duplicateTitleListPayload(t))
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false,
@@ -489,7 +490,7 @@ func TestRun_AuditMode_DuplicateTitleAppearsInOutput(t *testing.T) {
 func TestRun_AuditMode_EmptyDomains_DuplicateTitleAppearsInOutput(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(duplicateTitleListPayload(t))
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, nil, false, "audit-mode empty-domain duplicate-title finding")
@@ -516,7 +517,7 @@ func TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent(t *testing.T) {
 	payload1 := orphanFamilyListPayload(t,
 		[]string{"#test/notes", "#strayfamily/sub"})
 	fake1 := newFakeBearcli(payload1)
-	ctx1 := domain.ContextWithBackend(t.Context(), fake1)
+	ctx1 := bearcli.ContextWithBackend(t.Context(), fake1)
 
 	var buf1 bytes.Buffer
 	runLintExpectOK(t, ctx1, &buf1, []*domain.Domain{flatListDomainForTest()}, true, "apply-mode first run")
@@ -553,7 +554,7 @@ func TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent(t *testing.T) {
 	payload2 := orphanFamilyListPayload(t,
 		[]string{"#test/notes", "#strayfamily/sub", "#orphans"})
 	fake2 := newFakeBearcli(payload2)
-	ctx2 := domain.ContextWithBackend(t.Context(), fake2)
+	ctx2 := bearcli.ContextWithBackend(t.Context(), fake2)
 
 	var buf2 bytes.Buffer
 	runLintExpectOK(t, ctx2, &buf2, []*domain.Domain{flatListDomainForTest()}, true, "apply-mode second run idempotent")
@@ -567,7 +568,7 @@ func TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent(t *testing.T) {
 func TestRun_ApplyMode_DuplicateTitleTagEmitted(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(duplicateTitleListPayload(t))
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true,
@@ -600,7 +601,7 @@ func TestRun_ApplyMode_OrphanPartialFailure_StillTagsDuplicateTitles(t *testing.
 	fake := &partialTagAddFailFakeBearcli{
 		fakeBearcli: newFakeBearcli(duplicateOrphanListPayload(t)),
 	}
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
@@ -618,7 +619,7 @@ func TestRun_ApplyMode_OrphanPartialFailure_StillTagsDuplicateTitles(t *testing.
 func TestRun_ApplyMode_DuplicateTitleTagDoesNotSuppressOrphanRetry(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(duplicateTaggedOrphanRetryListPayload(t))
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true,
@@ -635,7 +636,7 @@ func TestRun_ApplyMode_DuplicateTitleTagDoesNotSuppressOrphanRetry(t *testing.T)
 func TestRun_ApplyMode_DuplicateTitleTagDoesNotBecomeOrphanTag(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(alreadyDuplicateTaggedListPayload(t))
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true,
@@ -658,7 +659,7 @@ func TestRun_ApplyMode_RuntimeErrorTakesPrecedenceOverLintFailure(t *testing.T) 
 		},
 		corpusErr: runtimeErr,
 	}
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
@@ -686,7 +687,7 @@ func TestRun_ApplyMode_DomainAutoFixFailureReturnsLintError(t *testing.T) {
 		fakeBearcli:  newFakeBearcli(fixableMultiCanonicalListPayload(t)),
 		overwriteErr: errors.New("bearcli overwrite: simulated failure"),
 	}
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
@@ -703,7 +704,7 @@ func TestRun_ApplyMode_DuplicatePass_TotalTagFailure(t *testing.T) {
 		fakeBearcli: newFakeBearcli(threeDuplicateTitleListPayload(t)),
 		tagAddErr:   errors.New("bearcli duplicate tag add: simulated total failure"),
 	}
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
@@ -719,7 +720,7 @@ func TestRun_ApplyMode_DuplicatePass_PartialTagFailure(t *testing.T) {
 	fake := &duplicatePartialTagAddFailFakeBearcli{
 		fakeBearcli: newFakeBearcli(duplicateTitleListPayload(t)),
 	}
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
@@ -740,15 +741,15 @@ func TestRun_ApplyMode_DuplicatePass_PartialTagFailure(t *testing.T) {
 // If the production SetBearcliConcurrency wiring drops, capacity stays
 // at 2 and the assertion catches it.
 func TestRun_ApplyMode_PoolInitializedFromCold(t *testing.T) {
-	domain.ResetBearcliPoolForTest(2)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(2)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	fake := newFakeBearcli([]byte(`[]`))
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true, "cold-pool path")
 
-	metrics := domain.BearcliMetricsSnapshot()
+	metrics := bearcli.MetricsSnapshot()
 	if metrics.Capacity < 4 {
 		t.Errorf("pool capacity after RunLint = %d, want >= 4 (production default); "+
 			"SetBearcliConcurrency wiring dropped", metrics.Capacity)
@@ -762,7 +763,7 @@ func TestRun_ApplyMode_PoolInitializedFromCold(t *testing.T) {
 func TestRun_ApplyMode_EmptyDomains_TagsDuplicateTitles(t *testing.T) {
 	armBearcliPool(t)
 	fake := newFakeBearcli(duplicateTitleListPayload(t))
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, nil, true, "apply-mode empty domains")
@@ -802,7 +803,7 @@ func TestRun_ApplyMode_ScanFailure_ReturnsError(t *testing.T) {
 		fakeBearcli: newFakeBearcli(brokenH1ListPayload(t)),
 		corpusErr:   corpusErr,
 	}
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, true)
@@ -828,7 +829,7 @@ func TestRun_AuditMode_ScanFailure_ReturnsErrorAndSyntheticFinding(t *testing.T)
 		fakeBearcli: newFakeBearcli(brokenH1ListPayload(t)),
 		corpusErr:   corpusErr,
 	}
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
@@ -866,7 +867,7 @@ func TestRun_AuditMode_DuplicateScanFailureReturnsSyntheticFinding(t *testing.T)
 		},
 		corpusErr: corpusErr,
 	}
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	err := cli.RunLint(ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false)
@@ -956,7 +957,7 @@ func TestRun_ApplyMode_TrueE2EIdempotency(t *testing.T) {
 		"created": "2026-05-23T12:00:00Z",
 	}}
 	fake := newMutatingFakeBearcli(t, notes)
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf1 bytes.Buffer
 	runLintExpectOK(t, ctx, &buf1, []*domain.Domain{flatListDomainForTest()}, true, "true-E2E first run")
@@ -983,7 +984,7 @@ func TestRun_AuditMode_OrphanFamilyLabelInOutput(t *testing.T) {
 	payload := orphanFamilyListPayload(t,
 		[]string{"#test/notes", "#strayfamily/sub"})
 	fake := newFakeBearcli(payload)
-	ctx := domain.ContextWithBackend(t.Context(), fake)
+	ctx := bearcli.ContextWithBackend(t.Context(), fake)
 
 	var buf bytes.Buffer
 	runLintExpectOK(t, ctx, &buf, []*domain.Domain{flatListDomainForTest()}, false,
@@ -1147,7 +1148,7 @@ func assertWrappedErr(t *testing.T, label string, err error, wantSentinel error,
 // error-path sub-case. Returns the backend AND the context to drive
 // RunLint with (the ctx-cancel case must hand back a pre-canceled
 // context; the other cases run on a fresh ctx).
-type orphanErrCaseBackend func(t *testing.T) (context.Context, domain.BearcliBackend)
+type orphanErrCaseBackend func(t *testing.T) (context.Context, bearcli.Backend)
 
 // orphanErrCase pins one production error return from runApplyOrphan
 // Pass to a (sentinel, substring) tuple.
@@ -1166,9 +1167,9 @@ type orphanErrCase struct {
 var orphanErrCases = []orphanErrCase{
 	{
 		name: "CtxCanceledAtApplyEntry",
-		build: func(t *testing.T) (context.Context, domain.BearcliBackend) {
+		build: func(t *testing.T) (context.Context, bearcli.Backend) {
 			fake := newFakeBearcli(brokenH1ListPayload(t))
-			ctx, cancel := context.WithCancel(domain.ContextWithBackend(t.Context(), fake))
+			ctx, cancel := context.WithCancel(bearcli.ContextWithBackend(t.Context(), fake))
 			cancel()
 			return ctx, fake
 		},
@@ -1177,23 +1178,23 @@ var orphanErrCases = []orphanErrCase{
 	},
 	{
 		name: "ApplyAllFailed_AbortsWithSentinel",
-		build: func(t *testing.T) (context.Context, domain.BearcliBackend) {
+		build: func(t *testing.T) (context.Context, bearcli.Backend) {
 			fake := &tagAddFailFakeBearcli{
 				fakeBearcli: newFakeBearcli(multiOrphanListPayload(t, 3)),
 				tagAddErr:   errors.New("bearcli tags add: simulated total failure"),
 			}
-			return domain.ContextWithBackend(t.Context(), fake), fake
+			return bearcli.ContextWithBackend(t.Context(), fake), fake
 		},
 		wantSent:   audit.ErrApplyAllFailed,
 		wantSubstr: "orphan tag-add",
 	},
 	{
 		name: "PartialApplyFailure_ReturnsErrLintFailed",
-		build: func(t *testing.T) (context.Context, domain.BearcliBackend) {
+		build: func(t *testing.T) (context.Context, bearcli.Backend) {
 			fake := &partialTagAddFailFakeBearcli{
 				fakeBearcli: newFakeBearcli(multiOrphanListPayload(t, 2)),
 			}
-			return domain.ContextWithBackend(t.Context(), fake), fake
+			return bearcli.ContextWithBackend(t.Context(), fake), fake
 		},
 		wantSent:   cli.ErrLintFailed,
 		wantSubstr: "orphan tag-add failed for 1",

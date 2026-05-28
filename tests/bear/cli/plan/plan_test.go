@@ -5,11 +5,12 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cli"
-	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
@@ -29,6 +30,43 @@ func (planFake) Run(_ context.Context, args []string, _ string) ([]byte, error) 
 		return []byte(`{"hash":"deadbeef"}`), nil
 	}
 	return []byte("[]"), nil
+}
+
+type planReadFailureFake struct{}
+
+func (planReadFailureFake) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) > 0 && args[0] == "list" && hasPlanArg(args, "--tag") {
+		return nil, errors.New("bearcli list --tag simulated failure")
+	}
+	if len(args) > 0 && args[0] == "cat" {
+		return []byte(`{"content":""}`), nil
+	}
+	if len(args) > 0 && args[0] == "show" {
+		return []byte(`{"hash":"deadbeef"}`), nil
+	}
+	return []byte("[]"), nil
+}
+
+type planCanceledReadFake struct {
+	cancel context.CancelFunc
+}
+
+func (f planCanceledReadFake) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) > 0 && args[0] == "list" && hasPlanArg(args, "--tag") {
+		f.cancel()
+		return nil, context.Canceled
+	}
+	if len(args) > 0 && args[0] == "cat" {
+		return []byte(`{"content":""}`), nil
+	}
+	if len(args) > 0 && args[0] == "show" {
+		return []byte(`{"hash":"deadbeef"}`), nil
+	}
+	return []byte("[]"), nil
+}
+
+func hasPlanArg(args []string, key string) bool {
+	return slices.Contains(args, key)
 }
 
 // planOptionsForTest builds PlanOptions pointing at the real catalog fixture
@@ -163,10 +201,10 @@ func TestLoadDomains_UnknownTagSurfacesError(t *testing.T) {
 // `noxctl plan` on a fresh vault reports clean / exit 0 and CI gates that
 // branch on exit 2 never fire.
 func TestRunPlan_ReportsDriftAndExitsTwo_OnFreshVault(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
-	ctx := domain.ContextWithBackend(context.Background(), planFake{})
+	ctx := bearcli.ContextWithBackend(context.Background(), planFake{})
 	var stdout bytes.Buffer
 
 	err := cli.RunPlan(ctx, planOptionsForTest(t, nil, &stdout))
@@ -183,10 +221,10 @@ func TestRunPlan_ReportsDriftAndExitsTwo_OnFreshVault(t *testing.T) {
 // silent zero-domain plan. User-facing bug if this regresses: a typo'd
 // `noxctl plan library/poetri` silently plans nothing and reports clean.
 func TestRunPlan_RejectsUnknownTag(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
-	ctx := domain.ContextWithBackend(context.Background(), planFake{})
+	ctx := bearcli.ContextWithBackend(context.Background(), planFake{})
 	var stdout bytes.Buffer
 
 	err := cli.RunPlan(ctx, planOptionsForTest(t, []string{"library/poetri"}, &stdout))
@@ -203,10 +241,10 @@ func TestRunPlan_RejectsUnknownTag(t *testing.T) {
 // instead of the colored text report. User-facing bug if this regresses:
 // `noxctl plan -o json | jq` breaks because the command emitted text.
 func TestRunPlan_EmitsJSON_WhenOutputJSON(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
-	ctx := domain.ContextWithBackend(context.Background(), planFake{})
+	ctx := bearcli.ContextWithBackend(context.Background(), planFake{})
 	var stdout bytes.Buffer
 	opts := planOptionsForTest(t, nil, &stdout)
 	opts.Output = "json"
@@ -218,5 +256,44 @@ func TestRunPlan_EmitsJSON_WhenOutputJSON(t *testing.T) {
 	out := stdout.String()
 	if !strings.Contains(out, `"schema_version"`) || !strings.Contains(out, `"domains"`) {
 		t.Errorf("`-o json` output is not the documented JSON shape; got:\n%s", out)
+	}
+}
+
+func TestRunPlan_ReturnsError_WhenPlanContainsReadFailures(t *testing.T) {
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+
+	ctx := bearcli.ContextWithBackend(context.Background(), planReadFailureFake{})
+	var stdout bytes.Buffer
+	opts := planOptionsForTest(t, []string{"library/poetry"}, &stdout)
+	opts.Output = "json"
+
+	err := cli.RunPlan(ctx, opts)
+	if err == nil {
+		t.Fatal("RunPlan returned nil despite a Bear read failure; scripts would see exit 0")
+	}
+	if errors.Is(err, cli.ErrDriftDetected) {
+		t.Fatalf("RunPlan err = %v, want generic runtime error instead of drift", err)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, `"errors"`) || !strings.Contains(out, "simulated failure") {
+		t.Fatalf("JSON output did not expose the plan error; got:\n%s", out)
+	}
+}
+
+func TestRunPlan_ReturnsInterrupted_WhenCanceledReadBecomesPlanError(t *testing.T) {
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+
+	parent, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	ctx := bearcli.ContextWithBackend(parent, planCanceledReadFake{cancel: cancel})
+	var stdout bytes.Buffer
+	opts := planOptionsForTest(t, []string{"library/poetry"}, &stdout)
+	opts.Output = "json"
+
+	err := cli.RunPlan(ctx, opts)
+	if !errors.Is(err, cli.ErrInterrupted) {
+		t.Fatalf("RunPlan err = %v, want ErrInterrupted for an operator-canceled read", err)
 	}
 }

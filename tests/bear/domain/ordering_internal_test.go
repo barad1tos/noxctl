@@ -1,8 +1,10 @@
-package domain
+package domain_test
 
 import (
 	"sort"
 	"testing"
+
+	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 func TestParseHubOrderExtractsURLFormNoteIDs(t *testing.T) {
@@ -11,28 +13,29 @@ func TestParseHubOrderExtractsURLFormNoteIDs(t *testing.T) {
 		"- [Same Title](bear://x-callback-url/open-note?id=note-b)\n" +
 		"- [Same Title](bear://x-callback-url/open-note?id=note-a)\n"
 
-	got := parseHubOrder(autoZone)["Items"]
+	got := domain.ParseHubOrder(autoZone)["Items"]
 	assertNoteIDs(t, got, []string{"note-b", "note-a"})
 }
 
 func TestReorderForOutputMatchesDuplicateURLIDs(t *testing.T) {
-	notes := []Note{
+	notes := []domain.Note{
 		{ID: "note-a", Title: "Same Title"},
 		{ID: "note-b", Title: "Same Title"},
 	}
+	bySection := map[string][]domain.Note{"Items": notes}
 
-	got := reorderForOutput(notes, []string{"note-b", "note-a"})
+	domain.ApplyOrder(bySection, map[string][]string{"Items": {"note-b", "note-a"}})
 
-	assertNoteIDs(t, noteIDs(got), []string{"note-b", "note-a"})
+	assertNoteIDs(t, noteIDs(bySection["Items"]), []string{"note-b", "note-a"})
 }
 
 func TestByTitleUsesNoteIDTieBreak(t *testing.T) {
-	notes := []Note{
+	notes := []domain.Note{
 		{ID: "note-b", Title: "Same Title"},
 		{ID: "note-a", Title: "Same Title"},
 	}
 
-	sort.Sort(ByTitle(notes))
+	sort.Sort(domain.ByTitle(notes))
 
 	assertNoteIDs(t, noteIDs(notes), []string{"note-a", "note-b"})
 }
@@ -49,7 +52,7 @@ func assertNoteIDs(t *testing.T, got, want []string) {
 	}
 }
 
-func noteIDs(notes []Note) []string {
+func noteIDs(notes []domain.Note) []string {
 	ids := make([]string, 0, len(notes))
 	for _, note := range notes {
 		ids = append(ids, note.ID)

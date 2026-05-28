@@ -1,14 +1,9 @@
 package domain
 
-// Atomic-body parsing + canonical rendering — the round-trip between
-// raw note bodies and the structured AtomicParts representation,
-// plus the bearcli overwrite path that stamps fresh canonical lines
-// on atoms. parseAtomicContent / renderAtomicCanonical /
-// upsertAtomicBacklink form a tight cluster with their own helpers
-// (atomicParseState, isEmptyH1).
+// Atomic-body parsing + canonical rendering — the pure round-trip between
+// raw note bodies and the structured AtomicParts representation.
 
 import (
-	"context"
 	"fmt"
 	"strings"
 )
@@ -166,10 +161,7 @@ func (d *Domain) renderAtomicCanonical(
 	return b.String()
 }
 
-// upsertAtomicBacklink restructures one atomic note into canonical header form.
-// Idempotent: returns ("", nil) when content already matches the canonical
-// render. On a successful rewrite returns a human-readable summary; on failure
-// returns ("", err) so the caller can aggregate failure counts.
+// RenderAtomicCanonical returns the canonical body form for one atomic note.
 //
 // H1 handling (spec components 2 + 8): when the atom's body lacks a
 // recognized H1 (or carries an empty `# ` H1), the daemon stamps
@@ -177,17 +169,11 @@ func (d *Domain) renderAtomicCanonical(
 // displayed title from the H1. The legacy noteTitle fallback is gone —
 // every canonicalized atom carries a datetime H1, eliminating the
 // `# #tag` recursive-corruption class.
-//
-// Idempotency comparison strips the trailing `[Нова нотатка](bear://...)`
-// segment from both sides — its label/URL drift across regen cycles would
-// otherwise force a no-op write per tick.
-func (d *Domain) upsertAtomicBacklink(
-	ctx context.Context,
-	noteID,
-	noteTitle,
+func RenderAtomicCanonical(
+	d *Domain,
 	bucket,
 	content string,
-) (string, error) {
+) string {
 	parts := d.parseAtomicContent(content, bucket)
 	if parts.H1Line == "" || isEmptyH1(parts.H1Line) {
 		parts.H1Line = "# " + NowForNewNoteLink().Format(H1DatetimeFormat)
@@ -198,14 +184,7 @@ func (d *Domain) upsertAtomicBacklink(
 		parts.H1Line, parts.ExtraTags, bucket,
 		d.backlinkFor(bucket), d.sectionFor(bucket, parts), contentBody,
 	)
-
-	if equalIgnoringNewNoteLinkStrict(desired, content) {
-		return "", nil
-	}
-	if err := overwriteWithRetry(ctx, noteID, desired); err != nil {
-		return "", fmt.Errorf("upsertAtomicBacklink %q: %w", noteTitle, err)
-	}
-	return fmt.Sprintf("%s → restructured", noteTitle), nil
+	return desired
 }
 
 // isEmptyH1 reports whether an H1 line carries no meaningful content
@@ -239,16 +218,7 @@ func hoistPreambleToBody(p *AtomicParts) {
 func RenderAtomicCanonicalForTest(t interface{ Helper() }, d *Domain, noteTitle, bucket, content string) string {
 	t.Helper()
 	_ = noteTitle
-	parts := d.parseAtomicContent(content, bucket)
-	if parts.H1Line == "" || isEmptyH1(parts.H1Line) {
-		parts.H1Line = "# " + NowForNewNoteLink().Format(H1DatetimeFormat)
-	}
-	hoistPreambleToBody(&parts)
-	contentBody := strings.Trim(strings.Join(parts.BodyLines, "\n"), "\n ")
-	return d.renderAtomicCanonical(
-		parts.H1Line, parts.ExtraTags, bucket,
-		d.backlinkFor(bucket), d.sectionFor(bucket, parts), contentBody,
-	)
+	return RenderAtomicCanonical(d, bucket, content)
 }
 
 // RenderCanonicalForBootstrap returns the canonical body form for a note

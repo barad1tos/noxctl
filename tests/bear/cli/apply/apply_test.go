@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -61,7 +62,7 @@ func failingDomain() *domain.Domain {
 
 func TestRunApply_DomainFailureReturnsFailureSentinel(t *testing.T) {
 	dir := t.TempDir()
-	ctx := domain.ContextWithBackend(context.Background(), failingBackend{})
+	ctx := bearcli.ContextWithBackend(context.Background(), failingBackend{})
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
@@ -152,7 +153,7 @@ func TestRunApply_PrePassWriteFailureReturnsFailureSentinel(t *testing.T) {
 	dir := t.TempDir()
 	daily := render.NewFlatListDomain("test/daily", "Daily")
 	weekly := render.NewFlatListDomain("test/weekly", "Weekly")
-	ctx := domain.ContextWithBackend(context.Background(), promotionOverwriteFailBackend{})
+	ctx := bearcli.ContextWithBackend(context.Background(), promotionOverwriteFailBackend{})
 	var stdout bytes.Buffer
 
 	err := cli.RunApply(ctx, cli.ApplyOptions{

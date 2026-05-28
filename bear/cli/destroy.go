@@ -13,6 +13,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -26,6 +27,12 @@ var ErrAborted = errors.New("destroy: aborted by operator")
 // corresponding domain stanza in the loaded catalog. Mapped to
 // exit code 1 with a helpful "did you mean ..." style message.
 var ErrTagNotManaged = errors.New("destroy: tag not managed by this catalog")
+
+type confirmResult struct {
+	text string
+	err  error
+	ok   bool
+}
 
 // DestroyOptions bundles every input Run needs. Plain struct, no methods,
 // caller fills every field per "Accept interfaces, return structs".
@@ -55,7 +62,7 @@ func RunDestroy(ctx context.Context, opts DestroyOptions) error {
 		return fmt.Errorf("%w: %q", ErrTagNotManaged, opts.Tag)
 	}
 
-	notes, err := domain.ListNotesForTag(ctx, opts.Tag)
+	notes, err := bearcli.ListNotesForTag(ctx, opts.Tag)
 	if err != nil {
 		return fmt.Errorf("destroy: list notes for tag %q: %w", opts.Tag, err)
 	}
@@ -75,7 +82,7 @@ func RunDestroy(ctx context.Context, opts DestroyOptions) error {
 	renderPreview(opts.Stdout, opts.Tag, masters, atomics)
 
 	if !opts.AutoApprove {
-		if confirmErr := promptConfirm(opts.Stdout, opts.Stdin, opts.Tag); confirmErr != nil {
+		if confirmErr := promptConfirm(ctx, opts.Stdout, opts.Stdin, opts.Tag); confirmErr != nil {
 			return confirmErr
 		}
 	}
@@ -168,18 +175,40 @@ func renderPreview(w io.Writer, tag string, masters, atomics []domain.Note) {
 // destroy invocations; the tag name is the natural shibboleth —
 // long enough to defeat muscle-memory yes, short enough to be
 // typeable.
-func promptConfirm(out io.Writer, in io.Reader, tag string) error {
+func promptConfirm(ctx context.Context, out io.Writer, in io.Reader, tag string) error {
 	_, _ = fmt.Fprintf(out, "\nType %q to confirm (anything else aborts): ", tag)
-	scanner := bufio.NewScanner(in)
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
-			return fmt.Errorf("destroy: read confirmation: %w", err)
+	result := make(chan confirmResult, 1)
+	go func() {
+		scanner := bufio.NewScanner(in)
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				result <- confirmResult{err: fmt.Errorf("destroy: read confirmation: %w", err)}
+				return
+			}
+			result <- confirmResult{}
+			return
 		}
+		result <- confirmResult{text: scanner.Text(), ok: true}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("destroy: confirmation canceled: %w", ctx.Err())
+	case got := <-result:
+		return validateConfirmation(got, tag)
+	}
+}
+
+func validateConfirmation(result confirmResult, tag string) error {
+	if result.err != nil {
+		return result.err
+	}
+	if !result.ok {
 		// Scan returned false with no error → EOF / closed stream;
 		// treat as a deliberate abort (Ctrl-D, empty pipe).
 		return ErrAborted
 	}
-	if strings.TrimSpace(scanner.Text()) != tag {
+	if strings.TrimSpace(result.text) != tag {
 		return ErrAborted
 	}
 	return nil
@@ -201,7 +230,7 @@ func apply(
 			_, _ = fmt.Fprintf(stderr, "destroy: canceled mid-sweep (%v)\n", err)
 			return trashed, stripped, failed
 		}
-		if err := domain.TrashNote(ctx, m.ID); err != nil {
+		if err := bearcli.TrashNote(ctx, m.ID); err != nil {
 			_, _ = fmt.Fprintf(stderr, "destroy: trash %q (%s): %v\n", m.Title, m.ID, err)
 			failed++
 			continue
@@ -217,7 +246,7 @@ func apply(
 		if !changed {
 			continue
 		}
-		if err := domain.OverwriteNoteContent(ctx, a.ID, newContent); err != nil {
+		if err := bearcli.OverwriteNoteContent(ctx, a.ID, newContent); err != nil {
 			_, _ = fmt.Fprintf(stderr, "destroy: strip %q (%s): %v\n", a.Title, a.ID, err)
 			failed++
 			continue
@@ -259,7 +288,7 @@ func StripCanonical(content, canonicalTag string) (string, bool) {
 // through Run; the seam exists because the project test-location
 // convention forbids in-package _test.go files.
 func PromptConfirmForTest(out io.Writer, in io.Reader, tag string) error {
-	return promptConfirm(out, in, tag)
+	return promptConfirm(context.Background(), out, in, tag)
 }
 
 // RenderPreviewForTest exposes the preview renderer to tests so the

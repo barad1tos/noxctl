@@ -3,7 +3,8 @@ package engine
 import (
 	"time"
 
-	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/bearcli"
+	"github.com/barad1tos/noxctl/bear/regen"
 )
 
 // ApplyResult is the return payload from Apply. Counts per pre-pass +
@@ -20,7 +21,7 @@ type ApplyResult struct {
 	// Bench mode reads this to emit per-cycle throughput
 	// numbers; production daemon path leaves WithMetrics false so the
 	// snapshot is a zero-cost no-op.
-	Metrics domain.BearcliMetrics
+	Metrics bearcli.Metrics
 }
 
 // PrePassCounts captures per-pre-pass outcomes. OK = atoms processed
@@ -31,7 +32,7 @@ type PrePassCounts struct {
 	OK, Changed, Failed int
 }
 
-// DomainCounts captures per-domain RunRegen outcomes for the PLAY RECAP
+// DomainCounts captures per-domain regen outcomes for the PLAY RECAP
 // table. Ansible-style: Created/Changed/Unchanged/Failed.
 type DomainCounts struct {
 	Created, Changed, Unchanged, Failed int
@@ -39,7 +40,7 @@ type DomainCounts struct {
 
 // DomainCountsFromRegen converts the per-domain pipeline result into
 // the PLAY RECAP shape.
-func DomainCountsFromRegen(result domain.RegenResult) DomainCounts {
+func DomainCountsFromRegen(result regen.Result) DomainCounts {
 	counts := DomainCounts{
 		Created:   result.Created(),
 		Changed:   result.Changed(),

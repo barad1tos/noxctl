@@ -21,6 +21,7 @@ import (
 
 	"github.com/barad1tos/noxctl/bear/audit"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/regen"
 )
 
 // PlanOpts bundles inputs to engine.Plan. Mirrors ApplyOpts shape but
@@ -68,12 +69,8 @@ func planSinglePath(ctx context.Context, opts PlanOpts) (*PlanResult, error) {
 		opts.Stderr = os.Stderr
 	}
 	features := planFeatures(opts)
-	if features.DuplicateRegistry {
-		seedDuplicateRegistry(ctx, opts.Domains, opts.Stderr)
-	} else {
-		clearDuplicateRegistries(opts.Domains)
-	}
 	result := newEmptyPlanResult(len(opts.Domains))
+	preparePlanDuplicateRegistry(ctx, opts, features, result)
 	for _, d := range opts.Domains {
 		if ctx.Err() != nil {
 			result.Interrupted = true
@@ -131,6 +128,21 @@ func planFeatures(opts PlanOpts) Features {
 	return *opts.Features
 }
 
+func preparePlanDuplicateRegistry(
+	ctx context.Context,
+	opts PlanOpts,
+	features Features,
+	result *PlanResult,
+) {
+	if !features.DuplicateRegistry {
+		clearDuplicateRegistries(opts.Domains)
+		return
+	}
+	if err := seedDuplicateRegistry(ctx, opts.Domains, opts.Stderr); err != nil {
+		result.Errors = append(result.Errors, PlanError{Tag: "", Msg: err.Error()})
+	}
+}
+
 // seedDuplicateRegistry primes `Domain.Duplicates` on every domain so
 // `AtomicWikilink` emits the `[Title](bear://x-callback-url/open-note?id=X)`
 // disambiguation form for cross-corpus duplicate titles. Without it
@@ -139,12 +151,12 @@ func planFeatures(opts PlanOpts) Features {
 // drift. Build-failure is non-fatal: log to stderr and fall back to
 // plain wikilinks (matches the apply-side log-and-continue pattern at
 // `bear/engine/apply.go`).
-func seedDuplicateRegistry(ctx context.Context, domains []*domain.Domain, stderr io.Writer) {
+func seedDuplicateRegistry(ctx context.Context, domains []*domain.Domain, stderr io.Writer) error {
 	if len(domains) == 0 {
-		return
+		return nil
 	}
 	clearDuplicateRegistries(domains)
-	registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+	registry, err := regen.BuildCorpusDuplicateRegistry(ctx)
 	if err != nil {
 		// Defense in depth: planSinglePath already defaults nil
 		// stderr to os.Stderr, but callers landing here through
@@ -155,11 +167,12 @@ func seedDuplicateRegistry(ctx context.Context, domains []*domain.Domain, stderr
 		}
 		_, _ = fmt.Fprintf(stderr,
 			"duplicates: registry build failed: %v (continuing with plain wikilinks)\n", err)
-		return
+		return err
 	}
 	for _, d := range domains {
 		d.Duplicates = registry
 	}
+	return nil
 }
 
 func clearDuplicateRegistries(domains []*domain.Domain) {
@@ -170,7 +183,7 @@ func clearDuplicateRegistries(domains []*domain.Domain) {
 
 // computeDomainDelta returns one domain's plan entry by reading
 // current Bear state (FetchMasterContent) and rendering desired state
-// via domain.SnapshotDomainRenderInputs + d.RenderMaster, comparing via
+// via regen.SnapshotDomainRenderInputs + d.RenderMaster, comparing via
 // domain.EqualIgnoringNewNoteLinkStrict (master flavor — URL-shape drift
 // surfaces as a real diff). Mirrors bear/upserts.go::upsertMasterIndex
 // with overwriteWithRetry calls replaced by Diff{} appends.
@@ -181,12 +194,12 @@ func clearDuplicateRegistries(domains []*domain.Domain) {
 func computeDomainDelta(ctx context.Context, d *domain.Domain, verbose bool) (DomainPlan, error) {
 	dp := DomainPlan{Tag: d.Tag, Status: StatusClean, Changes: make([]Diff, 0)}
 
-	inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+	inputs, err := regen.SnapshotDomainRenderInputs(ctx, d)
 	if err != nil {
 		return dp, fmt.Errorf("computeDomainDelta(%s) inputs: %w", d.Tag, err)
 	}
 	desiredAuto := d.RenderMaster(d, inputs.Groups)
-	currentMaster, err := domain.FetchMasterContent(ctx, d)
+	currentMaster, err := regen.FetchMasterContent(ctx, d)
 	if err != nil {
 		return dp, fmt.Errorf("computeDomainDelta(%s) master read: %w", d.Tag, err)
 	}
@@ -242,14 +255,14 @@ func computeDomainDelta(ctx context.Context, d *domain.Domain, verbose bool) (Do
 func appendHubDiffs(
 	ctx context.Context,
 	d *domain.Domain,
-	inputs domain.RenderInputs,
+	inputs regen.RenderInputs,
 	dp DomainPlan,
 	verbose bool,
 ) (DomainPlan, error) {
 	if d.RenderHub == nil {
 		return dp, nil
 	}
-	currentHubs, err := domain.FetchHubContents(ctx, d)
+	currentHubs, err := regen.FetchHubContents(ctx, d)
 	if err != nil {
 		return dp, fmt.Errorf("computeDomainDelta(%s) hub read: %w", d.Tag, err)
 	}

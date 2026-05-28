@@ -12,10 +12,13 @@ package verify_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cli/verify"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -138,6 +141,51 @@ func (b failingBearcliBackend) Run(_ context.Context, _ []string, _ string) ([]b
 	return nil, b.err
 }
 
+type secondPassFailureAndCreateBackend struct {
+	mu         sync.Mutex
+	createSeen bool
+}
+
+func (b *secondPassFailureAndCreateBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) == 0 {
+		return []byte("{}"), nil
+	}
+	switch args[0] {
+	case "list":
+		if listLocation(args) == "notes" && b.hasCreated() {
+			return nil, errors.New("second pass duplicate registry failure")
+		}
+		return []byte("[]"), nil
+	case "cat":
+		return []byte(`{"id":"master-1","title":"✱ Test","content":"","hash":"deadbeef","tags":[]}`), nil
+	case "show":
+		return []byte(`{"hash":"deadbeef","content":""}`), nil
+	case "create":
+		b.mu.Lock()
+		b.createSeen = true
+		b.mu.Unlock()
+		return []byte(`{"id":"master-1","title":"✱ Test"}`), nil
+	case "overwrite":
+		return []byte(`{"ok":true}`), nil
+	}
+	return nil, errors.New("secondPassFailureAndCreateBackend: unhandled bearcli call")
+}
+
+func (b *secondPassFailureAndCreateBackend) hasCreated() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.createSeen
+}
+
+func listLocation(args []string) string {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--location" {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
 type simulatedErr string
 
 func (e simulatedErr) Error() string { return string(e) }
@@ -150,7 +198,7 @@ func (e simulatedErr) Error() string { return string(e) }
 func TestCheckApplyIdempotency_OperatorWithFailingBackend_FirstPassReportsFailures(t *testing.T) {
 	domains := loadFixtureDomains(t)
 	backend := failingBearcliBackend{err: simulatedErr("bearcli simulated outage")}
-	ctx := domain.ContextWithBackend(t.Context(), backend)
+	ctx := bearcli.ContextWithBackend(t.Context(), backend)
 	got := verify.CheckApplyIdempotencyForTest(ctx, verify.Options{
 		ApplyOpts: applyOpts(t),
 	}, domains)
@@ -161,6 +209,24 @@ func TestCheckApplyIdempotency_OperatorWithFailingBackend_FirstPassReportsFailur
 	const want = "first apply pass reported per-domain failures"
 	if !strings.Contains(got.Message, want) {
 		t.Errorf("expected %q in message; got: %q", want, got.Message)
+	}
+}
+
+func TestCheckApplyIdempotency_OperatorWithSecondPassFailure_ReturnsRuntimeErrorBeforeWriteDrift(t *testing.T) {
+	domains := loadFixtureDomains(t)
+	ctx := bearcli.ContextWithBackend(t.Context(), &secondPassFailureAndCreateBackend{})
+
+	got := verify.CheckApplyIdempotencyForTest(ctx, verify.Options{
+		ApplyOpts: applyOpts(t),
+	}, domains)
+	if got.Status != verify.StatusError {
+		t.Fatalf("status = %v, want StatusError for second-pass runtime failure", got.Status)
+	}
+	if !strings.Contains(got.Message, "second apply pass reported apply failures") {
+		t.Fatalf("message = %q, want second-pass runtime failure classification", got.Message)
+	}
+	if strings.Contains(got.Message, "wrote") {
+		t.Fatalf("message = %q, want runtime failure before write-drift classification", got.Message)
 	}
 }
 

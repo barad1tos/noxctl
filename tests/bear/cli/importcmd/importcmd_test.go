@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/BurntSushi/toml"
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -149,11 +150,11 @@ func TestEmitWithNotes_IndexTitleCapitalize(t *testing.T) {
 // if this regresses: `noxctl import <newtag>` either errors or prints nothing
 // when the operator points it at a fresh, empty tag.
 func TestRunImport_EmitsFlatListStanza_WhenTagEmpty(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	fake := &importFake{listPayload: []byte("[]")}
-	ctx := domain.ContextWithBackend(context.Background(), fake)
+	ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 	var buf bytes.Buffer
 	if err := cli.RunImport(ctx, cli.ImportOptions{Tag: "research/papers", Stdout: &buf}); err != nil {
@@ -176,14 +177,14 @@ func TestRunImport_EmitsFlatListStanza_WhenTagEmpty(t *testing.T) {
 //
 //cyrillic:permit
 func TestRunImport_EmitsGroupedVerticalStanza_WhenNotesShareSubTag(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	fake := &importFake{listPayload: importListJSON(t,
 		map[string]any{"id": "1", "title": "Праця А", "tags": []string{"#research/papers", "#research/papers/Math"}},
 		map[string]any{"id": "2", "title": "Праця Б", "tags": []string{"#research/papers", "#research/papers/Physics"}},
 	)}
-	ctx := domain.ContextWithBackend(context.Background(), fake)
+	ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 	var buf bytes.Buffer
 	if err := cli.RunImport(ctx, cli.ImportOptions{Tag: "research/papers", Stdout: &buf}); err != nil {
@@ -228,11 +229,11 @@ func TestRunImport_HubRoutedFromAuthorBodies(t *testing.T) {
 // a misleading empty-tag flat-list stanza. User-facing bug if this regresses:
 // a bearcli failure looks identical to "this tag has no notes".
 func TestRunImport_ReturnsError_WhenListFails(t *testing.T) {
-	domain.ResetBearcliPoolForTest(4)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	fake := &importFake{listErr: errors.New("bearcli list: simulated failure")}
-	ctx := domain.ContextWithBackend(context.Background(), fake)
+	ctx := bearcli.ContextWithBackend(context.Background(), fake)
 
 	var buf bytes.Buffer
 	err := cli.RunImport(ctx, cli.ImportOptions{Tag: "research/papers", Stdout: &buf})

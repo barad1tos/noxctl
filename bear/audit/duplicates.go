@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
@@ -30,7 +31,7 @@ func AggregateDuplicateTitlesFromJSON(jsonBytes []byte) ([]Finding, error) {
 // ScanDuplicateTitles walks the full Bear notes corpus and returns one finding
 // for each untriaged note whose title is shared by at least one other note.
 func ScanDuplicateTitles(ctx context.Context, domains []*domain.Domain) ([]Finding, error) {
-	notes, err := domain.ListCorpusNotes(ctx)
+	notes, err := bearcli.ListCorpusNotes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("ScanDuplicateTitles list: %w", err)
 	}

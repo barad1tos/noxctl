@@ -5,9 +5,9 @@
 // per project convention — tests/bear/ is the canonical home for
 // bear_test files.
 //
-// Drives the production API (domain.SetBearcliConcurrency,
-// domain.AcquireBearcliForTest, domain.BearcliMetricsSnapshot,
-// domain.ResetBearcliPoolForTest). Tests use the standard-library
+// Drives the production API (bearcli.SetConcurrency,
+// bearcli.AcquireForTest, bearcli.MetricsSnapshot,
+// bearcli.ResetPoolForTest). Tests use the standard-library
 // testing/synctest bubble so goroutine scheduling is deterministic
 // — no real wall-clock sleeps, no flaky timing.
 package bear_test
@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
-	"github.com/barad1tos/noxctl/bear/domain"
 )
 
 // startHolder spawns a goroutine that acquires one bearcli slot and
@@ -30,7 +29,7 @@ func startHolder(t *testing.T, ctx context.Context, kind string, release <-chan 
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
-		rel, err := domain.AcquireBearcliForTest(ctx, kind)
+		rel, err := bearcli.AcquireForTest(ctx, kind)
 		if err != nil {
 			t.Errorf("holder %q acquire failed: %v", kind, err)
 			close(done)
@@ -72,11 +71,11 @@ func assertChanFired(t *testing.T, ch <-chan struct{}, message string) {
 // acquires, exactly two succeed pre-release and the third blocks until
 // one slot is returned.
 func TestBearcliSemaphore(t *testing.T) {
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	synctest.Test(
 		t, func(t *testing.T) {
-			domain.ResetBearcliPoolForTest(2)
+			bearcli.ResetPoolForTest(2)
 
 			ctx := t.Context()
 			holdA, holdB := make(chan struct{}), make(chan struct{})
@@ -92,7 +91,7 @@ func TestBearcliSemaphore(t *testing.T) {
 			thirdDone := make(chan struct{})
 			var thirdRelease func()
 			go func() {
-				rel, err := domain.AcquireBearcliForTest(ctx, "list")
+				rel, err := bearcli.AcquireForTest(ctx, "list")
 				if err != nil {
 					t.Errorf("acquire C failed: %v", err)
 					close(thirdDone)
@@ -116,7 +115,7 @@ func TestBearcliSemaphore(t *testing.T) {
 			close(holdB)
 			<-doneB
 
-			snap := domain.BearcliMetricsSnapshot()
+			snap := bearcli.MetricsSnapshot()
 			if snap.Capacity != 2 {
 				t.Errorf("Capacity = %d, want 2", snap.Capacity)
 			}
@@ -134,14 +133,14 @@ func TestBearcliSemaphore(t *testing.T) {
 // ctx.Done — a blocked acquire returns ctx.Err promptly when the
 // context is canceled, and the canceled caller does NOT consume a slot.
 func TestBearcliSemaphore_CtxCancel(t *testing.T) {
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
 	synctest.Test(
 		t, func(t *testing.T) {
-			domain.ResetBearcliPoolForTest(1)
+			bearcli.ResetPoolForTest(1)
 
 			// Saturate the single slot.
-			rel, err := domain.AcquireBearcliForTest(t.Context(), "list")
+			rel, err := bearcli.AcquireForTest(t.Context(), "list")
 			if err != nil {
 				t.Fatalf("primary acquire failed: %v", err)
 			}
@@ -149,7 +148,7 @@ func TestBearcliSemaphore_CtxCancel(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			blockedDone := make(chan error, 1)
 			go func() {
-				_, acquireErr := domain.AcquireBearcliForTest(ctx, "list")
+				_, acquireErr := bearcli.AcquireForTest(ctx, "list")
 				blockedDone <- acquireErr
 			}()
 
@@ -184,7 +183,7 @@ func TestBearcliSemaphore_CtxCancel(t *testing.T) {
 
 			ctx2, cancel2 := context.WithTimeout(t.Context(), 100*time.Millisecond)
 			defer cancel2()
-			rel2, err := domain.AcquireBearcliForTest(ctx2, "list")
+			rel2, err := bearcli.AcquireForTest(ctx2, "list")
 			if err != nil {
 				t.Fatalf("post-release acquire failed: %v", err)
 			}
@@ -198,7 +197,7 @@ func TestBearcliSemaphore_CtxCancel(t *testing.T) {
 // of kind assertions stays under the gocognit budget.
 func assertKindCount(t *testing.T, kind string, want int64) {
 	t.Helper()
-	if got := domain.BearcliMetricsSnapshot().CallsByKind[kind]; got != want {
+	if got := bearcli.MetricsSnapshot().CallsByKind[kind]; got != want {
 		t.Errorf("CallsByKind[%s] = %d, want %d", kind, got, want)
 	}
 }
@@ -208,19 +207,19 @@ func assertKindCount(t *testing.T, kind string, want int64) {
 // that ResetBearcliPoolForTest zeroes the counters. Also covers the
 // SetBearcliConcurrency sync.Once contract — a second call is a no-op.
 func TestBearcliMetrics_CallsByKind(t *testing.T) {
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
 
-	domain.ResetBearcliPoolForTest(4)
+	bearcli.ResetPoolForTest(4)
 	ctx := context.Background()
 	for _, k := range []string{"list", "list", "list", "cat", "cat", "overwrite"} {
-		rel, err := domain.AcquireBearcliForTest(ctx, k)
+		rel, err := bearcli.AcquireForTest(ctx, k)
 		if err != nil {
 			t.Fatalf("acquire %q failed: %v", k, err)
 		}
 		rel()
 	}
 
-	snap := domain.BearcliMetricsSnapshot()
+	snap := bearcli.MetricsSnapshot()
 	assertKindCount(t, "list", 3)
 	assertKindCount(t, "cat", 2)
 	assertKindCount(t, "overwrite", 1)
@@ -233,8 +232,8 @@ func TestBearcliMetrics_CallsByKind(t *testing.T) {
 	}
 
 	// ResetBearcliPoolForTest zeroes counters and re-arms the sync.Once.
-	domain.ResetBearcliPoolForTest(2)
-	snap = domain.BearcliMetricsSnapshot()
+	bearcli.ResetPoolForTest(2)
+	snap = bearcli.MetricsSnapshot()
 	if snap.AcquireCount != 0 {
 		t.Errorf("after reset: AcquireCount = %d, want 0", snap.AcquireCount)
 	}
@@ -249,22 +248,22 @@ func TestBearcliMetrics_CallsByKind(t *testing.T) {
 
 	// SetBearcliConcurrency sync.Once contract — the first call after
 	// reset installs cap 5; the second call is a silent no-op.
-	domain.SetBearcliConcurrency(5)
-	domain.SetBearcliConcurrency(99)
-	if got := domain.BearcliMetricsSnapshot().Capacity; got != 5 {
+	bearcli.SetConcurrency(5)
+	bearcli.SetConcurrency(99)
+	if got := bearcli.MetricsSnapshot().Capacity; got != 5 {
 		t.Errorf("after second SetBearcliConcurrency: Capacity = %d, want 5 (sync.Once silent on second call)", got)
 	}
 
 	// ResetBearcliMetrics zeroes counters without replacing the channel.
-	rel, err := domain.AcquireBearcliForTest(ctx, "find")
+	rel, err := bearcli.AcquireForTest(ctx, "find")
 	if err != nil {
 		t.Fatalf("post-sync.Once acquire failed: %v", err)
 	}
 	rel()
 	assertKindCount(t, "find", 1)
-	domain.ResetBearcliMetrics()
+	bearcli.ResetMetrics()
 	assertKindCount(t, "find", 0)
-	if got := domain.BearcliMetricsSnapshot().Capacity; got != 5 {
+	if got := bearcli.MetricsSnapshot().Capacity; got != 5 {
 		t.Errorf("after ResetBearcliMetrics: Capacity = %d, want 5 (untouched)", got)
 	}
 }
@@ -292,10 +291,10 @@ func (alwaysOKBackend) Run(_ context.Context, _ []string, _ string) ([]byte, err
 // metric. This test pins their first-class status so a future refactor
 // cannot regress them back into `other`.
 func TestBearcliMetrics_KindClassification(t *testing.T) {
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
-	domain.ResetBearcliPoolForTest(4)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+	bearcli.ResetPoolForTest(4)
 
-	ctx := domain.ContextWithBackend(context.Background(), alwaysOKBackend{})
+	ctx := bearcli.ContextWithBackend(context.Background(), alwaysOKBackend{})
 
 	cases := []struct {
 		name string
@@ -315,7 +314,7 @@ func TestBearcliMetrics_KindClassification(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			domain.ResetBearcliMetrics()
+			bearcli.ResetMetrics()
 			if _, err := bearcli.Run(ctx, tc.args, ""); err != nil {
 				t.Fatalf("bearcli.Run(%v) failed: %v", tc.args, err)
 			}

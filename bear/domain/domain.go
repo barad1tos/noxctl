@@ -1,6 +1,6 @@
 // Package domain is the Bear-specific framework that powers the regen-watchd
-// daemon: bearcli wrappers, canonical-header parsing, sort comparators, and
-// the *Domain abstraction with its core algorithms.
+// daemon: canonical-header parsing, sort comparators, and the *Domain
+// abstraction with its core algorithms.
 //
 // Per-tag configurations live in the sibling `modules/` package — adding a
 // new tag is one new file there with a `var FooDomain = &bear.Domain{...}`
@@ -8,13 +8,6 @@
 package domain
 
 import "github.com/barad1tos/noxctl/bear/note"
-
-// bearcli sentinels and command-line constants (Timeout,
-// ErrHashConflict, FlagFormat, FlagFields, FlagBase, FormatJSON,
-// FieldsIDTitle, FieldsAutoTag) live in bear/bearcli. Callers reach
-// them directly via the bearcli package; bear/domain/aliases.go
-// keeps a handful of wrappers for symbols the regen pipeline still
-// references under bear/domain.X spelling.
 
 // HubMarker splits a Hub note's auto-zone (above) from the
 // curator-managed zone (below). Same convention is reused across all

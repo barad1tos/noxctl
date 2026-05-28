@@ -31,9 +31,8 @@ const (
 // to outcome. Counters are passed as pointers so this routine has no
 // global state and stays trivially testable from an external package.
 //
-// Wired from domain.overwriteWithRetry's three counter-increment branches.
-// The audit reporter reads the resulting metrics
-// via domain.BearcliMetricsSnapshot.
+// Wired from bearcli.OverwriteWithRetry's three counter-increment branches.
+// The audit reporter reads the resulting metrics via bearcli.MetricsSnapshot.
 func Record(outcome Outcome, hashConflicts, retriesOK, retriesFail *atomic.Int64) {
 	switch outcome {
 	case NoConflict:

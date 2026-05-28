@@ -1,5 +1,5 @@
 // Package engine apply orchestrator — one-shot wrapper around the
-// pre-pass + per-domain RunRegen pipeline that previously lived in the
+// pre-pass + per-domain regen pipeline that previously lived in the
 // legacy daemon's runAllRegens routine. Same pre-pass order, same
 // log-and-continue policy, same self-write-gate discipline (the gate
 // itself lives on engine.Daemon; Apply is one-shot and needs no gate).
@@ -16,6 +16,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/fastpass"
 	"github.com/barad1tos/noxctl/bear/state"
@@ -25,7 +26,7 @@ import (
 // no defaults; caller supplies every field per "Accept interfaces,
 // return structs".
 type ApplyOpts struct {
-	Domains   []*domain.Domain    // REQUIRED — engine iterates and calls RunRegen
+	Domains   []*domain.Domain    // REQUIRED — engine iterates and calls regen.Run
 	Pins      *domain.PinRegistry // REQUIRED — may be empty registry; nil-safe per bear/pins.go
 	StatePath string              // REQUIRED — "./.noxctl/state.json"
 	LockPath  string              // REQUIRED — "./.noxctl/.lock" (used by AcquireApply)
@@ -46,11 +47,10 @@ type ApplyOpts struct {
 
 	// BearcliConcurrency is the operator-tuned cap for concurrent bearcli
 	// subprocesses. Zero or negative => engine default
-	// DefaultBearcliConcurrency. When > 0, Apply calls
-	// domain.SetBearcliConcurrency(n) once at entry before any pre-pass
-	// fires. The sync.Once gate inside SetBearcliConcurrency means
-	// subsequent calls are silent no-ops; bench mode uses
-	// domain.ResetBearcliPoolForTest to re-arm between sweep cycles.
+	// DefaultBearcliConcurrency. When > 0, Apply calls bearcli.SetConcurrency(n)
+	// once at entry before any pre-pass fires. The sync.Once gate inside
+	// SetConcurrency means subsequent calls are silent no-ops; bench mode uses
+	// bearcli.ResetPoolForTest to re-arm between sweep cycles.
 	BearcliConcurrency int
 
 	// WithMetrics, when true, copies the bearcli pool snapshot into
@@ -59,8 +59,8 @@ type ApplyOpts struct {
 	WithMetrics bool
 
 	// DomainTimingHook, when non-nil, is called inside runDomainAndSave
-	// after each RunRegen returns. tag = domain.Tag, elapsed = RunRegen
-	// wall-clock. Used by --bench mode to accumulate
+	// after each regen.Run returns. tag = domain.Tag, elapsed = wall-clock duration.
+	// Used by --bench mode to accumulate
 	// per_domain[] in the JSON envelope; nil in production. Hook fires
 	// from worker goroutines — implementations MUST be concurrency-safe
 	// (atomic/mutex).
@@ -81,7 +81,7 @@ type ApplyOpts struct {
 }
 
 // DefaultBearcliConcurrency is the ship-default capacity for
-// `domain.SetBearcliConcurrency` across every entry point — apply,
+// `bearcli.SetConcurrency` across every entry point — apply,
 // daemon, plan. Exported so the read-only `noxctl plan` path can
 // install the same ceiling without redeclaring the constant —
 // silently drifting defaults are a maintenance trap.
@@ -101,7 +101,7 @@ func applyInProgressVerbFor(opts ApplyOpts) string {
 
 // Apply runs the orchestrator one-shot: acquires flock,
 // runs pre-passes (gated by opts.Features), iterates opts.Domains
-// calling RunRegen, persists state.json incrementally per-domain,
+// calling regen.Run, persists state.json incrementally per-domain,
 // releases flock.
 //
 // State.LastApply is set ONLY on successful completion; SIGINT or
@@ -125,14 +125,14 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	}
 
 	// Step -1: initialize the global bearcli subprocess
-	// pool. SetBearcliConcurrency is sync.Once-gated inside package domain,
+	// pool. SetConcurrency is sync.Once-gated inside package bearcli,
 	// so a second Apply in the same process is a no-op. Bench-mode
-	// (--sweep) drives ResetBearcliPoolForTest between cycles to re-arm
+	// (--sweep) drives ResetPoolForTest between cycles to re-arm
 	// at a new capacity; production daemon path is one-shot per process.
 	if opts.BearcliConcurrency <= 0 {
 		opts.BearcliConcurrency = DefaultBearcliConcurrency
 	}
-	domain.SetBearcliConcurrency(opts.BearcliConcurrency)
+	bearcli.SetConcurrency(opts.BearcliConcurrency)
 
 	// Step 0: acquire flock + write apply-pending sentinel. Gated on
 	// !opts.SkipFlock so engine.Daemon.cycleOnce can call engine.Apply

@@ -1,8 +1,6 @@
 package domain
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -38,38 +36,15 @@ func (r *DuplicateRegistry) IsDuplicate(title string) bool {
 	return len(r.titleToIDs[title]) > 1
 }
 
-// BuildCorpusDuplicateRegistry indexes every Bear note in the notes location.
-// Use this when rendering generated links: unmanaged notes can still collide
-// with managed atom titles, and Bear's `[[Title]]` resolver does not know
-// which corpus slice noxctl owns.
-func BuildCorpusDuplicateRegistry(ctx context.Context) (*DuplicateRegistry, error) {
-	notes, err := ListCorpusNotes(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("BuildCorpusDuplicateRegistry: %w", err)
-	}
+// BuildDuplicateRegistry indexes the provided notes by title. Runtime callers
+// should pass the full Bear corpus so unmanaged notes can still disambiguate
+// generated links.
+func BuildDuplicateRegistry(notes []Note) *DuplicateRegistry {
 	titleToIDSet := make(map[string]map[string]struct{})
 	for _, note := range notes {
 		indexNoteTitle(note, titleToIDSet)
 	}
-	return &DuplicateRegistry{titleToIDs: collectDuplicates(titleToIDSet)}, nil
-}
-
-// ListCorpusNotes reads every Bear note in the notes location using the field
-// set needed by duplicate-title scanners and structural-note classifiers.
-func ListCorpusNotes(ctx context.Context) ([]Note, error) {
-	out, err := runBearcli(
-		ctx,
-		[]string{"list", "--location", "notes", flagFormat, formatJSON, flagFields, "id,title,content,tags"},
-		"",
-	)
-	if err != nil {
-		return nil, fmt.Errorf("ListCorpusNotes list: %w", err)
-	}
-	var notes []Note
-	if err = json.Unmarshal(out, &notes); err != nil {
-		return nil, fmt.Errorf("ListCorpusNotes parse: %w", err)
-	}
-	return notes, nil
+	return &DuplicateRegistry{titleToIDs: collectDuplicates(titleToIDSet)}
 }
 
 func indexNoteTitle(note Note, titleToIDSet map[string]map[string]struct{}) {

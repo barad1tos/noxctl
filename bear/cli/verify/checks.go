@@ -25,16 +25,15 @@ func failCheck(name, message string, details []string) Check {
 }
 
 // checkPlanParity runs `engine.Plan` against the loaded catalog and
-// reports PASS when `PlanResult.HasDrift()` is false AND there are
-// zero per-domain errors. Strict mode additionally fails when the
-// residue scan reports untracked tag-families.
+// reports PASS when `PlanResult.HasDrift()` is false AND there are no
+// plan runtime errors. Strict mode additionally fails when the residue
+// scan reports untracked tag-families.
 func checkPlanParity(ctx context.Context, opts Options, domains []*domain.Domain) Check {
 	check := Check{Name: "plan-parity"}
-	features := opts.ApplyOpts.Features
 	res, err := engine.Plan(ctx, engine.PlanOpts{
 		Domains:  domains,
 		Stderr:   opts.Stderr,
-		Features: &features,
+		Features: new(opts.ApplyOpts.Features),
 	})
 	if err != nil {
 		check.Status = StatusError
@@ -44,6 +43,12 @@ func checkPlanParity(ctx context.Context, opts Options, domains []*domain.Domain
 	if res.Interrupted {
 		check.Status = StatusError
 		check.Message = "engine.Plan interrupted (ctx canceled)"
+		return check
+	}
+	if len(res.Errors) > 0 {
+		check.Status = StatusError
+		check.Message = fmt.Sprintf("plan reported %d runtime error(s)", len(res.Errors))
+		check.Details = planErrorDetails(res.Errors)
 		return check
 	}
 	if res.HasDrift() || res.Summary.DomainsError > 0 {
@@ -70,6 +75,18 @@ func checkPlanParity(ctx context.Context, opts Options, domains []*domain.Domain
 		res.Summary.DomainsTotal,
 	)
 	return check
+}
+
+func planErrorDetails(planErrors []engine.PlanError) []string {
+	details := make([]string, 0, len(planErrors))
+	for _, planErr := range planErrors {
+		scope := planErr.Tag
+		if scope == "" {
+			scope = "corpus"
+		}
+		details = append(details, fmt.Sprintf("%s: %s", scope, planErr.Msg))
+	}
+	return details
 }
 
 // driftDomainList collects the tags of the drift / error domains so

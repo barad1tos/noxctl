@@ -37,7 +37,9 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/regen"
 	"github.com/barad1tos/noxctl/bear/render"
 )
 
@@ -203,7 +205,7 @@ func hasFamilyTag(tags []any, family, familySubPrefix string) bool {
 	return false
 }
 
-// Run satisfies domain.BearcliBackend. Dispatches by args[0] (the
+// Run satisfies bearcli.Backend. Dispatches by args[0] (the
 // bearcli subcommand). Unknown subcommands return "{}" so production
 // code that defaults to empty JSON parses cleanly.
 func (f *fakeWorkBackend) Run(_ context.Context, args []string, stdin string) ([]byte, error) {
@@ -347,7 +349,7 @@ func TestTagOverrideIntegration_DragToTag_ReBuckets(t *testing.T) {
 // TestTagOverrideIntegration_MasterWinsOverTag's assertion lambda.
 //
 //cyrillic:permit
-func assertDragRebucketsToTasks(t *testing.T, inputs domain.RenderInputs) {
+func assertDragRebucketsToTasks(t *testing.T, inputs regen.RenderInputs) {
 	t.Helper()
 	if got := noteIDs(inputs.Groups["tasks"]); !slices.Equal(got, []string{atomNoteID}) {
 		t.Errorf("Groups[\"tasks\"] = %v, want [%s] (tag override should re-bucket the atom)",
@@ -368,16 +370,16 @@ func assertDragRebucketsToTasks(t *testing.T, inputs domain.RenderInputs) {
 func runWorkSnapshotCase(
 	t *testing.T,
 	stage func(t *testing.T, fake *fakeWorkBackend),
-	assertFn func(t *testing.T, inputs domain.RenderInputs),
+	assertFn func(t *testing.T, inputs regen.RenderInputs),
 ) {
 	t.Helper()
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeWorkBackend()
 		stage(t, fake)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 		d := buildWorkDomainForIntegration()
-		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		inputs, err := regen.SnapshotDomainRenderInputs(ctx, d)
 		if err != nil {
 			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
 		}
@@ -397,14 +399,14 @@ func TestTagOverrideIntegration_DragToTag_Idempotent(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeWorkBackend()
 		stageDragScenario(t, fake)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 		d := buildWorkDomainForIntegration()
 
-		first, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		first, err := regen.SnapshotDomainRenderInputs(ctx, d)
 		if err != nil {
 			t.Fatalf("first snapshot: %v", err)
 		}
-		second, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		second, err := regen.SnapshotDomainRenderInputs(ctx, d)
 		if err != nil {
 			t.Fatalf("second snapshot: %v", err)
 		}
@@ -430,7 +432,7 @@ func TestTagOverrideIntegration_MasterWinsOverTag(t *testing.T) {
 	// "development" (shared setup lives in stageMasterTagConflict — the
 	// WARN-log twin OnSkipLogsSuppression exercises the same scenario
 	// through RunRegen rather than the snapshot path).
-	runWorkSnapshotCase(t, stageMasterTagConflict, func(t *testing.T, inputs domain.RenderInputs) {
+	runWorkSnapshotCase(t, stageMasterTagConflict, func(t *testing.T, inputs regen.RenderInputs) {
 		if got := noteIDs(inputs.Groups["development"]); !slices.Equal(got, []string{atomNoteID}) {
 			t.Errorf("Groups[\"development\"] = %v, want [%s] (master must outrank tag)",
 				got, atomNoteID)
@@ -453,10 +455,10 @@ func TestTagOverrideIntegration_FullRunRegen_RewritesCanonical(t *testing.T) {
 		resetPoolForApply(t)
 		fake := newFakeWorkBackend()
 		stageDragScenario(t, fake)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 		d := buildWorkDomainForIntegration()
 
-		d.RunRegen(ctx)
+		regen.Run(ctx, d)
 
 		atomBody := fake.Write(atomNoteID)
 		masterBody := fake.Write(masterNoteID)
@@ -531,7 +533,7 @@ func assertSecondRunIsNoop(t *testing.T, fake *fakeWorkBackend, ctx context.Cont
 	if overwritesBefore == 0 {
 		t.Fatalf("first RunRegen produced 0 overwrites — assertion would be vacuously satisfied; check call ordering against assertAtomReBucketed / assertMasterReBucketed which prove the write path executed")
 	}
-	d.RunRegen(ctx)
+	regen.Run(ctx, d)
 	overwritesAfter := fake.OverwriteCount()
 	if overwritesAfter != overwritesBefore {
 		t.Errorf("second RunRegen issued %d new overwrite call(s) — idempotency broken (before=%d, after=%d)",
@@ -579,10 +581,10 @@ func TestTagOverrideIntegration_MembershipGuardSkipsForeignDomain(t *testing.T) 
 				"content": "# Шевченко\n#library/poetry | [[Шевченко]]\n---\n\nverse\n",
 			},
 		})
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 		d := buildWorkDomainForIntegration()
 
-		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		inputs, err := regen.SnapshotDomainRenderInputs(ctx, d)
 		if err != nil {
 			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
 		}
@@ -693,10 +695,10 @@ func TestTagOverrideIntegration_HubWinsOverTag(t *testing.T) {
 				"content": claudeMasterBody(),
 			},
 		})
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 		d := buildClaudeDomainForIntegration()
 
-		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		inputs, err := regen.SnapshotDomainRenderInputs(ctx, d)
 		if err != nil {
 			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
 		}
@@ -753,10 +755,10 @@ func TestTagOverrideIntegration_MembershipGuardCatchesSurvivor(t *testing.T) {
 				"content": detachedBody,
 			},
 		})
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 		d := buildWorkDomainForIntegration()
 
-		inputs, err := domain.SnapshotDomainRenderInputs(ctx, d)
+		inputs, err := regen.SnapshotDomainRenderInputs(ctx, d)
 		if err != nil {
 			t.Fatalf("SnapshotDomainRenderInputs: %v", err)
 		}
@@ -822,10 +824,10 @@ func TestTagOverrideIntegration_OnSkipLogsSuppression(t *testing.T) {
 		buf := captureLog(t)
 		fake := newFakeWorkBackend()
 		stageMasterTagConflict(t, fake)
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 		d := buildWorkDomainForIntegration()
 
-		d.RunRegen(ctx)
+		regen.Run(ctx, d)
 
 		want := "note " + atomNoteID + " wanted tasks, kept development"
 		if !strings.Contains(buf.String(), "tag override suppressed by higher layer") {
@@ -886,10 +888,10 @@ func TestTagOverrideIntegration_ConflictRollupLogged(t *testing.T) {
 			"content": "# ✱ Робота\n#work\n---\n",
 			"tags":    []string{"#work"},
 		})
-		ctx := domain.ContextWithBackend(context.Background(), fake)
+		ctx := bearcli.ContextWithBackend(context.Background(), fake)
 		d := buildWorkDomainForIntegration()
 
-		d.RunRegen(ctx)
+		regen.Run(ctx, d)
 
 		// Lock the FULL emit format so a "tag conflicts: 20" or similar
 		// digit-prefix collision can't satisfy the substring check.

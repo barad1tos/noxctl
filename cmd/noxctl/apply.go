@@ -8,11 +8,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/barad1tos/noxctl/bear/cli"
+	"github.com/barad1tos/noxctl/bear/cliutil"
 )
 
 // errInterrupted is the sentinel that cmd/noxctl/main.go maps to
 // POSIX exit code 130 (128 + SIGINT).
-var errInterrupted = errors.New("noxctl: interrupted")
+var errInterrupted = cliutil.ErrInterrupted
 
 // errApplyFailures is returned when apply completed without a
 // top-level error but at least one pre-pass or per-domain row had
@@ -38,7 +39,7 @@ var applyCmd = &cobra.Command{
 
 Loads noxctl.toml, runs pre-passes (foreign-tag escape, auto-tag,
 cross-domain moves, time-promotion, duplicate registry — toggleable via
-[features]), then iterates domains calling RunRegen for each. Persists
+[features]), then iterates domains through bear/regen. Persists
 per-domain progress to ./.noxctl/state.json incrementally so partial-
 success state is recoverable.
 

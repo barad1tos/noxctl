@@ -5,7 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/regen"
 	"github.com/barad1tos/noxctl/bear/render"
 )
 
@@ -122,10 +124,10 @@ func (subtagDuplicateRegistryBackend) Run(_ context.Context, args []string, _ st
 
 func seedSubtagDuplicateRegistry(t *testing.T, d *domain.Domain) {
 	t.Helper()
-	domain.ResetBearcliPoolForTest(2)
-	t.Cleanup(func() { domain.ResetBearcliPoolForTest(1) })
-	ctx := domain.ContextWithBackend(t.Context(), subtagDuplicateRegistryBackend{})
-	registry, err := domain.BuildCorpusDuplicateRegistry(ctx)
+	bearcli.ResetPoolForTest(2)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+	ctx := bearcli.ContextWithBackend(t.Context(), subtagDuplicateRegistryBackend{})
+	registry, err := regen.BuildCorpusDuplicateRegistry(ctx)
 	if err != nil {
 		t.Fatalf("BuildCorpusDuplicateRegistry: %v", err)
 	}

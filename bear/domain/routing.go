@@ -11,6 +11,41 @@ import (
 	"strings"
 )
 
+// RoutingResult is the pure in-memory routing output shared by plan snapshots
+// and the write-side regen runtime.
+type RoutingResult struct {
+	Groups       map[string][]Note
+	MasterClaims int
+	HubClaims    int
+	TagClaims    int
+	TagConflicts int
+}
+
+// RouteAtomics computes the post-override bucket grouping for a domain's note
+// set. It is intentionally pure over the supplied notes: callers own all Bear
+// I/O, while domain owns the routing rules that interpret canonical headers,
+// master table edits, hub bullet edits, and sidebar sub-tag drags.
+func (d *Domain) RouteAtomics(
+	notes []Note,
+	onTagOverrideSkip func(atomID, kept, suppressed string),
+) RoutingResult {
+	overrides := d.computeMasterOverrides(notes)
+	result := RoutingResult{MasterClaims: len(overrides)}
+	beforeHub := len(overrides)
+	overrides = mergeOverrideLayer(overrides, d.computeHubOverrides(notes), nil)
+	result.HubClaims = len(overrides) - beforeHub
+	beforeTag := len(overrides)
+	tagOverrides, tagConflicts := d.computeTagOverrides(notes)
+	overrides = mergeOverrideLayer(overrides, tagOverrides, onTagOverrideSkip)
+	result.TagClaims = len(overrides) - beforeTag
+	result.TagConflicts = tagConflicts
+	result.Groups = d.groupAtomics(notes, overrides)
+	if result.Groups == nil {
+		result.Groups = map[string][]Note{}
+	}
+	return result
+}
+
 // FirstWikilinkAuthor scans `header` for the first `[[X]]` wikilink
 // whose target is neither empty nor the domain's master index title,
 // returning that target as the bucket key. Returns "" when nothing
@@ -66,6 +101,11 @@ func (d *Domain) isHubNote(n Note) bool {
 		}
 	}
 	return false
+}
+
+// IsManagedHubNote reports whether n is this domain's generated Tier-2 hub.
+func (d *Domain) IsManagedHubNote(n Note) bool {
+	return d.isHubNote(n)
 }
 
 // DetectAuthor returns the bucket key for an atomic note. Source-of-truth
@@ -560,7 +600,7 @@ func dedupNonCanonical(canonicalBucket string, whitelistedSubTags []string) []st
 
 // ComputeTagOverridesForTest exposes computeTagOverrides for external tests
 // in tests/bear/. Test seam — production callers MUST use RunRegen. Same
-// precedent as ProcessAtomicForTest in bear/domain/upserts.go.
+// precedent as ProcessAtomicForTest in bear/regen/upserts.go.
 //
 // Returns (overrides, conflictCount) so the conflict-count branch is
 // observable from tests.

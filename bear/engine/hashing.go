@@ -14,7 +14,9 @@ import (
 	"sort"
 	"time"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/regen"
 	"github.com/barad1tos/noxctl/bear/state"
 )
 
@@ -27,7 +29,7 @@ func applyFinalize(ctx context.Context, opts ApplyOpts, st *state.State, result 
 			log.Printf("apply: final state.Save (interrupted) failed: %v", saveErr)
 		}
 		if opts.WithMetrics {
-			result.Metrics = domain.BearcliMetricsSnapshot()
+			result.Metrics = bearcli.MetricsSnapshot()
 		}
 		return result, nil
 	}
@@ -38,7 +40,7 @@ func applyFinalize(ctx context.Context, opts ApplyOpts, st *state.State, result 
 			log.Printf("apply: final state.Save (failed) failed: %v", saveErr)
 		}
 		if opts.WithMetrics {
-			result.Metrics = domain.BearcliMetricsSnapshot()
+			result.Metrics = bearcli.MetricsSnapshot()
 		}
 		return result, nil
 	}
@@ -49,7 +51,7 @@ func applyFinalize(ctx context.Context, opts ApplyOpts, st *state.State, result 
 		return result, fmt.Errorf("engine.Apply state.Save(complete): %w", err)
 	}
 	if opts.WithMetrics {
-		result.Metrics = domain.BearcliMetricsSnapshot()
+		result.Metrics = bearcli.MetricsSnapshot()
 	}
 	return result, nil
 }
@@ -64,13 +66,17 @@ func computeDomainHash(ctx context.Context, d *domain.Domain) string {
 		log.Printf("apply: snapshot(%s) failed: %v (hash unchanged)", d.Tag, err)
 		return ""
 	}
+	if master == "" {
+		log.Printf("apply: snapshot(%s) missing master content (hash unchanged)", d.Tag)
+		return ""
+	}
 	return ComputeContentHash(master, hubs)
 }
 
-// snapshotDomainContent fetches the post-RunRegen master + hub bytes
-// for one domain via the exported domain.FetchMasterContent /
-// domain.FetchHubContents wrappers (which in turn call the bearcli
-// boundary inside package domain). Stripped of the [Нова нотатка]
+// snapshotDomainContent fetches the post-regen master + hub bytes
+// for one domain via the exported regen.FetchMasterContent /
+// regen.FetchHubContents wrappers (which in turn call the bearcli
+// boundary inside package regen). Stripped of the [Нова нотатка]
 // new-note link drift before return — caller can hash directly.
 //
 // Returns ("", nil, nil) for domains without a master note yet
@@ -81,11 +87,11 @@ func snapshotDomainContent(
 	ctx context.Context,
 	d *domain.Domain,
 ) (master string, hubs map[string]string, err error) {
-	master, masterErr := domain.FetchMasterContent(ctx, d)
+	master, masterErr := regen.FetchMasterContent(ctx, d)
 	if masterErr != nil {
 		return "", nil, fmt.Errorf("snapshotDomainContent(%s) master: %w", d.Tag, masterErr)
 	}
-	hubs, hubsErr := domain.FetchHubContents(ctx, d)
+	hubs, hubsErr := regen.FetchHubContents(ctx, d)
 	if hubsErr != nil {
 		return "", nil, fmt.Errorf("snapshotDomainContent(%s) hubs: %w", d.Tag, hubsErr)
 	}

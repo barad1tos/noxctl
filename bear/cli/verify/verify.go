@@ -31,6 +31,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -212,7 +213,7 @@ func Run(ctx context.Context, opts Options) error {
 
 // defaultIOAndPool fills nil Stdout/Stderr with the process streams
 // and seeds the bearcli pool. Idempotent — sync.Once inside
-// SetBearcliConcurrency suppresses repeat calls.
+// bearcli.SetConcurrency suppresses repeat calls.
 func defaultIOAndPool(opts *Options) {
 	if opts.Stdout == nil {
 		opts.Stdout = os.Stdout
@@ -220,7 +221,7 @@ func defaultIOAndPool(opts *Options) {
 	if opts.Stderr == nil {
 		opts.Stderr = os.Stderr
 	}
-	domain.SetBearcliConcurrency(engine.DefaultBearcliConcurrency)
+	bearcli.SetConcurrency(engine.DefaultBearcliConcurrency)
 }
 
 // finalize computes the Summary, renders, and returns the
