@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 
 	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
@@ -44,8 +43,9 @@ type ApplyOptions struct {
 	Stderr    io.Writer
 	// Bench, when set by `noxctl apply --bench`, enables bearcli pool metrics
 	// capture for the run (engine.ApplyOpts.WithMetrics). The cycle-telemetry
-	// line emits unconditionally either way (Plan 14-03); bench mode additionally
-	// retains the snapshot in ApplyResult.Metrics and installs the timing hook.
+	// line emits unconditionally either way; bench mode additionally retains the
+	// pool snapshot in ApplyResult.Metrics. Per-domain timings are accumulated
+	// by engine.Apply on every run (not just bench), so no caller hook is needed.
 	Bench bool
 	// Concurrency is the operator-supplied --concurrency value (single run) or
 	// the per-iteration value the --sweep loop sets in cmd/noxctl. Zero means
@@ -73,7 +73,7 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 	warnInterruptedApply(opts.Stderr, opts.StatePath)
 
 	// Map the --bench/--concurrency flags onto the engine-bound fields at the
-	// CLI boundary (Pattern A: a parsed-but-unthreaded flag is a silent no-op,
+	// CLI boundary (a parsed-but-unthreaded flag would be a silent no-op,
 	// guarded end-to-end by tests/bear/cli/apply/bench_wiring_test.go).
 	bench, benchErr := cliutil.BenchOptsFromFlags(opts.Bench, opts.Concurrency)
 	if benchErr != nil {
@@ -93,13 +93,6 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 		PromotionRules:     cliutil.PromotionRulesFromCatalog(opts.Catalog),
 		WithMetrics:        bench.WithMetrics,
 		BearcliConcurrency: bench.BearcliConcurrency,
-	}
-	// In bench mode, install a no-op DomainTimingHook so engine.Apply routes
-	// per-domain timings through the WithMetrics path; engine.Apply wraps any
-	// caller hook in its telemetry accumulator (installTimingAccumulator), so a
-	// nil-safe sink is enough to mark this run as bench-instrumented.
-	if bench.WithMetrics {
-		engineOpts.DomainTimingHook = func(string, time.Duration) {}
 	}
 
 	result, runErr := engine.Apply(ctx, engineOpts)
