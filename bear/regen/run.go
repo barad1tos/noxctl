@@ -19,7 +19,7 @@ import (
 // map (the same keying FetchHubContents uses), so the engine hashes the
 // snapshot directly.
 //
-// Idempotency contract (D-02): the bodies are ALWAYS stripped of new-note
+// Idempotency contract: the bodies are ALWAYS stripped of new-note
 // URLs (domain.StripNewNoteURLsFromBody) before they land here, matching the
 // pre-phase FetchMasterContent/FetchHubContents treatment so the state.json
 // fingerprint stays byte-identical across the optimization. On the unchanged
@@ -32,7 +32,7 @@ type DomainSnapshot struct {
 	// Incomplete is true when a hub/master write SUCCEEDED but its post-write
 	// read-back failed, so a body is missing from this snapshot. The engine's
 	// computeDomainHash returns "" on an incomplete snapshot, preserving the
-	// PRIOR ContentHash rather than hashing a partial body (FIX-2). The write
+	// PRIOR ContentHash rather than hashing a partial body. The write
 	// itself stands; only the hash update is deferred to the next cycle.
 	Incomplete bool
 }
@@ -54,8 +54,9 @@ type Result struct {
 	MasterUnchanged int
 	MasterFailed    int
 	ListFailed      bool
-	// Snapshot carries the post-fetch master/hub scaffold for plan 14-02.
-	// Populated EMPTY in D-01 — see DomainSnapshot.
+	// Snapshot carries the freshest master + hub bodies observed during this
+	// run, reused by the engine content-hash pass instead of re-reading Bear.
+	// See DomainSnapshot.
 	Snapshot DomainSnapshot
 }
 
@@ -128,10 +129,10 @@ func Run(ctx context.Context, d *domain.Domain) Result {
 	result.HubsChanged = hubsPass.Changed
 	result.HubsUnchanged = hubsPass.Unchanged
 	result.HubsFailed = hubsPass.Failed
-	// D-02: the hub/master diff-check already fetched (or read back) every body
+	// The hub/master diff-check already fetched (or read back) every body
 	// we need to hash. Carry them on Result.Snapshot so the engine's
 	// content-hash pass reuses them — a no-op cycle does zero extra reads.
-	// A post-write read-back failure marks the snapshot incomplete (FIX-2) so the
+	// A post-write read-back failure marks the snapshot incomplete so the
 	// engine preserves the prior hash instead of hashing a partial body.
 	result.Snapshot.Hubs = hubsPass.Hubs
 	result.Snapshot.Incomplete = hubsPass.Incomplete

@@ -1,8 +1,8 @@
 package apply_test
 
-// bench_wiring_test is the Pattern-A shim-audit guard for the
-// --bench/--concurrency flags (RECURRING_PITFALLS Pattern A: two prior
-// loaded-but-unthreaded incidents). A unit test of BenchOptsFromFlags proves the
+// bench_wiring_test is the shim-audit guard for the --bench/--concurrency
+// flags, guarding against a loaded-but-unthreaded flag (a parsed flag that
+// never reaches the engine). A unit test of BenchOptsFromFlags proves the
 // mapper is correct; it CANNOT prove the mapped value actually reaches
 // engine.ApplyOpts. This test exercises cli.RunApply end-to-end and asserts the
 // bench flag changed the live bearcli pool capacity — a no-op flag would leave
@@ -77,7 +77,7 @@ func TestBenchWiring_ConcurrencyReachesPool(t *testing.T) {
 	if got := bearcli.MetricsSnapshot().Capacity; got != 4 {
 		t.Fatalf("Capacity = %d, want 4 (bench --concurrency=4 not threaded to engine.ApplyOpts)", got)
 	}
-	// The run completed through the unconditional telemetry path (Plan 14-03).
+	// The run completed through the unconditional telemetry path.
 	if !strings.Contains(logBuf.String(), "regen cycle:") {
 		t.Fatalf("log = %q, want a 'regen cycle:' telemetry line", logBuf.String())
 	}

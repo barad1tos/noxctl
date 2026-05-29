@@ -118,7 +118,7 @@ func runDomainAndSave(
 	if opts.DomainTimingHook != nil {
 		opts.DomainTimingHook(d.Tag, elapsed)
 	}
-	// Compute content hash from the bodies regen already fetched (D-02).
+	// Compute content hash from the bodies regen already fetched.
 	// regen.Run captured each hub/master's canonical body during its diff-
 	// check (reusing the existing read on no-op, or reading back the stored
 	// form once per overwrite) onto regenResult.Snapshot — no extra reads

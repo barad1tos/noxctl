@@ -56,16 +56,22 @@ func applyFinalize(ctx context.Context, opts ApplyOpts, st *state.State, result 
 }
 
 // computeDomainHash returns sha256(strip(master) || NUL || sorted-by-title
-// strip(hubs[i])) over the bodies regen.Run already fetched (D-02). The diff-
+// strip(hubs[i])) over the bodies regen.Run already fetched. The diff-
 // check that decides created/changed/unchanged for each hub + the master has
 // already read (or, on create/overwrite, deliberately read back) the canonical
 // body — snap carries those stripped bytes, so a no-op cycle does ZERO extra
 // reads here. Returns "" — so the caller preserves the PRIOR hash — when:
 //   - the snapshot has no master body yet (transient initial setup), or
 //   - the snapshot is Incomplete: a hub/master write succeeded but its
-//     post-write read-back failed, so a body is missing (FIX-2). Hashing the
+//     post-write read-back failed, so a body is missing. Hashing the
 //     partial snapshot would write a wrong value and flip the domain "changed"
 //     forever; preserving the prior hash defers the update one cycle.
+//
+// NOTE: the snapshot's hub-key universe (buckets present this cycle) and
+// regen.FetchHubContents (every managed hub note) are NOT interchangeable — a
+// hub whose bucket has zero atoms this cycle is in one set but not the other.
+// A future consumer that compares hashes computed via FetchHubContents must
+// not assume parity with this snapshot-derived hash.
 func computeDomainHash(snap regen.DomainSnapshot) string {
 	if snap.Master == "" || snap.Incomplete {
 		return ""

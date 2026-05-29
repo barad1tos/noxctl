@@ -1,5 +1,5 @@
 // Package bearcli_test pins the optimistic-concurrency overwrite gate at the
-// bearcli boundary (SC-3 / T-14-04). D-02 changes only the state.json content-
+// bearcli boundary. The content-hash reuse changes only the state.json content-
 // hash INPUT, never the write gate — OverwriteWithRetry reads a FRESH hash
 // immediately before each write, and a hash conflict (the note changed between
 // our read and the write) triggers exactly one retry with a re-fetched hash.

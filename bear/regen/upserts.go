@@ -40,17 +40,17 @@ func incrementOutcome(outcome upsertOutcome, created, changed, unchanged *int) {
 }
 
 // upsertResult bundles one hub/master upsert's reportable outcome with the
-// stripped body that feeds the per-domain content hash (D-02). Body is "" for
+// stripped body that feeds the per-domain content hash. Body is "" for
 // the skipped (no-Tier-2) branch. On the create and changed branches Body
 // carries Bear's STORED form (a deliberate read-back) — never the in-memory
 // rendered bytes — so the hash converges to the same value the next no-op
-// cycle's diff-check read produces (idempotency contract, FIX-1).
+// cycle's diff-check read produces (the idempotency contract).
 //
 // SnapshotIncomplete signals that the write SUCCEEDED but the post-write
 // read-back failed, so Body is unavailable and the caller must NOT hash a
 // partial/empty body. It propagates to DomainSnapshot.Incomplete, which makes
 // computeDomainHash return "" so the engine preserves the PRIOR ContentHash
-// (FIX-2: a transient read-back failure never marks the domain failed nor
+// (a transient read-back failure never marks the domain failed nor
 // overwrites the hash with a wrong value). The vault write is never rolled back.
 type upsertResult struct {
 	Summary            string
@@ -95,7 +95,7 @@ func upsertHub(
 		// Read back the STORED form for hashing — NOT the rendered newAuto. Bear
 		// can normalize markdown on create (whitespace, EOF newline); hashing the
 		// rendered bytes would diverge from next cycle's diff-check read-back and
-		// flip the domain to "changed" forever (FIX-1). One read, only on create.
+		// flip the domain to "changed" forever. One read, only on create.
 		stored, incomplete := readBackAfterWrite(ctx, newID)
 		return upsertResult{
 			Summary:            fmt.Sprintf("%s: created", hubTitle),
@@ -144,8 +144,8 @@ func upsertHub(
 	// normalize markdown on overwrite (whitespace, link shape); hashing the
 	// in-memory rendered bytes would diverge from next cycle's diff-check
 	// read-back and flip the domain to "changed" forever, breaking the <=3-pass
-	// idempotency contract (Pitfall 1 / T-14-05). One deliberate read-back. A
-	// read-back failure AFTER the successful write is non-fatal (FIX-2): the
+	// idempotency contract. One deliberate read-back. A
+	// read-back failure AFTER the successful write is non-fatal: the
 	// outcome stays `updated`, the snapshot is incomplete, and the prior hash is
 	// preserved — the vault write is never rolled back.
 	stored, incomplete := readBackAfterWrite(ctx, hubID)
@@ -164,7 +164,7 @@ func upsertHub(
 // stored-normalized markdown so the next cycle's diff-check sees no drift.
 //
 // The write has already succeeded by the time this is called, so any read-back
-// failure (transient cat error, empty/unresolved ID) is NON-FATAL (FIX-2): it
+// failure (transient cat error, empty/unresolved ID) is NON-FATAL: it
 // returns ("", incomplete=true) so the caller keeps the created/updated outcome
 // but signals the snapshot incomplete, and the engine preserves the prior hash
 // rather than overwriting it with a wrong/empty value. The vault write stands.
@@ -223,8 +223,8 @@ func upsertMasterIndex(
 		}
 		newID := patchIndexFromCreate(idx, d.IndexTitle, out)
 		// Read back the STORED master body for hashing (see upsertHub's create
-		// read-back rationale — Bear's normalized form, not the rendered bytes;
-		// FIX-1). A read-back failure after the successful create is non-fatal.
+		// read-back rationale — Bear's normalized form, not the rendered bytes).
+		// A read-back failure after the successful create is non-fatal.
 		stored, incomplete := readBackAfterWrite(ctx, newID)
 		return upsertResult{
 			Summary:            "index: created",
@@ -267,7 +267,7 @@ func upsertMasterIndex(
 	}
 	// Changed: read back the STORED master body for hashing (see upsertHub's
 	// read-back rationale — Bear's normalized form, not the rendered bytes). A
-	// read-back failure after the successful write is non-fatal (FIX-2).
+	// read-back failure after the successful write is non-fatal.
 	stored, incomplete := readBackAfterWrite(ctx, idxID)
 	return upsertResult{
 		Summary:            "index: updated",
@@ -393,9 +393,9 @@ func runAtomicsPass(
 }
 
 // hubsPassResult bundles the hub outcome counts with the per-hub stripped
-// bodies (title -> body) the content-hash pass reuses (D-02). Hubs is nil for
+// bodies (title -> body) the content-hash pass reuses. Hubs is nil for
 // domains without a Tier-2 layer (d.RenderHub == nil). Incomplete is true when
-// any hub write succeeded but its read-back failed (FIX-2) — it propagates to
+// any hub write succeeded but its read-back failed — it propagates to
 // DomainSnapshot.Incomplete so the engine preserves the prior hash.
 type hubsPassResult struct {
 	Created    int

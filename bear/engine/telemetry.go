@@ -1,13 +1,13 @@
 package engine
 
-// Cycle telemetry — one structured key=value summary line per REGEN cycle
-// (D-03). Surfaces the per-cycle metrics the bearcli pool already computes
+// Cycle telemetry — one structured key=value summary line per REGEN cycle.
+// Surfaces the per-cycle metrics the bearcli pool already computes
 // (calls-by-kind, peak concurrency, queue wait, hash conflicts/retries) plus a
 // once-per-cycle process-memory snapshot, so an operator can confirm the
 // read-amplification win and inform the concurrency decision without pprof or
 // per-hub log parsing.
 //
-// Security (T-14-08): the line emits ONLY numeric counts/timings/memory and
+// Security: the line emits ONLY numeric counts/timings/memory and
 // domain TAGS (catalog config, not vault content). It never formats a note
 // title, body, or content hash — a leak would require formatting an input the
 // function never receives.
@@ -38,8 +38,8 @@ type domainTiming struct {
 }
 
 // timingAccumulator collects per-domain timings from the worker goroutines that
-// fire DomainTimingHook. The hook fires concurrently from runDomainAndSave
-// (T-14-10), so every append is mutex-guarded.
+// fire DomainTimingHook. The hook fires concurrently from runDomainAndSave,
+// so every append is mutex-guarded.
 type timingAccumulator struct {
 	mu      sync.Mutex
 	samples []domainTiming
@@ -82,8 +82,8 @@ func installTimingAccumulator(opts *ApplyOpts) *timingAccumulator {
 // cycleDelta returns a per-cycle Metrics view: the ADDITIVE counters
 // (AcquireCount, WaitNanosSum, CallsByKind, HashConflictsTotal, Retries*) are
 // the end-snapshot minus the cycle-start baseline, so on the long-lived daemon
-// each emitted line reflects ONLY the just-completed cycle, not lifetime totals
-// (FIX-3). PeakConcurrent is NOT a delta — it is a CAS-max that engine.Apply
+// each emitted line reflects ONLY the just-completed cycle, not lifetime
+// totals. PeakConcurrent is NOT a delta — it is a CAS-max that engine.Apply
 // scopes per cycle via bearcli.ScopePeakToCurrentInFlight at cycle start, so the
 // end-snapshot value is already the cycle peak; subtracting two maxes would be
 // wrong. Capacity is config, copied straight through. For apply --once / each
@@ -114,7 +114,8 @@ func cycleDelta(baseline, end bearcli.Metrics) bearcli.Metrics {
 // through the standard logger so the line carries the daemon's timestamp prefix
 // (loop.go house style) and lands in ~/.cache/regen-watchd.log alongside every
 // other daemon line. The Apply finalize tail calls this UNCONDITIONALLY (never
-// gated on WithMetrics — Pitfall C).
+// gated on WithMetrics — the production daemon leaves metrics capture off, and
+// gating here would make it telemetry-blind).
 func logCycleTelemetry(m bearcli.Metrics, timings []domainTiming, totalWall time.Duration) {
 	log.Printf("%s", formatCycleTelemetry(m, timings, totalWall))
 }
@@ -130,8 +131,7 @@ func emitCycleTelemetry(w io.Writer, m bearcli.Metrics, timings []domainTiming, 
 // completed regen cycle. It takes the bearcli pool snapshot, the per-domain
 // timings accumulated this cycle, and the total cycle wall time; it reads
 // process memory itself via a single runtime.ReadMemStats call (cycle end,
-// outside the per-domain goroutines — T-14-09 keeps the stop-the-world pause to
-// once per cycle).
+// outside the per-domain goroutines — one stop-the-world pause per cycle).
 //
 // avg_queue_ms = WaitNanosSum / AcquireCount / 1e6 when AcquireCount > 0, else
 // 0.0. slowest lists the top-N timings DESC by elapsed, keyed on Tag only. The

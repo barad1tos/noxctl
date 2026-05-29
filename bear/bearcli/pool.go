@@ -186,7 +186,7 @@ func ResetMetrics() {
 
 // ScopePeakToCurrentInFlight resets the peak-concurrency high-water mark to the
 // CURRENT in-flight count, scoping the next observation window to start fresh.
-// It is the per-cycle peak fix (FIX-3): PeakConcurrent is a CAS-max, NOT an
+// It is the per-cycle peak fix: PeakConcurrent is a CAS-max, NOT an
 // additive counter, so a per-cycle delta of two lifetime maxes is meaningless.
 // engine.Apply calls this at cycle start; because daemon cycles are SEQUENTIAL
 // and in-flight drains to ~0 between them, the reset makes PeakConcurrent

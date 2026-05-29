@@ -149,8 +149,9 @@ type DaemonOpts struct {
 	DatabaseChangeTokenFn func(path string, info os.FileInfo) (string, error)
 
 	// AutoTagPollInterval is the period between fast-pass ticks that run
-	// ONLY fastpass.ApplyForeignTagEscape + fastpass.ApplyDailyDefaultTag —
-	// independent of the full per-domain regen cycle. When > 0,
+	// the four canonicalization fast-passes (foreign-tag escape, daily-default,
+	// domain-bootstrap, placeholder-refresh) — independent of the full
+	// per-domain regen cycle. When > 0,
 	// Daemon.Run creates a second time.Ticker driving a 7th select
 	// case. When 0, the fast-pass is disabled (nil-channel idiom,
 	// mirrors MtimePollInterval).
@@ -161,9 +162,9 @@ type DaemonOpts struct {
 	// verbatim; tests / library callers that construct DaemonOpts manually
 	// get a disabled fast-pass on the zero value.
 	//
-	// Test seam: the fast-pass tick body calls
-	// fastpass.ApplyForeignTagEscape + fastpass.ApplyDailyDefaultTag, which both
-	// route through bearcli.Run + BackendFromContext(ctx). DaemonOpts
+	// Test seam: the fast-pass tick body calls the four canonicalization
+	// passes, which all route through bearcli.Run + BackendFromContext(ctx).
+	// DaemonOpts
 	// gains NO parallel field for fake injection — tests stamp the seam
 	// on ctx via bearcli.ContextWithBackend.
 	AutoTagPollInterval time.Duration

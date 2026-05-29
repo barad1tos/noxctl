@@ -56,7 +56,7 @@ type RecordingBackend struct {
 	// read-back: it collapses per-line trailing whitespace AND strips the
 	// end-of-file trailing newline(s). It models a backend (like Bear) that
 	// normalizes stored markdown so the read-back bytes differ from what was
-	// written — the D-02 hash-stability landmine. The trailing-newline strip is
+	// written — the hash-stability landmine. The trailing-newline strip is
 	// the realistic divergence: the diff-check (TrimRight " \n") still reports
 	// `unchanged`, but the unstripped hash input (StripNewNoteURLsFromBody
 	// alone) diverges, so a branch that hashes the rendered bytes flips the
@@ -146,7 +146,7 @@ func (b *RecordingBackend) payload(kind, tag string, args []string, stdin string
 // later `cat` of the same ID reads back the stored form. When
 // NormalizeReadBack is set, the stored body is normalized — modeling Bear's
 // markdown normalization on write so the read-back differs from the rendered
-// input (the D-02 landmine). No-op when the ID is unknown.
+// input (the hash-stability landmine). No-op when the ID is unknown.
 func (b *RecordingBackend) applyOverwrite(args []string, body string) {
 	if len(args) < 2 {
 		return
@@ -166,7 +166,7 @@ func (b *RecordingBackend) applyOverwrite(args []string, body string) {
 // corpus under the title-derived ID and return the id+title payload the
 // patch-on-create path parses. Mirrors applyOverwrite's normalization so a
 // create-branch read-back of the new note captures Bear's stored-normalized
-// form (the FIX-1 landmine: hashing rendered create bytes flips next cycle).
+// form (hashing rendered create bytes would flip the domain next cycle).
 func (b *RecordingBackend) applyCreate(args []string, body string) []byte {
 	payload := recordingCreatePayload(args)
 	if len(args) < 2 {

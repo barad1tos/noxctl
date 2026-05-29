@@ -135,8 +135,8 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	bearcli.SetConcurrency(opts.BearcliConcurrency)
 
 	// Capture the cycle-start metrics baseline so the telemetry tail emits a
-	// per-cycle DELTA, not the lifetime totals the long-lived daemon accumulates
-	// (FIX-3). PeakConcurrent is a CAS-max, not additive — scope it per cycle by
+	// per-cycle DELTA, not the lifetime totals the long-lived daemon accumulates.
+	// PeakConcurrent is a CAS-max, not additive — scope it per cycle by
 	// resetting the high-water mark to the current (drained, ~0) in-flight count.
 	// Daemon cycles are sequential, so this window is exactly one cycle.
 	metricsBaseline := bearcli.MetricsSnapshot()
@@ -180,7 +180,7 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	// Step 3: install the per-domain timing accumulator BEFORE the per-domain
 	// loop so runDomainAndSave feeds it via DomainTimingHook (a caller-supplied
 	// bench hook is wrapped, not displaced). Fed concurrently from worker
-	// goroutines — mutex-guarded (T-14-10).
+	// goroutines — mutex-guarded.
 	timings := installTimingAccumulator(&opts)
 
 	// Step 4: pre-passes (gated by opts.Features).
@@ -192,12 +192,12 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	// Step 6: finalize — set LastApply + clear InProgress IFF success.
 	res, err := applyFinalize(ctx, opts, st, result)
 
-	// Step 7: emit ONE structured telemetry line at cycle completion (D-03).
+	// Step 7: emit ONE structured telemetry line at cycle completion.
 	// UNCONDITIONAL — NOT gated on opts.WithMetrics (the production daemon
-	// leaves that false; gating here would make the daemon telemetry-blind,
-	// Pitfall C). This single site covers BOTH `noxctl apply --once` AND the
-	// daemon's cycleOnce (events.go calls engine.Apply), so there is no second
-	// emit point and no sibling-drift risk (RECURRING_PITFALLS Pattern B). It
+	// leaves that false; gating here would make the daemon telemetry-blind).
+	// This single site covers BOTH `noxctl apply --once` AND the daemon's
+	// cycleOnce (events.go calls engine.Apply), so there is no second emit
+	// point and no sibling-drift risk. It
 	// fires on the success, interrupted, and failed finalize branches alike —
 	// a completed-with-outcome cycle still gets its one telemetry line.
 	logCycleTelemetry(

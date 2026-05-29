@@ -7,8 +7,8 @@
 // seam (mirroring the ComputeContentHash directory-gap convention — external
 // tests live under tests/bear/engine/ and cannot reach unexported engine
 // symbols). It pins the field set, the avg_queue_ms math, the top-N ordering,
-// and the security invariant that no note title/body/hash ever reaches the line
-// (T-14-08). Task 2 adds the integration emit-count + no-emit-on-tick assertions.
+// and the security invariant that no note title/body/hash ever reaches the line.
+// Integration emit-count + no-emit-on-tick assertions follow below.
 package engine_test
 
 import (
@@ -188,7 +188,7 @@ func TestCycleTelemetry_FewerThanNAndEmpty(t *testing.T) {
 	}
 }
 
-// TestCycleTelemetry_NoVaultContentLeak is the T-14-08 security pin: given a
+// TestCycleTelemetry_NoVaultContentLeak is the security pin: given a
 // metrics snapshot and per-domain timings keyed only on catalog tags, the
 // emitted line must contain NO note title, body, or hash substring. We feed
 // recognizable sentinel strings as note-shaped data NOWHERE in the telemetry
@@ -211,7 +211,7 @@ func TestCycleTelemetry_NoVaultContentLeak(t *testing.T) {
 	}
 	for _, frag := range forbidden {
 		if strings.Contains(line, frag) {
-			t.Errorf("telemetry line leaked vault-content shape %q (T-14-08)\nline:\n%s", frag, line)
+			t.Errorf("telemetry line leaked vault-content shape %q\nline:\n%s", frag, line)
 		}
 	}
 }
@@ -219,7 +219,7 @@ func TestCycleTelemetry_NoVaultContentLeak(t *testing.T) {
 // TestApply_EmitsCycleTelemetry pins the integration emit: ONE engine.Apply run
 // over a fixture domain set emits EXACTLY ONE `regen cycle:` line at cycle
 // completion, with WithMetrics=false — proving the emit is UNCONDITIONAL and not
-// gated on the bench flag (Pitfall C: the production daemon leaves WithMetrics
+// gated on the bench flag (the production daemon leaves WithMetrics
 // false, so a gated emit would make it telemetry-blind). The line's calls_*
 // fields reflect the cycle's real bearcli traffic; slowest reflects the
 // per-domain timings accumulated via the DomainTimingHook seam.
@@ -460,7 +460,7 @@ func TestAutoTagTick_NoTelemetry(t *testing.T) {
 // via an FSEvent burst → debounce → cycleOnce → engine.Apply) emits EXACTLY ONE
 // `regen cycle:` line. Together with TestAutoTagTick_NoTelemetry this is the
 // daemon-path proof that the single Apply-tail emit covers cycleOnce while the
-// fast-pass tick stays silent (RECURRING_PITFALLS Pattern C — daemon-only
+// fast-pass tick stays silent (daemon-only
 // behavior invisible to the apply-only ship-gate). The buffer is read only
 // after cancel + drain to avoid racing the daemon's logging goroutine.
 func TestCycleOnce_EmitsTelemetry(t *testing.T) {
