@@ -9,11 +9,17 @@ package testutil
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 
 	"github.com/barad1tos/noxctl/bear/domain"
 )
+
+// errReadBackFailed is the transient post-write `cat` failure the
+// FailReadBackAfterWrite mode injects. Exported behavior is observed via the
+// upsert outcome, not the error value, so a sentinel suffices here.
+var errReadBackFailed = errors.New("recording backend: read-back cat failed (transient)")
 
 // Record is one observed bearcli invocation, classified by sub-command
 // (Kind) and the --tag value (Tag, empty for tag-less id-addressed calls).
@@ -40,16 +46,32 @@ type RecordingBackend struct {
 	notesByTag map[string][]domain.Note
 	noteByID   map[string]domain.Note
 
-	// NormalizeReadBack, when set, collapses trailing whitespace on every
-	// `cat` read-back. It models a backend (like Bear) that normalizes stored
-	// markdown so the read-back bytes differ from what was written — the D-02
-	// hash-stability landmine. Combined with write-through (overwrite mutates
-	// the corpus), it proves the changed-branch read-back captures the STORED
-	// form, keeping the next cycle's hash stable.
+	// NormalizeReadBack, when set, normalizes stored markdown on every `cat`
+	// read-back: it collapses per-line trailing whitespace AND strips the
+	// end-of-file trailing newline(s). It models a backend (like Bear) that
+	// normalizes stored markdown so the read-back bytes differ from what was
+	// written — the D-02 hash-stability landmine. The trailing-newline strip is
+	// the realistic divergence: the diff-check (TrimRight " \n") still reports
+	// `unchanged`, but the unstripped hash input (StripNewNoteURLsFromBody
+	// alone) diverges, so a branch that hashes the rendered bytes flips the
+	// domain to "changed" forever. Combined with write-through (overwrite AND
+	// create mutate the corpus), it proves both the changed-branch and the
+	// create-branch read-back capture the STORED form, keeping the next cycle's
+	// hash stable.
 	NormalizeReadBack bool
 
-	mu      sync.Mutex
-	records []Record
+	// FailReadBackAfterWrite, when set, makes the FIRST `cat` of an id that was
+	// just written (create or overwrite) in this backend's lifetime return an
+	// error. It models a transient read-back failure AFTER a successful vault
+	// write — the robustness landmine: the write is durable, but the post-write
+	// hash read fails. A correct upsert reports created/updated (not failed) and
+	// signals the snapshot incomplete so the prior ContentHash is preserved.
+	FailReadBackAfterWrite bool
+
+	mu          sync.Mutex
+	records     []Record
+	writtenIDs  map[string]bool // ids written this lifetime (create/overwrite)
+	failedReads map[string]bool // ids whose post-write read-back already failed once
 }
 
 // NewRecordingBackend builds a backend whose list calls return corpus
@@ -63,7 +85,12 @@ func NewRecordingBackend(notesByTag map[string][]domain.Note) *RecordingBackend 
 			byID[n.ID] = n
 		}
 	}
-	return &RecordingBackend{notesByTag: notesByTag, noteByID: byID}
+	return &RecordingBackend{
+		notesByTag:  notesByTag,
+		noteByID:    byID,
+		writtenIDs:  make(map[string]bool),
+		failedReads: make(map[string]bool),
+	}
 }
 
 // Run satisfies bearcli.Backend: classify, record, then answer from corpus.
@@ -82,11 +109,14 @@ func (b *RecordingBackend) payload(kind, tag string, args []string, stdin string
 	case "list":
 		return json.Marshal(b.notesByTag[tag])
 	case "cat":
+		if len(args) >= 2 && b.shouldFailReadBack(args[1]) {
+			return nil, errReadBackFailed
+		}
 		return json.Marshal(b.catNote(args))
 	case "show":
 		return []byte(`{"hash":"deadbeef"}`), nil
 	case "create":
-		return recordingCreatePayload(args), nil
+		return b.applyCreate(args, stdin), nil
 	case "overwrite":
 		b.applyOverwrite(args, stdin)
 		return []byte(`{"ok":true}`), nil
@@ -111,6 +141,60 @@ func (b *RecordingBackend) applyOverwrite(args []string, body string) {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.storeContent(id, stored)
+	b.writtenIDs[id] = true
+}
+
+// applyCreate write-through: persist the freshly-created note's body into the
+// corpus under the title-derived ID and return the id+title payload the
+// patch-on-create path parses. Mirrors applyOverwrite's normalization so a
+// create-branch read-back of the new note captures Bear's stored-normalized
+// form (the FIX-1 landmine: hashing rendered create bytes flips next cycle).
+func (b *RecordingBackend) applyCreate(args []string, body string) []byte {
+	payload := recordingCreatePayload(args)
+	if len(args) < 2 {
+		return payload
+	}
+	var created domain.Note
+	if err := json.Unmarshal(payload, &created); err != nil || created.ID == "" {
+		return payload
+	}
+	stored := body
+	if b.NormalizeReadBack {
+		stored = normalizeBody(body)
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	created.Content = stored
+	b.noteByID[created.ID] = created
+	b.writtenIDs[created.ID] = true
+	// Surface the freshly-created note in subsequent `list` responses so a
+	// later-cycle title lookup resolves it (the index is rebuilt per cycle from
+	// listNotes). Append to every tag bucket — single-domain corpora have one,
+	// and the title is unique so an over-return is harmless. Skip if already
+	// present (idempotent across repeat creates of the same id).
+	for tag, notes := range b.notesByTag {
+		if recordingNotesContain(notes, created.ID) {
+			continue
+		}
+		b.notesByTag[tag] = append(notes, created)
+	}
+	return payload
+}
+
+// recordingNotesContain reports whether any note in the slice has the given ID.
+func recordingNotesContain(notes []domain.Note, id string) bool {
+	for _, n := range notes {
+		if n.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// storeContent persists stored into both the by-ID map and every tag bucket
+// holding the id. Caller holds b.mu.
+func (b *RecordingBackend) storeContent(id, stored string) {
 	n := b.noteByID[id]
 	n.ID = id
 	n.Content = stored
@@ -124,14 +208,17 @@ func (b *RecordingBackend) applyOverwrite(args []string, body string) {
 	}
 }
 
-// normalizeBody collapses trailing whitespace on each line — a minimal stand-in
-// for Bear's on-write markdown normalization.
+// normalizeBody collapses per-line trailing whitespace AND strips end-of-file
+// trailing newline(s) — a minimal stand-in for Bear's on-write markdown
+// normalization. The EOF-newline strip is the realistic hash-divergence
+// trigger: it is tolerated by the diff-check (TrimRight " \n") yet changes the
+// StripNewNoteURLsFromBody hash input.
 func normalizeBody(body string) string {
 	lines := strings.Split(body, "\n")
 	for i, line := range lines {
 		lines[i] = strings.TrimRight(line, " \t")
 	}
-	return strings.Join(lines, "\n")
+	return strings.TrimRight(strings.Join(lines, "\n"), "\n")
 }
 
 // catNote resolves the corpus note for a `cat <id>` call, returning an
@@ -152,6 +239,24 @@ func (b *RecordingBackend) catNote(args []string) domain.Note {
 		n.Content = normalizeBody(n.Content)
 	}
 	return n
+}
+
+// shouldFailReadBack reports whether this `cat` must fail to model a transient
+// post-write read-back failure: FailReadBackAfterWrite is set, the id was
+// written this lifetime, and it has not already failed a read-back once (so the
+// failure is transient — a later read of the same id succeeds). Records the
+// failure so the next read of that id goes through.
+func (b *RecordingBackend) shouldFailReadBack(id string) bool {
+	if !b.FailReadBackAfterWrite {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.writtenIDs[id] || b.failedReads[id] {
+		return false
+	}
+	b.failedReads[id] = true
+	return true
 }
 
 // Records returns a copy of every observed call in invocation order.

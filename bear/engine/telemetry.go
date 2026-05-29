@@ -79,6 +79,33 @@ func installTimingAccumulator(opts *ApplyOpts) *timingAccumulator {
 	return acc
 }
 
+// cycleDelta returns a per-cycle Metrics view: the ADDITIVE counters
+// (AcquireCount, WaitNanosSum, CallsByKind, HashConflictsTotal, Retries*) are
+// the end-snapshot minus the cycle-start baseline, so on the long-lived daemon
+// each emitted line reflects ONLY the just-completed cycle, not lifetime totals
+// (FIX-3). PeakConcurrent is NOT a delta — it is a CAS-max that engine.Apply
+// scopes per cycle via bearcli.ScopePeakToCurrentInFlight at cycle start, so the
+// end-snapshot value is already the cycle peak; subtracting two maxes would be
+// wrong. Capacity is config, copied straight through. For apply --once / each
+// --sweep value the baseline is zero (fresh/reset pool), so the delta equals the
+// full-cycle snapshot — same numbers as before, still correct.
+func cycleDelta(baseline, end bearcli.Metrics) bearcli.Metrics {
+	calls := make(map[string]int64, len(end.CallsByKind))
+	for kind, n := range end.CallsByKind {
+		calls[kind] = n - baseline.CallsByKind[kind]
+	}
+	return bearcli.Metrics{
+		Capacity:           end.Capacity,
+		PeakConcurrent:     end.PeakConcurrent, // already cycle-scoped, not a delta
+		AcquireCount:       end.AcquireCount - baseline.AcquireCount,
+		WaitNanosSum:       end.WaitNanosSum - baseline.WaitNanosSum,
+		CallsByKind:        calls,
+		HashConflictsTotal: end.HashConflictsTotal - baseline.HashConflictsTotal,
+		RetriesSucceeded:   end.RetriesSucceeded - baseline.RetriesSucceeded,
+		RetriesFailed:      end.RetriesFailed - baseline.RetriesFailed,
+	}
+}
+
 // logCycleTelemetry is the PRODUCTION emit: it routes the one telemetry line
 // through the standard logger so the line carries the daemon's timestamp prefix
 // (loop.go house style) and lands in ~/.cache/regen-watchd.log alongside every

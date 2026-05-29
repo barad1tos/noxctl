@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -25,6 +26,7 @@ import (
 	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/engine"
+	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
 // countTelemetryLines counts the `regen cycle:` summary lines (D-03) in the
@@ -254,6 +256,87 @@ func TestApply_EmitsCycleTelemetry(t *testing.T) {
 			t.Errorf("telemetry slowest field missing accumulated per-domain tags\nlog:\n%s", buf.String())
 		}
 	})
+}
+
+// TestApply_TelemetryIsPerCycleNotCumulative is the FIX-3 daemon-path guard:
+// TWO engine.Apply cycles run in ONE process WITHOUT a pool reset between them
+// (modeling the long-lived daemon, where SetConcurrency is sync.Once-gated and
+// the pool counters accumulate across cycles). Each cycle issues identical
+// bearcli traffic over the same steady no-op corpus, so a correct per-cycle
+// telemetry line reports the SAME calls_list for cycle 2 as cycle 1. Pre-FIX-3
+// the emit passed the raw lifetime MetricsSnapshot, so cycle 2's calls_list was
+// DOUBLE cycle 1's (90->180 in the live-daemon evidence). peak_concurrency must
+// also be the per-cycle peak (>=1), not a lifetime CAS-max artifact.
+//
+// The existing single-process telemetry tests cannot catch this — only a
+// second cycle in the same process exposes the cumulative leak.
+func TestApply_TelemetryIsPerCycleNotCumulative(t *testing.T) {
+	bearcli.ResetPoolForTest(1)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+
+	d := noOpHubRoutedDomain()
+	backend := testutil.NewRecordingBackend(noOpHubRoutedCorpus(d))
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
+	buf := captureLog(t)
+
+	dir := t.TempDir()
+	opts := engine.ApplyOpts{
+		Domains:   []*domain.Domain{d},
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{},
+		SkipFlock: true,
+	}
+
+	if _, err := engine.Apply(ctx, opts); err != nil {
+		t.Fatalf("cycle 1 Apply: %v", err)
+	}
+	if _, err := engine.Apply(ctx, opts); err != nil {
+		t.Fatalf("cycle 2 Apply: %v", err)
+	}
+
+	lines := telemetryCycleLines(buf)
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 `regen cycle:` lines, got %d\nlog:\n%s", len(lines), buf.String())
+	}
+	c1List := telemetryField(t, lines[0], "calls_list")
+	c2List := telemetryField(t, lines[1], "calls_list")
+	if c1List <= 0 {
+		t.Fatalf("cycle 1 calls_list = %d, want > 0 (the no-op cycle still lists once)\nline:\n%s", c1List, lines[0])
+	}
+	if c2List != c1List {
+		t.Errorf("cycle 2 calls_list = %d, want %d (per-cycle, NOT cumulative); a cumulative leak doubles it\n"+
+			"cycle1: %s\ncycle2: %s", c2List, c1List, lines[0], lines[1])
+	}
+	if peak := telemetryField(t, lines[1], "peak_concurrency"); peak < 1 {
+		t.Errorf("cycle 2 peak_concurrency = %d, want >= 1 (per-cycle peak)\nline:\n%s", peak, lines[1])
+	}
+}
+
+// telemetryCycleLines returns each `regen cycle:` line from the captured log.
+func telemetryCycleLines(buf *bytes.Buffer) []string {
+	var out []string
+	for line := range strings.SplitSeq(buf.String(), "\n") {
+		if strings.Contains(line, "regen cycle:") {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// telemetryField parses an integer `key=N` field out of a telemetry line.
+func telemetryField(t *testing.T, line, key string) int {
+	t.Helper()
+	_, after, found := strings.Cut(line, key+"=")
+	if !found {
+		t.Fatalf("telemetry line missing %q field\nline:\n%s", key, line)
+	}
+	token, _, _ := strings.Cut(after, " ")
+	n, err := strconv.Atoi(token)
+	if err != nil {
+		t.Fatalf("telemetry field %q value %q not an int: %v\nline:\n%s", key, token, err, line)
+	}
+	return n
 }
 
 // TestAutoTagTick_NoTelemetry pins half of the SC-4 no-spam contract: N

@@ -29,6 +29,12 @@ import (
 type DomainSnapshot struct {
 	Master string            // stripped master body, "" when no master exists yet
 	Hubs   map[string]string // hub title -> stripped hub body
+	// Incomplete is true when a hub/master write SUCCEEDED but its post-write
+	// read-back failed, so a body is missing from this snapshot. The engine's
+	// computeDomainHash returns "" on an incomplete snapshot, preserving the
+	// PRIOR ContentHash rather than hashing a partial body (FIX-2). The write
+	// itself stands; only the hash update is deferred to the next cycle.
+	Incomplete bool
 }
 
 // Result is the structured outcome of one per-domain regen run.
@@ -125,13 +131,19 @@ func Run(ctx context.Context, d *domain.Domain) Result {
 	// D-02: the hub/master diff-check already fetched (or read back) every body
 	// we need to hash. Carry them on Result.Snapshot so the engine's
 	// content-hash pass reuses them — a no-op cycle does zero extra reads.
+	// A post-write read-back failure marks the snapshot incomplete (FIX-2) so the
+	// engine preserves the prior hash instead of hashing a partial body.
 	result.Snapshot.Hubs = hubsPass.Hubs
+	result.Snapshot.Incomplete = hubsPass.Incomplete
 	if master, masterErr := upsertMasterIndex(ctx, d, idx, groups); masterErr != nil {
 		d.Logf("ERROR: %v", masterErr)
 		result.MasterFailed = 1
 	} else {
 		incrementOutcome(master.Outcome, &result.MasterCreated, &result.MasterChanged, &result.MasterUnchanged)
 		result.Snapshot.Master = master.Body
+		if master.SnapshotIncomplete {
+			result.Snapshot.Incomplete = true
+		}
 		d.Logf("%s", master.Summary)
 	}
 	totalFailed := result.Failed()

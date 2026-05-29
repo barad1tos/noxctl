@@ -134,6 +134,14 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	}
 	bearcli.SetConcurrency(opts.BearcliConcurrency)
 
+	// Capture the cycle-start metrics baseline so the telemetry tail emits a
+	// per-cycle DELTA, not the lifetime totals the long-lived daemon accumulates
+	// (FIX-3). PeakConcurrent is a CAS-max, not additive — scope it per cycle by
+	// resetting the high-water mark to the current (drained, ~0) in-flight count.
+	// Daemon cycles are sequential, so this window is exactly one cycle.
+	metricsBaseline := bearcli.MetricsSnapshot()
+	bearcli.ScopePeakToCurrentInFlight()
+
 	// Step 0: acquire flock + write apply-pending sentinel. Gated on
 	// !opts.SkipFlock so engine.Daemon.cycleOnce can call engine.Apply
 	// without nesting flock — macOS BSD flock is not ctx-aware, so a
@@ -192,6 +200,10 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	// emit point and no sibling-drift risk (RECURRING_PITFALLS Pattern B). It
 	// fires on the success, interrupted, and failed finalize branches alike —
 	// a completed-with-outcome cycle still gets its one telemetry line.
-	logCycleTelemetry(bearcli.MetricsSnapshot(), timings.snapshot(), time.Since(result.StartedAt))
+	logCycleTelemetry(
+		cycleDelta(metricsBaseline, bearcli.MetricsSnapshot()),
+		timings.snapshot(),
+		time.Since(result.StartedAt),
+	)
 	return res, err
 }
