@@ -97,7 +97,12 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 		opts.Stderr = os.Stderr
 	}
 
-	pins, _ := domain.LoadPinRegistry(opts.PinTarget)
+	pins, pinErr := domain.LoadPinRegistry(opts.PinTarget)
+	if pinErr != nil {
+		_, _ = fmt.Fprintf(opts.Stderr,
+			"warning: pin registry %q failed to load: %v (proceeding with no pins)\n",
+			opts.PinTarget, pinErr)
+	}
 	warnInterruptedApply(opts.Stderr, opts.StatePath)
 
 	// Map the --bench/--concurrency flags onto the engine-bound fields at the
