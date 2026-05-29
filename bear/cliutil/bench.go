@@ -1,6 +1,10 @@
 package cliutil
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 // BenchOpts carries the engine-bound values that the --bench / --concurrency
 // flags resolve to. It is the pure-data result of BenchOptsFromFlags; the CLI
@@ -37,4 +41,29 @@ func BenchOptsFromFlags(bench bool, concurrency int) (BenchOpts, error) {
 		WithMetrics:        bench,
 		BearcliConcurrency: concurrency,
 	}, nil
+}
+
+// ParseSweep parses a comma-separated --sweep list like "4,8" into an int
+// slice. Empty input yields a nil slice (the single-run path). Surrounding
+// whitespace per entry is trimmed ("4, 8 " -> [4,8]). Each value must parse as
+// a positive int; a malformed or non-positive entry is a CLI error, surfaced to
+// the operator rather than panicking. Pure: no I/O, no globals.
+func ParseSweep(raw string) ([]int, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]int, 0, len(parts))
+	for _, part := range parts {
+		field := strings.TrimSpace(part)
+		n, err := strconv.Atoi(field)
+		if err != nil {
+			return nil, fmt.Errorf("--sweep %q: %q is not an integer", raw, field)
+		}
+		if n <= 0 {
+			return nil, fmt.Errorf("--sweep %q: %d must be > 0", raw, n)
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }

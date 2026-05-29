@@ -5,12 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
@@ -69,13 +66,26 @@ func runApply(cmd *cobra.Command, _ []string) error {
 	if loadErr != nil {
 		return loadErr
 	}
-	sweep, sweepErr := parseSweep(applySweep)
+	sweep, sweepErr := cliutil.ParseSweep(applySweep)
 	if sweepErr != nil {
 		return sweepErr
 	}
+	// Fail fast: --concurrency is per-iteration-overridden by --sweep, so passing
+	// both means the operator's --concurrency would be silently ignored. Reject
+	// the combination at the boundary instead of dropping the value.
+	if len(sweep) > 0 && applyConcurrency != 0 {
+		return fmt.Errorf("--concurrency cannot be combined with --sweep "+
+			"(--sweep drives concurrency per iteration; got --concurrency=%d)", applyConcurrency)
+	}
 
 	runErr := runWithSignalContext(cmd, func(ctx context.Context) error {
-		return runApplyMaybeSweep(ctx, domains, cat, target, sweep)
+		return cli.RunApplySweep(ctx, sweep, func(concurrency int) cli.ApplyOptions {
+			if len(sweep) > 0 {
+				_, _ = fmt.Fprintf(os.Stdout, "noxctl apply --bench: concurrency=%d\n", concurrency)
+				return applyOptionsFor(domains, cat, target, concurrency)
+			}
+			return applyOptionsFor(domains, cat, target, applyConcurrency)
+		})
 	})
 	switch {
 	case errors.Is(runErr, cli.ErrApplyInterrupted):
@@ -84,33 +94,6 @@ func runApply(cmd *cobra.Command, _ []string) error {
 		return errApplyFailures
 	}
 	return runErr
-}
-
-// runApplyMaybeSweep runs a single apply when --sweep is empty, otherwise one
-// apply per concurrency value. Between sweep iterations it re-arms the global
-// bearcli pool via bearcli.ResetPoolForTest(n) — the ONLY sanctioned use of
-// that test seam outside tests: the pool doc (bear/bearcli/pool.go) reserves it
-// for "the bench --sweep mode that measures throughput across multiple
-// concurrency values in one run". The daemon hot path must never call it.
-func runApplyMaybeSweep(
-	ctx context.Context, domains []*domain.Domain, cat *config.Catalog, target string, sweep []int,
-) error {
-	if len(sweep) == 0 {
-		return cli.RunApply(ctx, applyOptionsFor(domains, cat, target, applyConcurrency))
-	}
-	for i, n := range sweep {
-		if i > 0 {
-			// Re-arm the pool at the new capacity. ResetPoolForTest swaps the
-			// semaphore channel + re-arms the sync.Once gate so engine.Apply's
-			// SetConcurrency(n) takes effect for this iteration (pool doc).
-			bearcli.ResetPoolForTest(n)
-		}
-		_, _ = fmt.Fprintf(os.Stdout, "noxctl apply --bench: concurrency=%d\n", n)
-		if err := cli.RunApply(ctx, applyOptionsFor(domains, cat, target, n)); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // applyOptionsFor builds the cli.ApplyOptions for one run at the given
@@ -129,29 +112,6 @@ func applyOptionsFor(domains []*domain.Domain, cat *config.Catalog, target strin
 	}
 }
 
-// parseSweep parses a comma-separated --sweep list like "4,8" into an int
-// slice. Empty input yields a nil slice (single-run path). Each value must be
-// a positive int; a malformed or non-positive entry is a CLI error, not a panic.
-func parseSweep(raw string) ([]int, error) {
-	if raw == "" {
-		return nil, nil
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]int, 0, len(parts))
-	for _, part := range parts {
-		field := strings.TrimSpace(part)
-		n, err := strconv.Atoi(field)
-		if err != nil {
-			return nil, fmt.Errorf("--sweep %q: %q is not an integer", raw, field)
-		}
-		if n <= 0 {
-			return nil, fmt.Errorf("--sweep %q: %d must be > 0", raw, n)
-		}
-		out = append(out, n)
-	}
-	return out, nil
-}
-
 func init() {
 	applyCmd.Flags().BoolVar(&applyNoWait, "no-wait", false,
 		"fail fast if ./.noxctl/.lock is held by another process (default: block forever)")
@@ -164,7 +124,7 @@ func init() {
 	applyCmd.Flags().StringVar(&applySweep, "sweep", "",
 		"comma-separated concurrency values to benchmark (e.g. \"4,8\"); implies --bench, re-arms the pool per value")
 	applyCmd.Flags().IntVar(&applyConcurrency, "concurrency", 0,
-		"bearcli subprocess concurrency cap for this run (0 = engine default; ignored when --sweep is set)")
+		"bearcli subprocess concurrency cap for this run (0 = engine default; cannot be combined with --sweep)")
 	rootCmd.AddCommand(applyCmd)
 }
 

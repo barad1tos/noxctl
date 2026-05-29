@@ -1,6 +1,7 @@
 package cliutil_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/cliutil"
@@ -30,6 +31,47 @@ func TestBenchOptsFromFlags(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) { assertBenchCase(t, tc) })
+	}
+}
+
+// TestParseSweep pins the --sweep flag parser an operator hits directly: an
+// empty flag is the single-run path (nil), a comma list parses to its values,
+// surrounding whitespace is trimmed, and a non-integer or non-positive entry is
+// a clear CLI error (never a panic). These are the exact strings a shell user
+// types after `noxctl apply --sweep=...`.
+func TestParseSweep(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		want    []int
+		wantErr bool
+	}{
+		{name: "empty is single-run", raw: "", want: nil},
+		{name: "two values", raw: "4,8", want: []int{4, 8}},
+		{name: "whitespace trimmed", raw: "4, 8 ", want: []int{4, 8}},
+		{name: "single value", raw: "12", want: []int{12}},
+		{name: "non-integer rejected", raw: "x", wantErr: true},
+		{name: "non-integer among valid rejected", raw: "4,x,8", wantErr: true},
+		{name: "zero rejected", raw: "0", wantErr: true},
+		{name: "negative rejected", raw: "-1", wantErr: true},
+		{name: "negative among valid rejected", raw: "4,-1", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := cliutil.ParseSweep(tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("ParseSweep(%q) err = nil, want a CLI error", tc.raw)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseSweep(%q): %v", tc.raw, err)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("ParseSweep(%q) = %v, want %v", tc.raw, got, tc.want)
+			}
+		})
 	}
 }
 

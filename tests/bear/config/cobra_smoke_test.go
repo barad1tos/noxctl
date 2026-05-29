@@ -84,6 +84,19 @@ func TestCobraSmoke(t *testing.T) {
 		{"apply-help-auto-approve", []string{"apply", "--help"}, "--auto-approve", true},
 		{"apply-help-bear-db", []string{"apply", "--help"}, "--bear-db", true},
 		{"daemon-help-bear-db", []string{"daemon", "--help"}, "--bear-db", true},
+		// --sweep drives concurrency per iteration, so combining it with an
+		// explicit --concurrency would silently drop the operator's value. The
+		// boundary fails fast with a clear message before any Bear I/O.
+		{
+			"apply-sweep-with-concurrency-rejected",
+			[]string{"apply", "--config", validFixture, "--sweep", "4,8", "--concurrency", "2"},
+			"--concurrency cannot be combined with --sweep", false,
+		},
+		{
+			"apply-sweep-malformed-rejected",
+			[]string{"apply", "--config", validFixture, "--sweep", "4,x"},
+			"is not an integer", false,
+		},
 		// plan is a real subcommand; assert flag surface via --help.
 		// Real behavior (engine.Plan + diff renderer + exit codes) lives
 		// in engine-level tests + manual smoke (no live bearcli in CI).

@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -52,6 +53,33 @@ type ApplyOptions struct {
 	// "engine default" — engine.Apply resolves a non-positive value to
 	// DefaultBearcliConcurrency.
 	Concurrency int
+}
+
+// RunApplySweep runs one apply per concurrency value in sweep, re-arming the
+// global bearcli pool to each new capacity between iterations so engine.Apply's
+// SetConcurrency takes effect for that iteration (the pool's SetConcurrency is
+// sync.Once-gated, so without the re-arm only the first value would stick). An
+// empty sweep is the single-run path and runs exactly once at optsFor's own
+// concurrency. optsFor builds the ApplyOptions for the given per-iteration
+// concurrency; the caller owns flag plumbing and stdout banners.
+//
+// bearcli.ResetPoolForTest is the pool's sanctioned re-arm seam — its doc
+// reserves it for "the bench --sweep mode that measures throughput across
+// multiple concurrency values in one run". The daemon hot path must never use
+// it.
+func RunApplySweep(ctx context.Context, sweep []int, optsFor func(concurrency int) ApplyOptions) error {
+	if len(sweep) == 0 {
+		return RunApply(ctx, optsFor(0))
+	}
+	for i, n := range sweep {
+		if i > 0 {
+			bearcli.ResetPoolForTest(n)
+		}
+		if err := RunApply(ctx, optsFor(n)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RunApply runs one noxctl apply pass and renders the recap.
