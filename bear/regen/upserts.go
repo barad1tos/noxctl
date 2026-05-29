@@ -96,7 +96,7 @@ func upsertHub(
 		// can normalize markdown on create (whitespace, EOF newline); hashing the
 		// rendered bytes would diverge from next cycle's diff-check read-back and
 		// flip the domain to "changed" forever. One read, only on create.
-		stored, incomplete := readBackAfterWrite(ctx, newID)
+		stored, incomplete := readBackAfterWrite(ctx, d, newID)
 		return upsertResult{
 			Summary:            fmt.Sprintf("%s: created", hubTitle),
 			Title:              hubTitle,
@@ -148,7 +148,7 @@ func upsertHub(
 	// read-back failure AFTER the successful write is non-fatal: the
 	// outcome stays `updated`, the snapshot is incomplete, and the prior hash is
 	// preserved — the vault write is never rolled back.
-	stored, incomplete := readBackAfterWrite(ctx, hubID)
+	stored, incomplete := readBackAfterWrite(ctx, d, hubID)
 	return upsertResult{
 		Summary:            fmt.Sprintf("%s: updated", hubTitle),
 		Title:              hubTitle,
@@ -168,12 +168,14 @@ func upsertHub(
 // returns ("", incomplete=true) so the caller keeps the created/updated outcome
 // but signals the snapshot incomplete, and the engine preserves the prior hash
 // rather than overwriting it with a wrong/empty value. The vault write stands.
-func readBackAfterWrite(ctx context.Context, noteID string) (body string, incomplete bool) {
+func readBackAfterWrite(ctx context.Context, d *domain.Domain, noteID string) (body string, incomplete bool) {
 	if noteID == "" {
+		d.Logf("WARN: read-back skipped (empty note ID after a successful write); hash deferred to next cycle")
 		return "", true
 	}
 	stored, err := readBackStripped(ctx, noteID)
 	if err != nil {
+		d.Logf("WARN: read-back failed after a successful write: %v; hash deferred to next cycle", err)
 		return "", true
 	}
 	return stored, false
@@ -225,7 +227,7 @@ func upsertMasterIndex(
 		// Read back the STORED master body for hashing (see upsertHub's create
 		// read-back rationale — Bear's normalized form, not the rendered bytes).
 		// A read-back failure after the successful create is non-fatal.
-		stored, incomplete := readBackAfterWrite(ctx, newID)
+		stored, incomplete := readBackAfterWrite(ctx, d, newID)
 		return upsertResult{
 			Summary:            "index: created",
 			Title:              d.IndexTitle,
@@ -268,7 +270,7 @@ func upsertMasterIndex(
 	// Changed: read back the STORED master body for hashing (see upsertHub's
 	// read-back rationale — Bear's normalized form, not the rendered bytes). A
 	// read-back failure after the successful write is non-fatal.
-	stored, incomplete := readBackAfterWrite(ctx, idxID)
+	stored, incomplete := readBackAfterWrite(ctx, d, idxID)
 	return upsertResult{
 		Summary:            "index: updated",
 		Title:              d.IndexTitle,
