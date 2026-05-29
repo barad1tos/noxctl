@@ -33,6 +33,14 @@ ignore:
   # direct children + nested) is the reliable form.
   - "cmd/noxctl/**"
   - "cmd/regen-watchd/**"
+  # Test code is the instrument, not the product. With `-coverpkg=./...` the
+  # external `tests/<pkg>/` packages get instrumented too, so their own lines
+  # (notably the shared fakes/helpers in tests/bear/testutil, whose branches
+  # are only partially exercised by any single test) surface as "missing
+  # coverage" — a measurement artifact, not a real gap. Production coverage is
+  # still attributed through these tests; only the test files themselves drop
+  # out. Same gitignore-style glob form as above.
+  - "tests/**"
 
 comment:
   layout: "condensed_header, condensed_files, condensed_footer"
