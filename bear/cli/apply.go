@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
@@ -41,6 +42,16 @@ type ApplyOptions struct {
 	Quiet     bool
 	Stdout    io.Writer
 	Stderr    io.Writer
+	// Bench, when set by `noxctl apply --bench`, enables bearcli pool metrics
+	// capture for the run (engine.ApplyOpts.WithMetrics). The cycle-telemetry
+	// line emits unconditionally either way (Plan 14-03); bench mode additionally
+	// retains the snapshot in ApplyResult.Metrics and installs the timing hook.
+	Bench bool
+	// Concurrency is the operator-supplied --concurrency value (single run) or
+	// the per-iteration value the --sweep loop sets in cmd/noxctl. Zero means
+	// "engine default" — engine.Apply resolves a non-positive value to
+	// DefaultBearcliConcurrency.
+	Concurrency int
 }
 
 // RunApply runs one noxctl apply pass and renders the recap.
@@ -61,18 +72,37 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 	pins, _ := domain.LoadPinRegistry(opts.PinTarget)
 	warnInterruptedApply(opts.Stderr, opts.StatePath)
 
-	result, runErr := engine.Apply(ctx, engine.ApplyOpts{
-		Domains:         opts.Domains,
-		Pins:            pins,
-		StatePath:       opts.StatePath,
-		LockPath:        opts.LockPath,
-		Features:        cliutil.FeaturesFromCatalog(opts.Catalog),
-		NoWait:          opts.NoWait,
-		AuditEnabled:    false,
-		Stderr:          opts.Stderr,
-		DailyDefaultTag: cliutil.DailyDefaultTagFromCatalog(opts.Catalog),
-		PromotionRules:  cliutil.PromotionRulesFromCatalog(opts.Catalog),
-	})
+	// Map the --bench/--concurrency flags onto the engine-bound fields at the
+	// CLI boundary (Pattern A: a parsed-but-unthreaded flag is a silent no-op,
+	// guarded end-to-end by tests/bear/cli/apply/bench_wiring_test.go).
+	bench, benchErr := cliutil.BenchOptsFromFlags(opts.Bench, opts.Concurrency)
+	if benchErr != nil {
+		return benchErr
+	}
+
+	engineOpts := engine.ApplyOpts{
+		Domains:            opts.Domains,
+		Pins:               pins,
+		StatePath:          opts.StatePath,
+		LockPath:           opts.LockPath,
+		Features:           cliutil.FeaturesFromCatalog(opts.Catalog),
+		NoWait:             opts.NoWait,
+		AuditEnabled:       false,
+		Stderr:             opts.Stderr,
+		DailyDefaultTag:    cliutil.DailyDefaultTagFromCatalog(opts.Catalog),
+		PromotionRules:     cliutil.PromotionRulesFromCatalog(opts.Catalog),
+		WithMetrics:        bench.WithMetrics,
+		BearcliConcurrency: bench.BearcliConcurrency,
+	}
+	// In bench mode, install a no-op DomainTimingHook so engine.Apply routes
+	// per-domain timings through the WithMetrics path; engine.Apply wraps any
+	// caller hook in its telemetry accumulator (installTimingAccumulator), so a
+	// nil-safe sink is enough to mark this run as bench-instrumented.
+	if bench.WithMetrics {
+		engineOpts.DomainTimingHook = func(string, time.Duration) {}
+	}
+
+	result, runErr := engine.Apply(ctx, engineOpts)
 	if result != nil {
 		RenderRecap(opts.Stdout, result, opts.Quiet)
 	}

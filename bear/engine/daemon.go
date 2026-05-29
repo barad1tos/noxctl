@@ -25,16 +25,24 @@
 //
 // Auto-tag fast-pass: a THIRD trigger source alongside FSEvent +
 // mtime-poll. [Daemon.Run] runs an optional fast-pass loop that ticks
-// every `AutoTagPollInterval` (default 2s) and invokes ONLY
-// fastpass.ApplyForeignTagEscape + fastpass.ApplyDailyDefaultTag — NOT the
-// full per-domain regen cycle. The goal: click-then-type quicknotes
-// get `#quicknote/daily` stamped within <= 5s p95 instead of the
-// empirically-measured 13-15s the FSEvent-then-Bear-flush path
-// delivers. Set `AutoTagPollInterval=0` to disable the fast-pass; the
-// daemon then relies on FSEvent + mtime-poll only.
+// every `AutoTagPollInterval` (default 2s) and invokes the FOUR
+// canonicalization fast-passes — in order: foreign-tag escape,
+// daily-default, domain-bootstrap, then placeholder-refresh
+// ([Daemon.handleAutoTagTick]) — NOT the full per-domain regen cycle.
+// The goal: click-then-type quicknotes get `#quicknote/daily` stamped
+// within <= 5s p95 instead of the empirically-measured 13-15s the
+// FSEvent-then-Bear-flush path delivers. Set `AutoTagPollInterval=0` to
+// disable the fast-pass; the daemon then relies on FSEvent + mtime-poll only.
+//
+// Note the asymmetry with the full apply path: engine.Apply runs the
+// SAME four passes plus an ADDITIONAL time-promotion pre-pass
+// (bear/engine/prepasses.go) that the daemon tick does NOT — the tick is
+// the latency-critical subset, not the full pre-pass suite. Each
+// fast-pass issues its own full `bearcli list --location notes`, so the
+// per-tick cost scales with the number of enabled passes.
 //
 // Self-write gate: fast-pass ticks set regenInProgress=true for the
-// duration of the two pre-pass calls (via markRegenStart/markRegenEnd
+// duration of the pre-pass calls (via markRegenStart/markRegenEnd
 // — same helpers cycleOnce uses). The widened
 // effectiveSelfWriteEpsilon absorbs the fast-pass's own writes
 // uniformly with cycle writes; no new gate state is introduced.
