@@ -268,6 +268,50 @@ func TestBearcliMetrics_CallsByKind(t *testing.T) {
 	}
 }
 
+// TestScopePeakToCurrentInFlight_ResetsToInFlightFloorNotZero pins that
+// ScopePeakToCurrentInFlight rescopes the peak high-water mark DOWN to the
+// calls currently in flight — not to zero, and not leaving it at the prior
+// cycle's higher max. The daemon calls this at each regen cycle start; if it
+// zeroed the mark while a still-draining call was in flight, that cycle's
+// peak_concurrency telemetry would under-report real concurrency to an operator
+// tuning the pool. A capacity-1 drained cycle cannot tell the correct reset
+// from a no-op or a zero-reset, so this drives the lifetime peak to 3, releases
+// every slot, then holds ONE slot across the scope call.
+func TestScopePeakToCurrentInFlight_ResetsToInFlightFloorNotZero(t *testing.T) {
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+
+	bearcli.ResetPoolForTest(4)
+	ctx := context.Background()
+	acquire := func() func() {
+		rel, err := bearcli.AcquireForTest(ctx, "list")
+		if err != nil {
+			t.Fatalf("AcquireForTest: %v", err)
+		}
+		return rel
+	}
+
+	// Drive the lifetime peak to 3, then release every slot — the CAS-max
+	// stays at 3 while in-flight returns to 0.
+	r1, r2, r3 := acquire(), acquire(), acquire()
+	r1()
+	r2()
+	r3()
+	if got := bearcli.MetricsSnapshot().PeakConcurrent; got != 3 {
+		t.Fatalf("setup: PeakConcurrent = %d, want 3 after three concurrent acquires", got)
+	}
+
+	// One call is still in flight at the cycle boundary.
+	hold := acquire()
+	defer hold()
+
+	bearcli.ScopePeakToCurrentInFlight()
+
+	if got := bearcli.MetricsSnapshot().PeakConcurrent; got != 1 {
+		t.Fatalf("PeakConcurrent after ScopePeakToCurrentInFlight with one call in flight = %d, "+
+			"want 1 (the in-flight floor — not the prior cycle's max 3, not 0)", got)
+	}
+}
+
 // alwaysOKBackend is a minimal bearcli.Backend that returns an empty
 // JSON array for every Run call. Used by kind-classification tests that
 // only care about the metrics side effect (kindFromArgs + incCallKind),
