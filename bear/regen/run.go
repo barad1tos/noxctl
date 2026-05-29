@@ -138,6 +138,11 @@ func Run(ctx context.Context, d *domain.Domain) Result {
 	if master, masterErr := upsertMasterIndex(ctx, d, idx, groups); masterErr != nil {
 		d.Logf("ERROR: %v", masterErr)
 		result.MasterFailed = 1
+		// A genuine master upsert failure leaves the master body unavailable.
+		// Mark the snapshot incomplete EXPLICITLY rather than leaning on the
+		// empty Master string to make computeDomainHash return "" — the prior
+		// hash is preserved by intent, not by coincidence.
+		result.Snapshot.Incomplete = true
 	} else {
 		incrementOutcome(master.Outcome, &result.MasterCreated, &result.MasterChanged, &result.MasterUnchanged)
 		result.Snapshot.Master = master.Body

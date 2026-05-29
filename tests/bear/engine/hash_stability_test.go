@@ -71,6 +71,104 @@ func TestApply_HashStableAcrossNoOpCycles(t *testing.T) {
 	}
 }
 
+// TestApply_HubCatFailurePreservesPriorHash guards the partial-hash landmine: a
+// hub-routed domain with TWO buckets runs a cycle in which ONE hub's diff-check
+// `cat` fails outright (a genuine read/parse failure, NOT a post-write read-back
+// soft-fail), while the OTHER hub and the master upsert succeed. The failing hub
+// drops out of the snapshot, so hashing the surviving hub + master would persist
+// a content hash over a PARTIAL hub set — wrong, and it would silently flip the
+// domain "changed" on the next clean cycle. The contract: a genuine hub failure
+// marks the snapshot incomplete, so the prior ContentHash is preserved (the
+// master's success cannot persist a hash computed from an incomplete corpus).
+//
+// Mirrors TestApply_ReadBackFailureAfterWriteIsNonFatal — that pins the soft
+// post-write read-back path; this pins the hard diff-check failure path.
+func TestApply_HubCatFailurePreservesPriorHash(t *testing.T) {
+	bearcli.ResetPoolForTest(1)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+
+	d := noOpHubRoutedDomain()
+	// Two buckets, two hubs, one master — all in the steady no-op state so the
+	// only failure injected is the diff-check cat of one hub.
+	corpus := twoBucketNoOpCorpus(d)
+	backend := testutil.NewRecordingBackend(corpus)
+	// Fail the diff-check cat of the "Biko" hub specifically: a genuine read
+	// failure for an existing hub. The "Achebe" hub and the master read fine.
+	backend.FailCatForID = map[string]bool{"hub-biko": true}
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	priorHash := "previous-stable-content-hash"
+	if err := (&state.State{
+		Version: state.SchemaVersion,
+		Domains: map[string]state.DomainState{d.Tag: {ContentHash: priorHash}},
+	}).Save(statePath); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+
+	opts := engine.ApplyOpts{
+		Domains:   []*domain.Domain{d},
+		StatePath: statePath,
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{},
+		SkipFlock: true,
+	}
+
+	result, err := engine.Apply(ctx, opts)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	// The hub cat failure is a genuine failure — surfaced in the recap.
+	if counts := result.Domains[d.Tag]; counts.Failed == 0 {
+		t.Errorf("domain counts = %+v, want Failed>0 (a hub cat failure must be reported)", counts)
+	}
+
+	// The prior hash MUST survive: a failing cycle that dropped a hub from the
+	// snapshot may not persist a hash computed from the surviving hub + master.
+	after, err := state.Load(statePath)
+	if err != nil {
+		t.Fatalf("state.Load: %v", err)
+	}
+	if got := after.Domains[d.Tag].ContentHash; got != priorHash {
+		t.Errorf("ContentHash = %q, want prior %q preserved "+
+			"(a dropped hub must mark the snapshot incomplete, not persist a partial hash)", got, priorHash)
+	}
+}
+
+// twoBucketNoOpCorpus builds a steady-state hub-routed corpus with two buckets
+// ("Biko" and "Achebe"), each with one atom and a matching hub, plus the master.
+// Every structural note already carries its rendered body so the cycle is no-op
+// absent any injected failure.
+func twoBucketNoOpCorpus(d *domain.Domain) map[string][]domain.Note {
+	atomBiko := domain.Note{
+		ID:      "atom-biko",
+		Title:   "Poem Biko",
+		Content: "# Poem Biko\n#library/poetry | [[Biko]]\n---\nbody\n",
+		Tags:    []string{"#library/poetry"},
+	}
+	atomAchebe := domain.Note{
+		ID:      "atom-achebe",
+		Title:   "Poem Achebe",
+		Content: "# Poem Achebe\n#library/poetry | [[Achebe]]\n---\nbody\n",
+		Tags:    []string{"#library/poetry"},
+	}
+	groups := map[string][]domain.Note{
+		"Biko":   {atomBiko},
+		"Achebe": {atomAchebe},
+	}
+	tags := []string{"#library/poetry"}
+	corpus := []domain.Note{
+		atomBiko,
+		atomAchebe,
+		{ID: "hub-biko", Title: d.HubTitle("Biko"), Content: d.RenderHub(d, "Biko", groups["Biko"], nil), Tags: tags},
+		{ID: "hub-achebe", Title: d.HubTitle("Achebe"), Content: d.RenderHub(d, "Achebe", groups["Achebe"], nil), Tags: tags},
+		{ID: "master", Title: d.IndexTitle, Content: d.RenderMaster(d, groups), Tags: tags},
+	}
+	return map[string][]domain.Note{d.Tag: corpus}
+}
+
 // applyAndReadHash runs one engine.Apply and returns the persisted ContentHash
 // for tag. Fails the test on Apply error or unreadable state.
 func applyAndReadHash(t *testing.T, ctx context.Context, opts engine.ApplyOpts, tag string) string {

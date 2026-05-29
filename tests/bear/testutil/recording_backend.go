@@ -21,6 +21,12 @@ import (
 // upsert outcome, not the error value, so a sentinel suffices here.
 var errReadBackFailed = errors.New("recording backend: read-back cat failed (transient)")
 
+// errHardCatFailed is the genuine diff-check `cat` failure the FailCatForID
+// mode injects — a hub or master whose existing body cannot be read at all, so
+// its upsert returns an error rather than completing. Distinct from the
+// post-write read-back soft-fail: here the upsert itself never produces a body.
+var errHardCatFailed = errors.New("recording backend: cat failed for note")
+
 // Record is one observed bearcli invocation, classified by sub-command
 // (Kind) and the --tag value (Tag, empty for tag-less id-addressed calls).
 type Record struct {
@@ -68,6 +74,14 @@ type RecordingBackend struct {
 	// signals the snapshot incomplete so the prior ContentHash is preserved.
 	FailReadBackAfterWrite bool
 
+	// FailCatForID holds note ids whose `cat` ALWAYS errors, modeling a genuine
+	// diff-check read failure for an existing hub or master (not a post-write
+	// read-back). The owning upsert returns an error and never produces a body,
+	// so its hub/master is dropped from the snapshot — the case that proves the
+	// snapshot must be marked incomplete so a sibling success cannot persist a
+	// partial content hash.
+	FailCatForID map[string]bool
+
 	mu          sync.Mutex
 	records     []Record
 	writtenIDs  map[string]bool // ids written this lifetime (create/overwrite)
@@ -109,6 +123,9 @@ func (b *RecordingBackend) payload(kind, tag string, args []string, stdin string
 	case "list":
 		return json.Marshal(b.notesByTag[tag])
 	case "cat":
+		if len(args) >= 2 && b.FailCatForID[args[1]] {
+			return nil, errHardCatFailed
+		}
 		if len(args) >= 2 && b.shouldFailReadBack(args[1]) {
 			return nil, errReadBackFailed
 		}

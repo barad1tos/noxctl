@@ -424,6 +424,13 @@ func runHubsPass(
 		if err != nil {
 			d.Logf("ERROR: %v", err)
 			res.Failed++
+			// A genuine hub cat/parse/overwrite failure drops this hub from the
+			// snapshot. Mark the snapshot incomplete so the content-hash pass
+			// preserves the prior hash rather than hashing the surviving hubs +
+			// master into a wrong value (which would flip the domain "changed"
+			// on the next clean cycle). Same incomplete signal the post-write
+			// read-back soft-fail uses, for a different failure mode.
+			res.Incomplete = true
 			continue
 		}
 		incrementOutcome(hub.Outcome, &res.Created, &res.Changed, &res.Unchanged)
