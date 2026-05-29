@@ -134,6 +134,14 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	}
 	bearcli.SetConcurrency(opts.BearcliConcurrency)
 
+	// Capture the cycle-start metrics baseline so the telemetry tail emits a
+	// per-cycle DELTA, not the lifetime totals the long-lived daemon accumulates.
+	// PeakConcurrent is a CAS-max, not additive — scope it per cycle by
+	// resetting the high-water mark to the current (drained, ~0) in-flight count.
+	// Daemon cycles are sequential, so this window is exactly one cycle.
+	metricsBaseline := bearcli.MetricsSnapshot()
+	bearcli.ScopePeakToCurrentInFlight()
+
 	// Step 0: acquire flock + write apply-pending sentinel. Gated on
 	// !opts.SkipFlock so engine.Daemon.cycleOnce can call engine.Apply
 	// without nesting flock — macOS BSD flock is not ctx-aware, so a
@@ -169,12 +177,34 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 		return result, fmt.Errorf("engine.Apply state.Save(InProgress): %w", err)
 	}
 
-	// Step 3: pre-passes (gated by opts.Features).
+	// Step 3: install the per-domain timing accumulator BEFORE the per-domain
+	// loop so runDomainAndSave feeds it via DomainTimingHook (a caller-supplied
+	// bench hook is wrapped, not displaced). Fed concurrently from worker
+	// goroutines — mutex-guarded.
+	timings := installTimingAccumulator(&opts)
+
+	// Step 4: pre-passes (gated by opts.Features).
 	applyPrePasses(ctx, opts, result)
 
-	// Step 4: per-domain loop.
+	// Step 5: per-domain loop.
 	applyPerDomain(ctx, opts, st, result)
 
-	// Step 5: finalize — set LastApply + clear InProgress IFF success.
-	return applyFinalize(ctx, opts, st, result)
+	// Step 6: finalize — set LastApply + clear InProgress IFF success.
+	res, err := applyFinalize(ctx, opts, st, result)
+
+	// Step 7: emit ONE structured telemetry line at cycle completion.
+	// UNCONDITIONAL — NOT gated on opts.WithMetrics (the production daemon
+	// leaves that false; gating here would make the daemon telemetry-blind).
+	// This single site covers BOTH `noxctl apply --once` AND the daemon's
+	// cycleOnce (events.go calls engine.Apply), so there is no second emit
+	// point and no sibling-drift risk. It fires on the success, interrupted,
+	// and failed finalize branches alike — a completed-with-outcome cycle still
+	// gets its one telemetry line. Early aborts (Steps 0-2: lock or state-load
+	// failure) return before this point and emit nothing, by design.
+	logCycleTelemetry(
+		cycleDelta(metricsBaseline, bearcli.MetricsSnapshot()),
+		timings.snapshot(),
+		time.Since(result.StartedAt),
+	)
+	return res, err
 }

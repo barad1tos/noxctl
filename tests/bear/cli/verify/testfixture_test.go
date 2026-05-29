@@ -64,12 +64,20 @@ func (b *benignBearcliBackend) Run(_ context.Context, args []string, stdin strin
 	}
 	switch args[0] {
 	case "list":
-		if listFields(args) == "id,title" {
-			b.mu.Lock()
-			defer b.mu.Unlock()
-			if b.masterCreated {
+		// listNotes (full fields) and the legacy id,title finder both see
+		// the created master once it exists — production listNotes returns
+		// every note tagged d.Tag, master included. The note index
+		// is built from this full listNotes result, so the master must
+		// appear here for a created-then-clean second pass to converge.
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if b.masterCreated {
+			if listFields(args) == "id,title" {
 				return []byte(`[{"id":"master-1","title":"✱ Test"}]`), nil
 			}
+			return fmt.Appendf(nil,
+				`[{"id":"master-1","title":"✱ Test","content":%q,"tags":["#claude/sessions"]}]`,
+				b.masterContent), nil
 		}
 		return []byte("[]"), nil
 	case "cat":

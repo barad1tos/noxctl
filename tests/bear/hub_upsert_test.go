@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
@@ -16,7 +15,6 @@ import (
 
 type hubUpsertBackend struct {
 	fullList    []domain.Note
-	titleList   []domain.Note
 	catByID     map[string]string
 	creates     []string
 	overwrites  []fakeOverwriteCall
@@ -29,10 +27,11 @@ func (b *hubUpsertBackend) Run(_ context.Context, args []string, stdin string) (
 	}
 	switch args[0] {
 	case "list":
-		if strings.Contains(strings.Join(args, ","), "id,title,content,tags,created") {
-			return json.Marshal(b.fullList)
-		}
-		return json.Marshal(b.titleList)
+		// The goroutine-local note index builds hub/master ID lookups
+		// from this single listNotes result, so every structural note the
+		// upsert path must resolve lives in fullList — there is no separate
+		// id,title list anymore.
+		return json.Marshal(b.fullList)
 	case "create":
 		if len(args) < 2 {
 			return nil, errors.New("create missing title")
@@ -99,9 +98,20 @@ func TestRunRegen_HubUpdateSurfacesInResult(t *testing.T) {
 	masterContent := render.DefaultRenderMaster3Tier(d, map[string][]domain.Note{
 		"Biko": {hubUpsertAtom()},
 	})
+	// The hub + master notes ride in the same listNotes result the index is
+	// built from. Their bodies are stale (hub) / current (master) so the hub
+	// reports `changed` while the master reports `unchanged`. routing.skipNote
+	// keeps both out of the atom grouping, so they never pollute the buckets.
+	// The listNotes entry for the hub carries a hub-shaped body (## Poems H2)
+	// so routing.skipNote recognizes it as a Tier-2 hub and keeps it out of
+	// the atom grouping. Its CONTENT here is only the routing-skip signal; the
+	// changed/unchanged comparison reads the stale body from catByID below.
 	backend := &hubUpsertBackend{
-		fullList:  []domain.Note{hubUpsertAtom()},
-		titleList: []domain.Note{{ID: "hub-biko", Title: "Biko"}, {ID: "master", Title: "Poetry Index"}},
+		fullList: []domain.Note{
+			hubUpsertAtom(),
+			{ID: "hub-biko", Title: "Biko", Content: "# Biko\n## Poems (0)\n"},
+			{ID: "master", Title: "Poetry Index", Content: masterContent},
+		},
 		catByID: map[string]string{
 			"hub-biko": "# Biko\nstale\n",
 			"master":   masterContent,

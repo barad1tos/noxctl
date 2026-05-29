@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -41,6 +42,44 @@ type ApplyOptions struct {
 	Quiet     bool
 	Stdout    io.Writer
 	Stderr    io.Writer
+	// Bench, when set by `noxctl apply --bench`, enables bearcli pool metrics
+	// capture for the run (engine.ApplyOpts.WithMetrics). The cycle-telemetry
+	// line emits unconditionally either way; bench mode additionally retains the
+	// pool snapshot in ApplyResult.Metrics. Per-domain timings are accumulated
+	// by engine.Apply on every run (not just bench), so no caller hook is needed.
+	Bench bool
+	// Concurrency is the operator-supplied --concurrency value (single run) or
+	// the per-iteration value the --sweep loop sets in cmd/noxctl. Zero means
+	// "engine default" — engine.Apply resolves a non-positive value to
+	// DefaultBearcliConcurrency.
+	Concurrency int
+}
+
+// RunApplySweep runs one apply per concurrency value in sweep, re-arming the
+// global bearcli pool to each new capacity between iterations so engine.Apply's
+// SetConcurrency takes effect for that iteration (the pool's SetConcurrency is
+// sync.Once-gated, so without the re-arm only the first value would stick). An
+// empty sweep is the single-run path and runs exactly once at optsFor's own
+// concurrency. optsFor builds the ApplyOptions for the given per-iteration
+// concurrency; the caller owns flag plumbing and stdout banners.
+//
+// bearcli.ResetPoolForTest is the pool's sanctioned re-arm seam — its doc
+// reserves it for "the bench --sweep mode that measures throughput across
+// multiple concurrency values in one run". The daemon hot path must never use
+// it.
+func RunApplySweep(ctx context.Context, sweep []int, optsFor func(concurrency int) ApplyOptions) error {
+	if len(sweep) == 0 {
+		return RunApply(ctx, optsFor(0))
+	}
+	for i, n := range sweep {
+		if i > 0 {
+			bearcli.ResetPoolForTest(n)
+		}
+		if err := RunApply(ctx, optsFor(n)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RunApply runs one noxctl apply pass and renders the recap.
@@ -58,21 +97,38 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 		opts.Stderr = os.Stderr
 	}
 
-	pins, _ := domain.LoadPinRegistry(opts.PinTarget)
+	pins, pinErr := domain.LoadPinRegistry(opts.PinTarget)
+	if pinErr != nil {
+		_, _ = fmt.Fprintf(opts.Stderr,
+			"warning: pin registry %q failed to load: %v (proceeding with no pins)\n",
+			opts.PinTarget, pinErr)
+	}
 	warnInterruptedApply(opts.Stderr, opts.StatePath)
 
-	result, runErr := engine.Apply(ctx, engine.ApplyOpts{
-		Domains:         opts.Domains,
-		Pins:            pins,
-		StatePath:       opts.StatePath,
-		LockPath:        opts.LockPath,
-		Features:        cliutil.FeaturesFromCatalog(opts.Catalog),
-		NoWait:          opts.NoWait,
-		AuditEnabled:    false,
-		Stderr:          opts.Stderr,
-		DailyDefaultTag: cliutil.DailyDefaultTagFromCatalog(opts.Catalog),
-		PromotionRules:  cliutil.PromotionRulesFromCatalog(opts.Catalog),
-	})
+	// Map the --bench/--concurrency flags onto the engine-bound fields at the
+	// CLI boundary (a parsed-but-unthreaded flag would be a silent no-op,
+	// guarded end-to-end by tests/bear/cli/apply/bench_wiring_test.go).
+	bench, benchErr := cliutil.BenchOptsFromFlags(opts.Bench, opts.Concurrency)
+	if benchErr != nil {
+		return benchErr
+	}
+
+	engineOpts := engine.ApplyOpts{
+		Domains:            opts.Domains,
+		Pins:               pins,
+		StatePath:          opts.StatePath,
+		LockPath:           opts.LockPath,
+		Features:           cliutil.FeaturesFromCatalog(opts.Catalog),
+		NoWait:             opts.NoWait,
+		AuditEnabled:       false,
+		Stderr:             opts.Stderr,
+		DailyDefaultTag:    cliutil.DailyDefaultTagFromCatalog(opts.Catalog),
+		PromotionRules:     cliutil.PromotionRulesFromCatalog(opts.Catalog),
+		WithMetrics:        bench.WithMetrics,
+		BearcliConcurrency: bench.BearcliConcurrency,
+	}
+
+	result, runErr := engine.Apply(ctx, engineOpts)
 	if result != nil {
 		RenderRecap(opts.Stdout, result, opts.Quiet)
 	}

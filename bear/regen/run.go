@@ -12,6 +12,31 @@ import (
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
+// DomainSnapshot carries the freshest master + hub BODIES observed during a
+// regen run, so the engine's content-hash pass (bear/engine/hashing.go) can
+// reuse them instead of re-reading Bear after the writes. The shape mirrors
+// ComputeContentHash's inputs exactly: a master body plus a hub-title->body
+// map (the same keying FetchHubContents uses), so the engine hashes the
+// snapshot directly.
+//
+// Idempotency contract: the bodies are ALWAYS stripped of new-note
+// URLs (domain.StripNewNoteURLsFromBody) before they land here, matching the
+// pre-phase FetchMasterContent/FetchHubContents treatment so the state.json
+// fingerprint stays byte-identical across the optimization. On the unchanged
+// branch the body is the already-fetched existing.Content; on the changed
+// branch it is a deliberate fresh read-back of the just-overwritten note
+// (Bear's stored-normalized form) — see upsertHub/upsertMasterIndex.
+type DomainSnapshot struct {
+	Master string            // stripped master body, "" when no master exists yet
+	Hubs   map[string]string // hub title -> stripped hub body
+	// Incomplete is true when a hub/master write SUCCEEDED but its post-write
+	// read-back failed, so a body is missing from this snapshot. The engine's
+	// computeDomainHash returns "" on an incomplete snapshot, preserving the
+	// PRIOR ContentHash rather than hashing a partial body. The write
+	// itself stands; only the hash update is deferred to the next cycle.
+	Incomplete bool
+}
+
 // Result is the structured outcome of one per-domain regen run.
 // It preserves the existing log-and-continue behavior while giving
 // callers a machine-readable failure signal for recap and verification
@@ -29,6 +54,10 @@ type Result struct {
 	MasterUnchanged int
 	MasterFailed    int
 	ListFailed      bool
+	// Snapshot carries the freshest master + hub bodies observed during this
+	// run, reused by the engine content-hash pass instead of re-reading Bear.
+	// See DomainSnapshot.
+	Snapshot DomainSnapshot
 }
 
 // Failed returns the total failure count observed during the regen run.
@@ -68,6 +97,12 @@ func Run(ctx context.Context, d *domain.Domain) Result {
 		d.Logf("list failed: %v", err)
 		return Result{ListFailed: true}
 	}
+	// One goroutine-local title->ID index over the initial listNotes result.
+	// It replaces the per-bucket findNoteByTitle scan (each previously its own
+	// `bearcli list`) in the hub/master upsert path: for a hub-routed domain
+	// with B buckets that drops B+1 redundant list calls per no-op cycle.
+	// No mutex — Run is goroutine-local per domain (engine.runDomainAndSave).
+	idx := newNoteIndex(notes)
 	routing := d.RouteAtomics(notes, func(atomID, kept, suppressed string) {
 		d.Logf("WARN: tag override suppressed by higher layer: note %s wanted %s, kept %s",
 			atomID, suppressed, kept)
@@ -89,13 +124,33 @@ func Run(ctx context.Context, d *domain.Domain) Result {
 	if !d.SkipAtomicsPass {
 		result.AtomicsTouched, result.AtomicsFailed = runAtomicsPass(ctx, d, groups)
 	}
-	result.HubsCreated, result.HubsChanged, result.HubsUnchanged, result.HubsFailed = runHubsPass(ctx, d, groups)
-	if summary, masterOutcome, masterErr := upsertMasterIndex(ctx, d, groups); masterErr != nil {
+	hubsPass := runHubsPass(ctx, d, idx, groups)
+	result.HubsCreated = hubsPass.Created
+	result.HubsChanged = hubsPass.Changed
+	result.HubsUnchanged = hubsPass.Unchanged
+	result.HubsFailed = hubsPass.Failed
+	// The hub/master diff-check already fetched (or read back) every body
+	// we need to hash. Carry them on Result.Snapshot so the engine's
+	// content-hash pass reuses them — a no-op cycle does zero extra reads.
+	// A post-write read-back failure marks the snapshot incomplete so the
+	// engine preserves the prior hash instead of hashing a partial body.
+	result.Snapshot.Hubs = hubsPass.Hubs
+	result.Snapshot.Incomplete = hubsPass.Incomplete
+	if master, masterErr := upsertMasterIndex(ctx, d, idx, groups); masterErr != nil {
 		d.Logf("ERROR: %v", masterErr)
 		result.MasterFailed = 1
+		// A genuine master upsert failure leaves the master body unavailable.
+		// Mark the snapshot incomplete EXPLICITLY rather than leaning on the
+		// empty Master string to make computeDomainHash return "" — the prior
+		// hash is preserved by intent, not by coincidence.
+		result.Snapshot.Incomplete = true
 	} else {
-		incrementOutcome(masterOutcome, &result.MasterCreated, &result.MasterChanged, &result.MasterUnchanged)
-		d.Logf("%s", summary)
+		incrementOutcome(master.Outcome, &result.MasterCreated, &result.MasterChanged, &result.MasterUnchanged)
+		result.Snapshot.Master = master.Body
+		if master.SnapshotIncomplete {
+			result.Snapshot.Incomplete = true
+		}
+		d.Logf("%s", master.Summary)
 	}
 	totalFailed := result.Failed()
 	if totalFailed > 0 {

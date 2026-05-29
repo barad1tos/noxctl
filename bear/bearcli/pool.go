@@ -184,6 +184,20 @@ func ResetMetrics() {
 	metrics.capacity.Store(current)
 }
 
+// ScopePeakToCurrentInFlight resets the peak-concurrency high-water mark to the
+// CURRENT in-flight count, scoping the next observation window to start fresh.
+// It is the per-cycle peak fix: PeakConcurrent is a CAS-max, NOT an
+// additive counter, so a per-cycle delta of two lifetime maxes is meaningless.
+// engine.Apply calls this at cycle start; because daemon cycles are SEQUENTIAL
+// and in-flight drains to ~0 between them, the reset makes PeakConcurrent
+// reflect only the just-completed cycle while updatePeak continues to lift it as
+// the cycle runs. Additive counters (acquireCount, callsByKind, etc.) are NOT
+// touched — those get a baseline-delta in engine.Apply instead. Cheap atomic
+// store; safe to call between cycles when no traffic is in flight.
+func ScopePeakToCurrentInFlight() {
+	metrics.peak.Store(metrics.inFlight.Load())
+}
+
 // AcquireForTest is a test-only export of the unexported Acquire.
 // Tests in tests/bear/ live in an external package and cannot reach
 // the package-private function directly; promoting it behind an

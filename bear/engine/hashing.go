@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
-	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/regen"
 	"github.com/barad1tos/noxctl/bear/state"
 )
@@ -56,52 +55,35 @@ func applyFinalize(ctx context.Context, opts ApplyOpts, st *state.State, result 
 	return result, nil
 }
 
-// computeDomainHash reads the freshest master + hub bytes from Bear
-// for one domain and returns sha256(strip(master) || NUL ||
-// sorted-by-title strip(hubs[i])). Returns "" on read failure
-// (logged but non-fatal — caller preserves prior hash).
-func computeDomainHash(ctx context.Context, d *domain.Domain) string {
-	master, hubs, err := snapshotDomainContent(ctx, d)
-	if err != nil {
-		log.Printf("apply: snapshot(%s) failed: %v (hash unchanged)", d.Tag, err)
-		return ""
-	}
-	if master == "" {
-		log.Printf("apply: snapshot(%s) missing master content (hash unchanged)", d.Tag)
-		return ""
-	}
-	return ComputeContentHash(master, hubs)
-}
-
-// snapshotDomainContent fetches the post-regen master + hub bytes
-// for one domain via the exported regen.FetchMasterContent /
-// regen.FetchHubContents wrappers (which in turn call the bearcli
-// boundary inside package regen). Stripped of the [Нова нотатка]
-// new-note link drift before return — caller can hash directly.
+// computeDomainHash returns sha256(strip(master) || NUL || sorted-by-title
+// strip(hubs[i])) over the bodies regen.Run already fetched. The diff-
+// check that decides created/changed/unchanged for each hub + the master has
+// already read (or, on create/overwrite, deliberately read back) the canonical
+// body — snap carries those stripped bytes, so a no-op cycle does ZERO extra
+// reads here. Returns "" — so the caller preserves the PRIOR hash — when:
+//   - the snapshot has no master body yet (transient initial setup), or
+//   - the snapshot is Incomplete: a hub/master write succeeded but its
+//     post-write read-back failed, so a body is missing. Hashing the
+//     partial snapshot would write a wrong value and flip the domain "changed"
+//     forever; preserving the prior hash defers the update one cycle.
 //
-// Returns ("", nil, nil) for domains without a master note yet
-// (transient state during initial setup); caller treats this as
-// "skip the hash update, preserve prior" rather than overwriting
-// with "".
-func snapshotDomainContent(
-	ctx context.Context,
-	d *domain.Domain,
-) (master string, hubs map[string]string, err error) {
-	master, masterErr := regen.FetchMasterContent(ctx, d)
-	if masterErr != nil {
-		return "", nil, fmt.Errorf("snapshotDomainContent(%s) master: %w", d.Tag, masterErr)
+// NOTE: the snapshot's hub-key universe (buckets present this cycle) and
+// regen.FetchHubContents (every managed hub note) are NOT interchangeable — a
+// hub whose bucket has zero atoms this cycle is in one set but not the other.
+// A future consumer that compares hashes computed via FetchHubContents must
+// not assume parity with this snapshot-derived hash.
+func computeDomainHash(snap regen.DomainSnapshot) string {
+	if snap.Master == "" || snap.Incomplete {
+		return ""
 	}
-	hubs, hubsErr := regen.FetchHubContents(ctx, d)
-	if hubsErr != nil {
-		return "", nil, fmt.Errorf("snapshotDomainContent(%s) hubs: %w", d.Tag, hubsErr)
-	}
-	return master, hubs, nil
+	return ComputeContentHash(snap.Master, snap.Hubs)
 }
 
 // ComputeContentHash returns sha256(strip(master) || NUL || sorted-by-title strip(hub_i)).
-// Inputs are already stripped of new-note-link drift by
-// snapshotDomainContent — this function is pure: same input, same
-// output.
+// Inputs are already stripped of new-note-link drift by the regen hub/master
+// upsert path (which feeds regen.DomainSnapshot) — this function is pure: same
+// input, same output. The plan engine still strips via regen.FetchMasterContent
+// / regen.FetchHubContents before its own (non-hashing) diff comparison.
 //
 // Exported (rather than relying on a `computeContentHash` + in-package
 // `export_test.go` test seam) because the project's test-location

@@ -31,8 +31,8 @@ audit_enabled    = true
 # sequential without notable hash-conflict spikes
 # - 16 = soft cap. Values above this WARN at startup and are accepted
 # but expect Bear sqlite WAL contention; verify via
-# `regen-watchd --bench --sweep=8,16,32` and inspect
-# hash_conflicts.total in the JSON output
+# `noxctl apply --bench --sweep=4,8` and inspect the per-run
+# `regen cycle:` telemetry line (hash_conflicts / wall / calls_*)
 # - <=0 = invalid; startup is fatal
 #
 # Env override: REGEN_BEARCLI_CONCURRENCY (e.g. for `--bench` A/B).

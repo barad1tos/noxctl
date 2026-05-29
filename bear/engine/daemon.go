@@ -25,16 +25,24 @@
 //
 // Auto-tag fast-pass: a THIRD trigger source alongside FSEvent +
 // mtime-poll. [Daemon.Run] runs an optional fast-pass loop that ticks
-// every `AutoTagPollInterval` (default 2s) and invokes ONLY
-// fastpass.ApplyForeignTagEscape + fastpass.ApplyDailyDefaultTag — NOT the
-// full per-domain regen cycle. The goal: click-then-type quicknotes
-// get `#quicknote/daily` stamped within <= 5s p95 instead of the
-// empirically-measured 13-15s the FSEvent-then-Bear-flush path
-// delivers. Set `AutoTagPollInterval=0` to disable the fast-pass; the
-// daemon then relies on FSEvent + mtime-poll only.
+// every `AutoTagPollInterval` (default 2s) and invokes the FOUR
+// canonicalization fast-passes — in order: foreign-tag escape,
+// daily-default, domain-bootstrap, then placeholder-refresh
+// ([Daemon.handleAutoTagTick]) — NOT the full per-domain regen cycle.
+// The goal: click-then-type quicknotes get `#quicknote/daily` stamped
+// within <= 5s p95 instead of the empirically-measured 13-15s the
+// FSEvent-then-Bear-flush path delivers. Set `AutoTagPollInterval=0` to
+// disable the fast-pass; the daemon then relies on FSEvent + mtime-poll only.
+//
+// Note the asymmetry with the full apply path: engine.Apply runs the
+// SAME four passes plus ADDITIONAL cross-domain-moves and time-promotion
+// pre-passes (bear/engine/prepasses.go) that the daemon tick does NOT —
+// the tick is the latency-critical subset, not the full pre-pass suite. Each
+// fast-pass issues its own full `bearcli list --location notes`, so the
+// per-tick cost scales with the number of enabled passes.
 //
 // Self-write gate: fast-pass ticks set regenInProgress=true for the
-// duration of the two pre-pass calls (via markRegenStart/markRegenEnd
+// duration of the pre-pass calls (via markRegenStart/markRegenEnd
 // — same helpers cycleOnce uses). The widened
 // effectiveSelfWriteEpsilon absorbs the fast-pass's own writes
 // uniformly with cycle writes; no new gate state is introduced.
@@ -141,8 +149,9 @@ type DaemonOpts struct {
 	DatabaseChangeTokenFn func(path string, info os.FileInfo) (string, error)
 
 	// AutoTagPollInterval is the period between fast-pass ticks that run
-	// ONLY fastpass.ApplyForeignTagEscape + fastpass.ApplyDailyDefaultTag —
-	// independent of the full per-domain regen cycle. When > 0,
+	// the four canonicalization fast-passes (foreign-tag escape, daily-default,
+	// domain-bootstrap, placeholder-refresh) — independent of the full
+	// per-domain regen cycle. When > 0,
 	// Daemon.Run creates a second time.Ticker driving a 7th select
 	// case. When 0, the fast-pass is disabled (nil-channel idiom,
 	// mirrors MtimePollInterval).
@@ -153,9 +162,9 @@ type DaemonOpts struct {
 	// verbatim; tests / library callers that construct DaemonOpts manually
 	// get a disabled fast-pass on the zero value.
 	//
-	// Test seam: the fast-pass tick body calls
-	// fastpass.ApplyForeignTagEscape + fastpass.ApplyDailyDefaultTag, which both
-	// route through bearcli.Run + BackendFromContext(ctx). DaemonOpts
+	// Test seam: the fast-pass tick body calls the four canonicalization
+	// passes, which all route through bearcli.Run + BackendFromContext(ctx).
+	// DaemonOpts
 	// gains NO parallel field for fake injection — tests stamp the seam
 	// on ctx via bearcli.ContextWithBackend.
 	AutoTagPollInterval time.Duration

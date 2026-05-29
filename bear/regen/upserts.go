@@ -39,25 +39,46 @@ func incrementOutcome(outcome upsertOutcome, created, changed, unchanged *int) {
 	}
 }
 
+// upsertResult bundles one hub/master upsert's reportable outcome with the
+// stripped body that feeds the per-domain content hash. Body is "" for
+// the skipped (no-Tier-2) branch. On the create and changed branches Body
+// carries Bear's STORED form (a deliberate read-back) — never the in-memory
+// rendered bytes — so the hash converges to the same value the next no-op
+// cycle's diff-check read produces (the idempotency contract).
+//
+// SnapshotIncomplete signals that the write SUCCEEDED but the post-write
+// read-back failed, so Body is unavailable and the caller must NOT hash a
+// partial/empty body. It propagates to DomainSnapshot.Incomplete, which makes
+// computeDomainHash return "" so the engine preserves the PRIOR ContentHash
+// (a transient read-back failure never marks the domain failed nor
+// overwrites the hash with a wrong value). The vault write is never rolled back.
+type upsertResult struct {
+	Summary            string
+	Title              string // hub note title (or master IndexTitle); key for Snapshot.Hubs
+	Body               string // stripped body for content hashing; "" when not produced/unavailable
+	Outcome            upsertOutcome
+	SnapshotIncomplete bool // write succeeded but read-back failed; preserve prior hash
+}
+
 func upsertHub(
 	ctx context.Context,
 	d *domain.Domain,
+	idx noteIndex,
 	bucket string,
 	notes []domain.Note,
-) (string, upsertOutcome, error) {
+) (upsertResult, error) {
 	if d.RenderHub == nil {
-		return bucket + ": skipped (no Tier-2)", upsertSkipped, nil
+		return upsertResult{Summary: bucket + ": skipped (no Tier-2)", Outcome: upsertSkipped}, nil
 	}
 	hubTitle := d.HubTitle(bucket)
-	hubID, err := findHubID(ctx, d, hubTitle)
-	if err != nil {
-		return "", upsertSkipped, fmt.Errorf("upsertHub %q: %w", hubTitle, err)
-	}
+	// Index lookup replaces the per-bucket findHubID list. Parity with
+	// findNoteByTitle: "" on miss, first-match-wins (see note_index.go).
+	hubID := idx.lookup(hubTitle)
 
 	if hubID == "" {
 		// Fresh hub — no existing order, render alphabetical.
 		newAuto := d.RenderHub(d, bucket, notes, nil)
-		_, err = bearcli.Run(ctx,
+		out, err := bearcli.Run(ctx,
 			[]string{
 				"create", hubTitle,
 				bearcli.FlagFormat, bearcli.FormatJSON,
@@ -66,18 +87,32 @@ func upsertHub(
 			newAuto,
 		)
 		if err != nil {
-			return "", upsertSkipped, fmt.Errorf("upsertHub %q create: %w", hubTitle, err)
+			return upsertResult{}, fmt.Errorf("upsertHub %q create: %w", hubTitle, err)
 		}
-		return fmt.Sprintf("%s: created", hubTitle), upsertCreated, nil
+		// Patch the index so a master/subsequent lookup for this title
+		// resolves the freshly-created ID without a re-list.
+		newID := patchIndexFromCreate(idx, hubTitle, out)
+		// Read back the STORED form for hashing — NOT the rendered newAuto. Bear
+		// can normalize markdown on create (whitespace, EOF newline); hashing the
+		// rendered bytes would diverge from next cycle's diff-check read-back and
+		// flip the domain to "changed" forever. One read, only on create.
+		stored, incomplete := readBackAfterWrite(ctx, d, newID)
+		return upsertResult{
+			Summary:            fmt.Sprintf("%s: created", hubTitle),
+			Title:              hubTitle,
+			Body:               stored,
+			Outcome:            upsertCreated,
+			SnapshotIncomplete: incomplete,
+		}, nil
 	}
 
 	out, err := bearcli.Run(ctx, []string{"cat", hubID, bearcli.FlagFormat, bearcli.FormatJSON}, "")
 	if err != nil {
-		return "", upsertSkipped, fmt.Errorf("upsertHub %q cat: %w", hubTitle, err)
+		return upsertResult{}, fmt.Errorf("upsertHub %q cat: %w", hubTitle, err)
 	}
 	var existing domain.Note
 	if err = json.Unmarshal(out, &existing); err != nil {
-		return "", upsertSkipped, fmt.Errorf("upsertHub %q parse: %w", hubTitle, err)
+		return upsertResult{}, fmt.Errorf("upsertHub %q parse: %w", hubTitle, err)
 	}
 
 	autoZone, manual := domain.SplitMarker(existing.Content)
@@ -92,12 +127,73 @@ func upsertHub(
 	}
 
 	if domain.EqualIgnoringNewNoteLinkStrict(newBody, existing.Content) {
-		return fmt.Sprintf("%s: unchanged", hubTitle), upsertUnchanged, nil
+		// Unchanged: reuse the body already fetched by this diff-check cat —
+		// NO extra read. Stripped to match the post-write read-back below and
+		// FetchHubContents, so the hash input is byte-identical on no-op cycles.
+		return upsertResult{
+			Summary: fmt.Sprintf("%s: unchanged", hubTitle),
+			Title:   hubTitle,
+			Body:    domain.StripNewNoteURLsFromBody(existing.Content),
+			Outcome: upsertUnchanged,
+		}, nil
 	}
 	if err = bearcli.OverwriteWithRetry(ctx, hubID, newBody); err != nil {
-		return "", upsertSkipped, fmt.Errorf("upsertHub %q write: %w", hubTitle, err)
+		return upsertResult{}, fmt.Errorf("upsertHub %q write: %w", hubTitle, err)
 	}
-	return fmt.Sprintf("%s: updated", hubTitle), upsertChanged, nil
+	// Changed: hash the STORED form, not the rendered newBody. Bear can
+	// normalize markdown on overwrite (whitespace, link shape); hashing the
+	// in-memory rendered bytes would diverge from next cycle's diff-check
+	// read-back and flip the domain to "changed" forever, breaking the <=3-pass
+	// idempotency contract. One deliberate read-back. A
+	// read-back failure AFTER the successful write is non-fatal: the
+	// outcome stays `updated`, the snapshot is incomplete, and the prior hash is
+	// preserved — the vault write is never rolled back.
+	stored, incomplete := readBackAfterWrite(ctx, d, hubID)
+	return upsertResult{
+		Summary:            fmt.Sprintf("%s: updated", hubTitle),
+		Title:              hubTitle,
+		Body:               stored,
+		Outcome:            upsertChanged,
+		SnapshotIncomplete: incomplete,
+	}, nil
+}
+
+// readBackAfterWrite re-reads a just-written note (create or overwrite) and
+// returns its stored body stripped of new-note URLs — the canonical hash input.
+// A deliberate read (one cat) per written note: it captures Bear's
+// stored-normalized markdown so the next cycle's diff-check sees no drift.
+//
+// The write has already succeeded by the time this is called, so any read-back
+// failure (transient cat error, empty/unresolved ID) is NON-FATAL: it
+// returns ("", incomplete=true) so the caller keeps the created/updated outcome
+// but signals the snapshot incomplete, and the engine preserves the prior hash
+// rather than overwriting it with a wrong/empty value. The vault write stands.
+func readBackAfterWrite(ctx context.Context, d *domain.Domain, noteID string) (body string, incomplete bool) {
+	if noteID == "" {
+		d.Logf("WARN: read-back skipped (empty note ID after a successful write); hash deferred to next cycle")
+		return "", true
+	}
+	stored, err := readBackStripped(ctx, noteID)
+	if err != nil {
+		d.Logf("WARN: read-back failed after a successful write: %v; hash deferred to next cycle", err)
+		return "", true
+	}
+	return stored, false
+}
+
+// readBackStripped re-reads a note by ID and returns its stored body stripped of
+// new-note URLs. Wrapped by readBackAfterWrite, which folds the error into the
+// non-fatal incomplete-snapshot signal.
+func readBackStripped(ctx context.Context, noteID string) (string, error) {
+	out, err := bearcli.Run(ctx, []string{"cat", noteID, bearcli.FlagFormat, bearcli.FormatJSON}, "")
+	if err != nil {
+		return "", fmt.Errorf("read-back cat: %w", err)
+	}
+	var n domain.Note
+	if err = json.Unmarshal(out, &n); err != nil {
+		return "", fmt.Errorf("read-back parse: %w", err)
+	}
+	return domain.StripNewNoteURLsFromBody(n.Content), nil
 }
 
 // upsertMasterIndex creates or updates the domain's master index note.
@@ -106,16 +202,17 @@ func upsertHub(
 func upsertMasterIndex(
 	ctx context.Context,
 	d *domain.Domain,
+	idx noteIndex,
 	groups map[string][]domain.Note,
-) (string, upsertOutcome, error) {
+) (upsertResult, error) {
 	newAuto := d.RenderMaster(d, groups)
-	idxID, err := FindIndexID(ctx, d)
-	if err != nil {
-		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s): %w", d.IndexTitle, err)
-	}
+	// Index lookup replaces the master FindIndexID list. The exported
+	// FindIndexID stays for external callers (fast-pass, snapshot) — only
+	// this internal regen lookup path is index-backed.
+	idxID := idx.lookup(d.IndexTitle)
 
 	if idxID == "" {
-		_, err = bearcli.Run(ctx,
+		out, err := bearcli.Run(ctx,
 			[]string{
 				"create", d.IndexTitle,
 				bearcli.FlagFormat, bearcli.FormatJSON,
@@ -124,18 +221,29 @@ func upsertMasterIndex(
 			newAuto,
 		)
 		if err != nil {
-			return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s) create: %w", d.IndexTitle, err)
+			return upsertResult{}, fmt.Errorf("upsertMasterIndex(%s) create: %w", d.IndexTitle, err)
 		}
-		return "index: created", upsertCreated, nil
+		newID := patchIndexFromCreate(idx, d.IndexTitle, out)
+		// Read back the STORED master body for hashing (see upsertHub's create
+		// read-back rationale — Bear's normalized form, not the rendered bytes).
+		// A read-back failure after the successful create is non-fatal.
+		stored, incomplete := readBackAfterWrite(ctx, d, newID)
+		return upsertResult{
+			Summary:            "index: created",
+			Title:              d.IndexTitle,
+			Body:               stored,
+			Outcome:            upsertCreated,
+			SnapshotIncomplete: incomplete,
+		}, nil
 	}
 
 	out, err := bearcli.Run(ctx, []string{"cat", idxID, bearcli.FlagFormat, bearcli.FormatJSON}, "")
 	if err != nil {
-		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s) cat: %w", d.IndexTitle, err)
+		return upsertResult{}, fmt.Errorf("upsertMasterIndex(%s) cat: %w", d.IndexTitle, err)
 	}
 	var existing domain.Note
 	if err = json.Unmarshal(out, &existing); err != nil {
-		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s) parse: %w", d.IndexTitle, err)
+		return upsertResult{}, fmt.Errorf("upsertMasterIndex(%s) parse: %w", d.IndexTitle, err)
 	}
 
 	_, manual := domain.SplitMarker(existing.Content)
@@ -147,12 +255,50 @@ func upsertMasterIndex(
 	}
 
 	if domain.EqualIgnoringNewNoteLinkStrict(newBody, existing.Content) {
-		return "index: unchanged", upsertUnchanged, nil
+		// Unchanged: reuse the diff-check cat's body — no extra read. Same
+		// strip treatment as the changed branch and FetchMasterContent.
+		return upsertResult{
+			Summary: "index: unchanged",
+			Title:   d.IndexTitle,
+			Body:    domain.StripNewNoteURLsFromBody(existing.Content),
+			Outcome: upsertUnchanged,
+		}, nil
 	}
 	if err = bearcli.OverwriteWithRetry(ctx, idxID, newBody); err != nil {
-		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s) write: %w", d.IndexTitle, err)
+		return upsertResult{}, fmt.Errorf("upsertMasterIndex(%s) write: %w", d.IndexTitle, err)
 	}
-	return "index: updated", upsertChanged, nil
+	// Changed: read back the STORED master body for hashing (see upsertHub's
+	// read-back rationale — Bear's normalized form, not the rendered bytes). A
+	// read-back failure after the successful write is non-fatal.
+	stored, incomplete := readBackAfterWrite(ctx, d, idxID)
+	return upsertResult{
+		Summary:            "index: updated",
+		Title:              d.IndexTitle,
+		Body:               stored,
+		Outcome:            upsertChanged,
+		SnapshotIncomplete: incomplete,
+	}, nil
+}
+
+// patchIndexFromCreate records a freshly-created note's ID into the index so a
+// later same-cycle lookup (e.g. the master after its hubs were just created)
+// resolves it WITHOUT a re-list, and returns that ID for the create-branch
+// read-back. The create call requested --fields id,title, so the returned JSON
+// carries the new ID. A parse miss or empty ID is non-fatal: the create already
+// succeeded; the next regen rebuilds the index from a fresh listNotes, so a
+// missed patch only forgoes the in-cycle reuse, never corrupts state. The empty
+// return then drives readBackAfterWrite to signal an incomplete snapshot, so
+// the prior hash is preserved rather than a wrong value written.
+func patchIndexFromCreate(idx noteIndex, title string, createOut []byte) string {
+	var created domain.Note
+	if err := json.Unmarshal(createOut, &created); err != nil {
+		return ""
+	}
+	if created.ID == "" {
+		return ""
+	}
+	idx.patchCreated(title, created.ID)
+	return created.ID
 }
 
 func upsertAtomicBacklink(
@@ -248,25 +394,55 @@ func runAtomicsPass(
 	return touched, failed
 }
 
+// hubsPassResult bundles the hub outcome counts with the per-hub stripped
+// bodies (title -> body) the content-hash pass reuses. Hubs is nil for
+// domains without a Tier-2 layer (d.RenderHub == nil). Incomplete is true when
+// any hub write succeeded but its read-back failed — it propagates to
+// DomainSnapshot.Incomplete so the engine preserves the prior hash.
+type hubsPassResult struct {
+	Created    int
+	Changed    int
+	Unchanged  int
+	Failed     int
+	Hubs       map[string]string
+	Incomplete bool
+}
+
 // runHubsPass upserts each per-bucket Tier-2 Hub note. No-op for domains
-// without Tier-2 hubs (d.RenderHub == nil). Returns hub outcome counts.
+// without Tier-2 hubs (d.RenderHub == nil). Returns hub outcome counts plus the
+// stripped hub bodies for the per-domain content hash.
 func runHubsPass(
 	ctx context.Context,
 	d *domain.Domain,
+	idx noteIndex,
 	groups map[string][]domain.Note,
-) (created, changed, unchanged, failed int) {
+) hubsPassResult {
 	if d.RenderHub == nil {
-		return 0, 0, 0, 0
+		return hubsPassResult{}
 	}
+	res := hubsPassResult{Hubs: make(map[string]string, len(groups))}
 	for bucket, items := range groups {
-		summary, outcome, err := upsertHub(ctx, d, bucket, items)
+		hub, err := upsertHub(ctx, d, idx, bucket, items)
 		if err != nil {
 			d.Logf("ERROR: %v", err)
-			failed++
+			res.Failed++
+			// A genuine hub cat/parse/overwrite failure drops this hub from the
+			// snapshot. Mark the snapshot incomplete so the content-hash pass
+			// preserves the prior hash rather than hashing the surviving hubs +
+			// master into a wrong value (which would flip the domain "changed"
+			// on the next clean cycle). Same incomplete signal the post-write
+			// read-back soft-fail uses, for a different failure mode.
+			res.Incomplete = true
 			continue
 		}
-		incrementOutcome(outcome, &created, &changed, &unchanged)
-		d.Logf("%s", summary)
+		incrementOutcome(hub.Outcome, &res.Created, &res.Changed, &res.Unchanged)
+		if hub.Title != "" {
+			res.Hubs[hub.Title] = hub.Body
+		}
+		if hub.SnapshotIncomplete {
+			res.Incomplete = true
+		}
+		d.Logf("%s", hub.Summary)
 	}
-	return created, changed, unchanged, failed
+	return res
 }
