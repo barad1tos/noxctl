@@ -140,6 +140,59 @@ func TestRunApply_WarnsWhenPinRegistryFailsToLoad(t *testing.T) {
 	}
 }
 
+// TestRunApply_RejectsNegativeConcurrency pins that an invalid --concurrency is
+// refused at the apply boundary rather than silently coerced. A negative value
+// is a user typo; apply must error with a clear message, not run with garbage.
+func TestRunApply_RejectsNegativeConcurrency(t *testing.T) {
+	dir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+
+	err := cli.RunApply(context.Background(), cli.ApplyOptions{
+		Catalog:     disabledFeatureCatalog(),
+		StatePath:   filepath.Join(dir, "state.json"),
+		LockPath:    filepath.Join(dir, ".lock"),
+		Concurrency: -1,
+		Quiet:       true,
+		Stdout:      &stdout,
+		Stderr:      &stderr,
+	})
+	if err == nil || !strings.Contains(err.Error(), "concurrency") {
+		t.Fatalf("RunApply(--concurrency=-1) err = %v, want an error mentioning concurrency", err)
+	}
+}
+
+// TestRunApplySweep_AbortsOnIterationError pins that a sweep stops at the first
+// failing apply and surfaces that error, rather than charging on to the next
+// concurrency value and masking the failure. The operator gets the real error
+// from value 4 and value 8 is never attempted.
+func TestRunApplySweep_AbortsOnIterationError(t *testing.T) {
+	dir := t.TempDir()
+	ctx := bearcli.ContextWithBackend(context.Background(), failingBackend{})
+	var stdout, stderr bytes.Buffer
+	runs := 0
+	optsFor := func(_ int) cli.ApplyOptions {
+		runs++
+		return cli.ApplyOptions{
+			Domains:   []*domain.Domain{failingDomain()},
+			Catalog:   disabledFeatureCatalog(),
+			PinTarget: filepath.Join(dir, "pins.json"),
+			StatePath: filepath.Join(dir, "state.json"),
+			LockPath:  filepath.Join(dir, ".lock"),
+			Quiet:     true,
+			Stdout:    &stdout,
+			Stderr:    &stderr,
+		}
+	}
+
+	err := cli.RunApplySweep(ctx, []int{4, 8}, optsFor)
+	if !errors.Is(err, cli.ErrApplyFailures) {
+		t.Fatalf("RunApplySweep err = %v, want ErrApplyFailures from the first iteration", err)
+	}
+	if runs != 1 {
+		t.Fatalf("optsFor called %d times, want 1 (sweep must abort after the first failing value, not run value 8)", runs)
+	}
+}
+
 type promotionOverwriteFailBackend struct{}
 
 func (promotionOverwriteFailBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
