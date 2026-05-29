@@ -215,4 +215,12 @@ func TestApply_HubCreate_PatchesIndexNoRelist(t *testing.T) {
 		t.Errorf("create cycle = hubsCreated:%d masterCreated:%d, want 1/1",
 			result.HubsCreated, result.MasterCreated)
 	}
+	// Pin the read-back cost: each created note is read back EXACTLY ONCE (to
+	// hash Bear's stored form), and the create path issues no diff-check cat. So
+	// 1 hub + 1 master create => exactly 2 cats. If a refactor ever re-read a
+	// created note twice (or added a pre-create cat), this catches the silent
+	// cost erosion of the "one read, only on create" contract.
+	if got := backend.CountKind("cat", ""); got != 2 {
+		t.Errorf("create cycle issued %d `cat` calls, want 2 (one read-back per created note: hub + master)", got)
+	}
 }
