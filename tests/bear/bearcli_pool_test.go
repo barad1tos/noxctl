@@ -329,7 +329,7 @@ func (alwaysOKBackend) Run(_ context.Context, _ []string, _ string) ([]byte, err
 // trash) plus the two-level `tags` family (`tags` bare vs `tags add`)
 // and the defensive `other` fallback for empty/unknown args.
 //
-// The trash + tags + tags-add classifications were added in Phase 13
+// The trash + tags + tags-add classifications gained dedicated buckets
 // alongside bear/bearcli/tag.go::AddTag — prior to this they collapsed
 // into the `other` bucket and silently inflated the unknown-kind
 // metric. This test pins their first-class status so a future refactor
