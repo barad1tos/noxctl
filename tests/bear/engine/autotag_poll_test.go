@@ -403,8 +403,9 @@ func TestDaemonAutoTagPoll_MixedWriteFailureRetriesFailedNote(t *testing.T) {
 			t.Errorf("overwrite note IDs = %v, want %v (failed note must be retried directly)\nlog:\n%s",
 				got, want, run.Buf.String())
 		}
-		if got := fake.CountKind("list"); got != 18 {
-			t.Errorf("list call count = %d, want 18 (pending should clear after retry settle)\nlog:\n%s",
+		if got := fake.CountKind("list"); got != 17 {
+			t.Errorf("list call count = %d, want 17 (pending should clear after retry settle; "+
+				"the note-index removes the per-cycle master ID-lookup list — D-01)\nlog:\n%s",
 				got, run.Buf.String())
 		}
 		if cycles := countCycles(run.Buf); cycles != 1 {

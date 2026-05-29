@@ -62,10 +62,6 @@ func findNoteByTitle(ctx context.Context, d *domain.Domain, title string) (strin
 	return "", nil
 }
 
-func findHubID(ctx context.Context, d *domain.Domain, title string) (string, error) {
-	return findNoteByTitle(ctx, d, title)
-}
-
 // FindIndexID returns the bearcli note ID of this domain's master
 // (index) note via title-based lookup. Returns an empty string +
 // nil error when no matching note exists yet. Used by fast-pass

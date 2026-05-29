@@ -12,6 +12,18 @@ import (
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
+// DomainSnapshot carries the post-upsert master + hub IDs observed during a
+// regen run. It is the scaffold plan 14-02 (D-02) populates with the freshest
+// master/hub BODIES so the engine's content-hash pass can reuse them instead
+// of re-listing. D-01 settles the Result return shape now (so 14-02 does not
+// re-touch the signature) but leaves the snapshot EMPTY/zero — the hash pass
+// in bear/engine/hashing.go keeps its own list-based reads until 14-02 wires
+// this field through.
+type DomainSnapshot struct {
+	Master string            // master note ID, "" when no master exists yet
+	Hubs   map[string]string // hub title -> hub note ID
+}
+
 // Result is the structured outcome of one per-domain regen run.
 // It preserves the existing log-and-continue behavior while giving
 // callers a machine-readable failure signal for recap and verification
@@ -29,6 +41,9 @@ type Result struct {
 	MasterUnchanged int
 	MasterFailed    int
 	ListFailed      bool
+	// Snapshot carries the post-fetch master/hub scaffold for plan 14-02.
+	// Populated EMPTY in D-01 — see DomainSnapshot.
+	Snapshot DomainSnapshot
 }
 
 // Failed returns the total failure count observed during the regen run.
@@ -68,6 +83,12 @@ func Run(ctx context.Context, d *domain.Domain) Result {
 		d.Logf("list failed: %v", err)
 		return Result{ListFailed: true}
 	}
+	// One goroutine-local title->ID index over the initial listNotes result.
+	// It replaces the per-bucket findNoteByTitle scan (each previously its own
+	// `bearcli list`) in the hub/master upsert path: for a hub-routed domain
+	// with B buckets that drops B+1 redundant list calls per no-op cycle.
+	// No mutex — Run is goroutine-local per domain (engine.runDomainAndSave).
+	idx := newNoteIndex(notes)
 	routing := d.RouteAtomics(notes, func(atomID, kept, suppressed string) {
 		d.Logf("WARN: tag override suppressed by higher layer: note %s wanted %s, kept %s",
 			atomID, suppressed, kept)
@@ -89,8 +110,8 @@ func Run(ctx context.Context, d *domain.Domain) Result {
 	if !d.SkipAtomicsPass {
 		result.AtomicsTouched, result.AtomicsFailed = runAtomicsPass(ctx, d, groups)
 	}
-	result.HubsCreated, result.HubsChanged, result.HubsUnchanged, result.HubsFailed = runHubsPass(ctx, d, groups)
-	if summary, masterOutcome, masterErr := upsertMasterIndex(ctx, d, groups); masterErr != nil {
+	result.HubsCreated, result.HubsChanged, result.HubsUnchanged, result.HubsFailed = runHubsPass(ctx, d, idx, groups)
+	if summary, masterOutcome, masterErr := upsertMasterIndex(ctx, d, idx, groups); masterErr != nil {
 		d.Logf("ERROR: %v", masterErr)
 		result.MasterFailed = 1
 	} else {

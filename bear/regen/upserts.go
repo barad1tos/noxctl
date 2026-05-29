@@ -42,6 +42,7 @@ func incrementOutcome(outcome upsertOutcome, created, changed, unchanged *int) {
 func upsertHub(
 	ctx context.Context,
 	d *domain.Domain,
+	idx noteIndex,
 	bucket string,
 	notes []domain.Note,
 ) (string, upsertOutcome, error) {
@@ -49,15 +50,14 @@ func upsertHub(
 		return bucket + ": skipped (no Tier-2)", upsertSkipped, nil
 	}
 	hubTitle := d.HubTitle(bucket)
-	hubID, err := findHubID(ctx, d, hubTitle)
-	if err != nil {
-		return "", upsertSkipped, fmt.Errorf("upsertHub %q: %w", hubTitle, err)
-	}
+	// Index lookup replaces the per-bucket findHubID list. Parity with
+	// findNoteByTitle: "" on miss, first-match-wins (see note_index.go).
+	hubID := idx.lookup(hubTitle)
 
 	if hubID == "" {
 		// Fresh hub — no existing order, render alphabetical.
 		newAuto := d.RenderHub(d, bucket, notes, nil)
-		_, err = bearcli.Run(ctx,
+		out, err := bearcli.Run(ctx,
 			[]string{
 				"create", hubTitle,
 				bearcli.FlagFormat, bearcli.FormatJSON,
@@ -68,6 +68,9 @@ func upsertHub(
 		if err != nil {
 			return "", upsertSkipped, fmt.Errorf("upsertHub %q create: %w", hubTitle, err)
 		}
+		// Patch the index so a master/subsequent lookup for this title
+		// resolves the freshly-created ID without a re-list.
+		patchIndexFromCreate(idx, hubTitle, out)
 		return fmt.Sprintf("%s: created", hubTitle), upsertCreated, nil
 	}
 
@@ -106,16 +109,17 @@ func upsertHub(
 func upsertMasterIndex(
 	ctx context.Context,
 	d *domain.Domain,
+	idx noteIndex,
 	groups map[string][]domain.Note,
 ) (string, upsertOutcome, error) {
 	newAuto := d.RenderMaster(d, groups)
-	idxID, err := FindIndexID(ctx, d)
-	if err != nil {
-		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s): %w", d.IndexTitle, err)
-	}
+	// Index lookup replaces the master FindIndexID list. The exported
+	// FindIndexID stays for external callers (fast-pass, snapshot) — only
+	// this internal regen lookup path is index-backed.
+	idxID := idx.lookup(d.IndexTitle)
 
 	if idxID == "" {
-		_, err = bearcli.Run(ctx,
+		out, err := bearcli.Run(ctx,
 			[]string{
 				"create", d.IndexTitle,
 				bearcli.FlagFormat, bearcli.FormatJSON,
@@ -126,6 +130,7 @@ func upsertMasterIndex(
 		if err != nil {
 			return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s) create: %w", d.IndexTitle, err)
 		}
+		patchIndexFromCreate(idx, d.IndexTitle, out)
 		return "index: created", upsertCreated, nil
 	}
 
@@ -153,6 +158,24 @@ func upsertMasterIndex(
 		return "", upsertSkipped, fmt.Errorf("upsertMasterIndex(%s) write: %w", d.IndexTitle, err)
 	}
 	return "index: updated", upsertChanged, nil
+}
+
+// patchIndexFromCreate records a freshly-created note's ID into the index so a
+// later same-cycle lookup (e.g. the master after its hubs were just created)
+// resolves it WITHOUT a re-list. The create call requested --fields id,title,
+// so the returned JSON carries the new ID. A parse miss or empty ID is
+// non-fatal: the create already succeeded; the next regen rebuilds the index
+// from a fresh listNotes, so a missed patch only forgoes the in-cycle reuse,
+// never corrupts state.
+func patchIndexFromCreate(idx noteIndex, title string, createOut []byte) {
+	var created domain.Note
+	if err := json.Unmarshal(createOut, &created); err != nil {
+		return
+	}
+	if created.ID == "" {
+		return
+	}
+	idx.patchCreated(title, created.ID)
 }
 
 func upsertAtomicBacklink(
@@ -253,13 +276,14 @@ func runAtomicsPass(
 func runHubsPass(
 	ctx context.Context,
 	d *domain.Domain,
+	idx noteIndex,
 	groups map[string][]domain.Note,
 ) (created, changed, unchanged, failed int) {
 	if d.RenderHub == nil {
 		return 0, 0, 0, 0
 	}
 	for bucket, items := range groups {
-		summary, outcome, err := upsertHub(ctx, d, bucket, items)
+		summary, outcome, err := upsertHub(ctx, d, idx, bucket, items)
 		if err != nil {
 			d.Logf("ERROR: %v", err)
 			failed++
