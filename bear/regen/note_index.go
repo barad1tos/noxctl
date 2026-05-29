@@ -12,10 +12,11 @@ package regen
 
 import "github.com/barad1tos/noxctl/bear/domain"
 
-// noteIndex maps note title -> note ID with first-match-wins semantics.
-type noteIndex struct {
-	idByTitle map[string]string
-}
+// noteIndex maps note title -> note ID with first-match-wins semantics. It is a
+// bare map type (not a struct wrapper) so the value-receiver patchCreated
+// mutates the shared backing store by contract: the map reference IS the index,
+// so there is no second field a future change could leave un-shared.
+type noteIndex map[string]string
 
 // newNoteIndex builds the index over a listNotes result using FIRST-match-wins:
 // the first note seen for a title owns the mapping. This deliberately diverges
@@ -23,26 +24,26 @@ type noteIndex struct {
 // findNoteByTitle (bear/regen/fetches.go), whose loop returns the first
 // matching title. The map is pre-sized from len(notes) to avoid rehashing.
 func newNoteIndex(notes []domain.Note) noteIndex {
-	idByTitle := make(map[string]string, len(notes))
+	idByTitle := make(noteIndex, len(notes))
 	for _, n := range notes {
 		if _, seen := idByTitle[n.Title]; !seen {
 			idByTitle[n.Title] = n.ID
 		}
 	}
-	return noteIndex{idByTitle: idByTitle}
+	return idByTitle
 }
 
 // lookup returns the ID mapped to title, or "" on miss. Parity with
 // findNoteByTitle: a miss is "", never an error.
 func (idx noteIndex) lookup(title string) string {
-	return idx.idByTitle[title]
+	return idx[title]
 }
 
 // patchCreated records the ID of a note created during this regen cycle so a
 // later hub/master lookup resolves it without a re-list. A created note
 // supersedes any prior mapping for the same title.
 func (idx noteIndex) patchCreated(title, id string) {
-	idx.idByTitle[title] = id
+	idx[title] = id
 }
 
 // NewNoteIndexForTestResult wraps the unexported note index so external tests
