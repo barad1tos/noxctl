@@ -113,6 +113,33 @@ func TestRunApply_WarnsWhenPreviousApplyWasInProgress(t *testing.T) {
 	}
 }
 
+// TestRunApply_WarnsWhenPinRegistryFailsToLoad pins that an unreadable pin
+// registry is surfaced to the operator rather than silently dropped. PinTarget
+// points at a directory, so the registry read fails with a non-NotExist error
+// (a missing file is legitimately silent; an unreadable one must warn). apply
+// must still proceed with no pins. Reverting to the silent discard form
+// regresses this — the operator would lose pins with no trace.
+func TestRunApply_WarnsWhenPinRegistryFailsToLoad(t *testing.T) {
+	dir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+
+	err := cli.RunApply(context.Background(), cli.ApplyOptions{
+		Catalog:   disabledFeatureCatalog(),
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		PinTarget: dir, // a directory, not a file — the read fails
+		Quiet:     true,
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+	})
+	if err != nil {
+		t.Fatalf("RunApply must proceed despite a pin-load failure, got: %v", err)
+	}
+	if got := stderr.String(); !strings.Contains(got, "pin registry") || !strings.Contains(got, "failed to load") {
+		t.Fatalf("stderr = %q, want a pin-registry load-failure warning", got)
+	}
+}
+
 type promotionOverwriteFailBackend struct{}
 
 func (promotionOverwriteFailBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
