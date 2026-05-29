@@ -66,7 +66,7 @@ func (b *benignBearcliBackend) Run(_ context.Context, args []string, stdin strin
 	case "list":
 		// listNotes (full fields) and the legacy id,title finder both see
 		// the created master once it exists — production listNotes returns
-		// every note tagged d.Tag, master included. The note index (D-01)
+		// every note tagged d.Tag, master included. The note index
 		// is built from this full listNotes result, so the master must
 		// appear here for a created-then-clean second pass to converge.
 		b.mu.Lock()

@@ -405,8 +405,8 @@ func TestDaemonAutoTagPoll_MixedWriteFailureRetriesFailedNote(t *testing.T) {
 		}
 		if got := fake.CountKind("list"); got != 15 {
 			t.Errorf("list call count = %d, want 15 (pending should clear after retry settle; "+
-				"D-01 removed the per-cycle master ID-lookup list, D-02 removed the hash-"+
-				"snapshot FetchMasterContent list — the hash now reuses regen's Snapshot)\nlog:\n%s",
+				"the note index removed the per-cycle master ID-lookup list, and the "+
+				"snapshot reuse removed the hash-pass FetchMasterContent list)\nlog:\n%s",
 				got, run.Buf.String())
 		}
 		if cycles := countCycles(run.Buf); cycles != 1 {

@@ -35,9 +35,9 @@
 // disable the fast-pass; the daemon then relies on FSEvent + mtime-poll only.
 //
 // Note the asymmetry with the full apply path: engine.Apply runs the
-// SAME four passes plus an ADDITIONAL time-promotion pre-pass
-// (bear/engine/prepasses.go) that the daemon tick does NOT — the tick is
-// the latency-critical subset, not the full pre-pass suite. Each
+// SAME four passes plus ADDITIONAL cross-domain-moves and time-promotion
+// pre-passes (bear/engine/prepasses.go) that the daemon tick does NOT —
+// the tick is the latency-critical subset, not the full pre-pass suite. Each
 // fast-pass issues its own full `bearcli list --location notes`, so the
 // per-tick cost scales with the number of enabled passes.
 //

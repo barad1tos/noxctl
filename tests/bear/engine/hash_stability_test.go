@@ -1,4 +1,4 @@
-// Package engine_test guards the D-02 idempotency landmine: the per-domain
+// Package engine_test guards the idempotency landmine: the per-domain
 // state.json ContentHash MUST stay byte-identical across two consecutive no-op
 // applies. If the changed-branch read-back ever regressed to hashing the
 // in-memory rendered bytes instead of Bear's stored-normalized form, a
@@ -183,7 +183,7 @@ func applyAndReadHash(t *testing.T, ctx context.Context, opts engine.ApplyOpts, 
 	return st.Domains[tag].ContentHash
 }
 
-// TestApply_CreateConvergesToStableHash is the FIX-1 guard: a hub-routed domain
+// TestApply_CreateConvergesToStableHash is the create-convergence guard: a hub-routed domain
 // whose hub+master DO NOT YET EXIST is created on cycle 1, then a steady no-op
 // cycle 2 follows. Under a NORMALIZING backend (read-back strips the EOF
 // newline Bear collapses on store), the create branch must capture the STORED
@@ -230,12 +230,12 @@ func TestApply_CreateConvergesToStableHash(t *testing.T) {
 	}
 }
 
-// TestApply_ReadBackFailureAfterWriteIsNonFatal is the FIX-2 guard: a hub-routed
+// TestApply_ReadBackFailureAfterWriteIsNonFatal is the read-back-failure guard: a hub-routed
 // domain whose hub+master have STALE bodies (forcing an overwrite) runs under a
 // backend whose post-write read-back `cat` fails transiently. The write to the
 // vault already succeeded, so the failure MUST be non-fatal: the domain reports
 // changed (not failed), AnyFailed stays false, and the prior ContentHash is
-// PRESERVED (never overwritten with a partial/empty value). Pre-FIX-2 the
+// PRESERVED (never overwritten with a partial/empty value). Before this guard the
 // read-back error bubbled out of upsertHub/upsertMasterIndex and flipped the
 // upsert to failed, skewing recap counts after a durable write.
 func TestApply_ReadBackFailureAfterWriteIsNonFatal(t *testing.T) {

@@ -1,4 +1,4 @@
-// Package engine_test pins the D-03 cycle-telemetry contract: exactly one
+// Package engine_test pins the cycle-telemetry contract: exactly one
 // structured key=value summary line emitted at REGEN cycle completion (both
 // `noxctl apply --once` and the daemon's FSEvent/poll-triggered cycleOnce),
 // and ZERO lines across the ~2s auto-tag fast-pass tick.
@@ -29,7 +29,7 @@ import (
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
-// countTelemetryLines counts the `regen cycle:` summary lines (D-03) in the
+// countTelemetryLines counts the `regen cycle:` summary lines in the
 // captured log. Distinct from countCycles, which counts `regen trigger:` —
 // cycleOnce emits one trigger line at entry and engine.Apply emits one
 // telemetry line at completion, so the two counts coincide for completed
@@ -258,13 +258,13 @@ func TestApply_EmitsCycleTelemetry(t *testing.T) {
 	})
 }
 
-// TestApply_TelemetryIsPerCycleNotCumulative is the FIX-3 daemon-path guard:
+// TestApply_TelemetryIsPerCycleNotCumulative is the per-cycle telemetry guard:
 // TWO engine.Apply cycles run in ONE process WITHOUT a pool reset between them
 // (modeling the long-lived daemon, where SetConcurrency is sync.Once-gated and
 // the pool counters accumulate across cycles). Each cycle issues identical
 // bearcli traffic over the same steady no-op corpus, so a correct per-cycle
-// telemetry line reports the SAME calls_list for cycle 2 as cycle 1. Pre-FIX-3
-// the emit passed the raw lifetime MetricsSnapshot, so cycle 2's calls_list was
+// telemetry line reports the SAME calls_list for cycle 2 as cycle 1. Before the
+// per-cycle delta, the emit passed the raw lifetime MetricsSnapshot, so cycle 2's calls_list was
 // DOUBLE cycle 1's (90->180 in the live-daemon evidence). peak_concurrency must
 // also be the per-cycle peak (>=1), not a lifetime CAS-max artifact.
 //
@@ -433,7 +433,7 @@ func telemetryField(t *testing.T, line, key string) int {
 	return n
 }
 
-// TestAutoTagTick_NoTelemetry pins half of the SC-4 no-spam contract: N
+// TestAutoTagTick_NoTelemetry pins half of the no-spam contract: N
 // auto-tag fast-pass ticks (handleAutoTagTick, ~every 2s in production) emit
 // ZERO `regen cycle:` lines — the telemetry belongs to the REGEN cycle, not the
 // fast-pass tick. The buffer is read only AFTER the daemon goroutine is

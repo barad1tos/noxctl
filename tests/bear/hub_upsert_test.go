@@ -27,7 +27,7 @@ func (b *hubUpsertBackend) Run(_ context.Context, args []string, stdin string) (
 	}
 	switch args[0] {
 	case "list":
-		// The goroutine-local note index (D-01) builds hub/master ID lookups
+		// The goroutine-local note index builds hub/master ID lookups
 		// from this single listNotes result, so every structural note the
 		// upsert path must resolve lives in fullList — there is no separate
 		// id,title list anymore.

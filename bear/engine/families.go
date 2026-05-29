@@ -122,8 +122,9 @@ func runDomainAndSave(
 	// regen.Run captured each hub/master's canonical body during its diff-
 	// check (reusing the existing read on no-op, or reading back the stored
 	// form once per overwrite) onto regenResult.Snapshot — no extra reads
-	// here. Returns "" when the snapshot has no master yet; caller preserves
-	// the prior hash.
+	// here. Returns "" when the snapshot has no master yet OR is incomplete
+	// (a post-write read-back failed); either way the caller preserves the
+	// prior hash.
 	hash := computeDomainHash(regenResult.Snapshot)
 	stateMu.Lock()
 	defer stateMu.Unlock()

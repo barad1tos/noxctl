@@ -1,20 +1,19 @@
 // Package engine_test pins the read-amplification contract of the no-op regen
-// pass. D-01 (plan 14-01) replaces the per-bucket findNoteByTitle scan (each of
-// which issued its own `bearcli list --fields id,title`) in the hub/master
-// upsert path with a single goroutine-local note index built from the initial
-// listNotes result. The assertion below is the independently-verifiable proof
-// of that change: a no-op regen of a hub-routed domain with B buckets must
-// issue EXACTLY ONE `list` for its tag (the initial listNotes) — pre-phase it
-// issued B+2 (initial list + one per-bucket hub list + one master list).
+// pass. The goroutine-local note index replaces the per-bucket findNoteByTitle
+// scan (each of which issued its own `bearcli list --fields id,title`) in the
+// hub/master upsert path with a single index built from the initial listNotes
+// result. The assertion below is the independently-verifiable proof of that
+// change: a no-op regen of a hub-routed domain with B buckets must issue
+// EXACTLY ONE `list` for its tag (the initial listNotes) — pre-phase it issued
+// B+2 (initial list + one per-bucket hub list + one master list).
 //
 // The probe drives regen.Run directly through the shared testutil recording
 // backend (mirroring tests/bear/hub_upsert_test.go, which also drives
 // regen.Run with a fake bearcli.Backend). The engine.Apply hash-snapshot pass
 // (computeDomainHash -> FetchMasterContent/FetchHubContents) issues its OWN
-// reads and is a SEPARATE amplification surface that plan 14-02 (D-02)
-// eliminates by reusing regen.Result.Snapshot — so SC-1 ("a no-op REGEN issues
-// exactly one list") is pinned at the regen layer here, where D-01 actually
-// makes the fix.
+// reads and is a SEPARATE amplification surface that the snapshot-reuse pass
+// eliminates by reusing regen.Result.Snapshot — so the one-list-per-no-op
+// contract is pinned at the regen layer here, where the index makes the fix.
 package engine_test
 
 import (
@@ -74,7 +73,7 @@ func noOpHubRoutedCorpus(d *domain.Domain) map[string][]domain.Note {
 // domain issues exactly ONE `list` for its tag (the initial listNotes) and
 // zero per-bucket hub/master ID lists. It also pins the orthogonal contracts:
 // the cycle is genuinely no-op (created == changed == 0), and the per-bucket
-// `cat` reads (B hubs + 1 master) are untouched — D-01 removes lists, not cats.
+// `cat` reads (B hubs + 1 master) are untouched — the index removes lists, not cats.
 func TestApply_NoOpCycle_ZeroPerBucketList(t *testing.T) {
 	bearcli.ResetPoolForTest(1)
 	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
@@ -92,7 +91,7 @@ func TestApply_NoOpCycle_ZeroPerBucketList(t *testing.T) {
 	// B == 1 bucket -> B hub cats + 1 master cat == 2 cats. Cats are
 	// tag-less (id-addressed), so they record under the empty-tag bucket.
 	if got := backend.CountKind("cat", ""); got != 2 {
-		t.Errorf("no-op hub pass issued %d `cat` calls, want 2 (1 hub + 1 master); D-01 removes lists, not cats", got)
+		t.Errorf("no-op hub pass issued %d `cat` calls, want 2 (1 hub + 1 master); the index removes lists, not cats", got)
 	}
 	if result.HubsCreated != 0 || result.MasterCreated != 0 {
 		t.Errorf("no-op cycle created notes: hubsCreated=%d masterCreated=%d, want 0/0",
@@ -107,13 +106,13 @@ func TestApply_NoOpCycle_ZeroPerBucketList(t *testing.T) {
 	}
 }
 
-// TestApply_NoOpCycle_NoRedundantSnapshotRead is the D-02 (plan 14-02) read-
+// TestApply_NoOpCycle_NoRedundantSnapshotRead is the snapshot-reuse read-
 // amplification proof: a no-op regen of a hub-routed domain (B buckets) issues
 // exactly 1 `list` (the initial listNotes) AND no MORE than B+1 `cat` (the B hub
 // diff-check cats + 1 master diff-check cat). The post-domain content hash is
 // sourced from regen.Result.Snapshot — content already fetched during the
 // diff-check — so the no-op cycle does ZERO extra reads for hashing (no second
-// list, no extra cat). Pre-D-02 the engine hash pass re-read every hub via
+// list, no extra cat). Before this reuse the engine hash pass re-read every hub via
 // FetchHubContents (+1 list) and the master via FetchMasterContent (+1 list,
 // +1 cat); this asserts those are gone.
 //
@@ -147,11 +146,11 @@ func TestApply_NoOpCycle_NoRedundantSnapshotRead(t *testing.T) {
 	// Result.Snapshot must carry the post-fetch master + hub BODIES (stripped),
 	// not be left empty — that is what the engine hash pass now consumes.
 	if result.Snapshot.Master == "" {
-		t.Fatal("Result.Snapshot.Master is empty; D-02 must populate it from the diff-check content")
+		t.Fatal("Result.Snapshot.Master is empty; it must be populated from the diff-check content")
 	}
 	hubTitle := d.HubTitle("Biko")
 	if _, ok := result.Snapshot.Hubs[hubTitle]; !ok {
-		t.Fatalf("Result.Snapshot.Hubs missing hub %q; D-02 must surface every hub body", hubTitle)
+		t.Fatalf("Result.Snapshot.Hubs missing hub %q; it must surface every hub body", hubTitle)
 	}
 
 	// Golden parity: the hash from the Snapshot path equals the hash the old
