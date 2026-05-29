@@ -169,12 +169,29 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 		return result, fmt.Errorf("engine.Apply state.Save(InProgress): %w", err)
 	}
 
-	// Step 3: pre-passes (gated by opts.Features).
+	// Step 3: install the per-domain timing accumulator BEFORE the per-domain
+	// loop so runDomainAndSave feeds it via DomainTimingHook (a caller-supplied
+	// bench hook is wrapped, not displaced). Fed concurrently from worker
+	// goroutines — mutex-guarded (T-14-10).
+	timings := installTimingAccumulator(&opts)
+
+	// Step 4: pre-passes (gated by opts.Features).
 	applyPrePasses(ctx, opts, result)
 
-	// Step 4: per-domain loop.
+	// Step 5: per-domain loop.
 	applyPerDomain(ctx, opts, st, result)
 
-	// Step 5: finalize — set LastApply + clear InProgress IFF success.
-	return applyFinalize(ctx, opts, st, result)
+	// Step 6: finalize — set LastApply + clear InProgress IFF success.
+	res, err := applyFinalize(ctx, opts, st, result)
+
+	// Step 7: emit ONE structured telemetry line at cycle completion (D-03).
+	// UNCONDITIONAL — NOT gated on opts.WithMetrics (the production daemon
+	// leaves that false; gating here would make the daemon telemetry-blind,
+	// Pitfall C). This single site covers BOTH `noxctl apply --once` AND the
+	// daemon's cycleOnce (events.go calls engine.Apply), so there is no second
+	// emit point and no sibling-drift risk (RECURRING_PITFALLS Pattern B). It
+	// fires on the success, interrupted, and failed finalize branches alike —
+	// a completed-with-outcome cycle still gets its one telemetry line.
+	logCycleTelemetry(bearcli.MetricsSnapshot(), timings.snapshot(), time.Since(result.StartedAt))
+	return res, err
 }
