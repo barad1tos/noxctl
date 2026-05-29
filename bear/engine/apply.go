@@ -197,9 +197,10 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	// leaves that false; gating here would make the daemon telemetry-blind).
 	// This single site covers BOTH `noxctl apply --once` AND the daemon's
 	// cycleOnce (events.go calls engine.Apply), so there is no second emit
-	// point and no sibling-drift risk. It
-	// fires on the success, interrupted, and failed finalize branches alike —
-	// a completed-with-outcome cycle still gets its one telemetry line.
+	// point and no sibling-drift risk. It fires on the success, interrupted,
+	// and failed finalize branches alike — a completed-with-outcome cycle still
+	// gets its one telemetry line. Early aborts (Steps 0-2: lock or state-load
+	// failure) return before this point and emit nothing, by design.
 	logCycleTelemetry(
 		cycleDelta(metricsBaseline, bearcli.MetricsSnapshot()),
 		timings.snapshot(),
