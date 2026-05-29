@@ -12,16 +12,23 @@ import (
 	"github.com/barad1tos/noxctl/bear/domain"
 )
 
-// DomainSnapshot carries the post-upsert master + hub IDs observed during a
-// regen run. It is the scaffold plan 14-02 (D-02) populates with the freshest
-// master/hub BODIES so the engine's content-hash pass can reuse them instead
-// of re-listing. D-01 settles the Result return shape now (so 14-02 does not
-// re-touch the signature) but leaves the snapshot EMPTY/zero — the hash pass
-// in bear/engine/hashing.go keeps its own list-based reads until 14-02 wires
-// this field through.
+// DomainSnapshot carries the freshest master + hub BODIES observed during a
+// regen run, so the engine's content-hash pass (bear/engine/hashing.go) can
+// reuse them instead of re-reading Bear after the writes. The shape mirrors
+// ComputeContentHash's inputs exactly: a master body plus a hub-title->body
+// map (the same keying FetchHubContents uses), so the engine hashes the
+// snapshot directly.
+//
+// Idempotency contract (D-02): the bodies are ALWAYS stripped of new-note
+// URLs (domain.StripNewNoteURLsFromBody) before they land here, matching the
+// pre-phase FetchMasterContent/FetchHubContents treatment so the state.json
+// fingerprint stays byte-identical across the optimization. On the unchanged
+// branch the body is the already-fetched existing.Content; on the changed
+// branch it is a deliberate fresh read-back of the just-overwritten note
+// (Bear's stored-normalized form) — see upsertHub/upsertMasterIndex.
 type DomainSnapshot struct {
-	Master string            // master note ID, "" when no master exists yet
-	Hubs   map[string]string // hub title -> hub note ID
+	Master string            // stripped master body, "" when no master exists yet
+	Hubs   map[string]string // hub title -> stripped hub body
 }
 
 // Result is the structured outcome of one per-domain regen run.
@@ -110,13 +117,22 @@ func Run(ctx context.Context, d *domain.Domain) Result {
 	if !d.SkipAtomicsPass {
 		result.AtomicsTouched, result.AtomicsFailed = runAtomicsPass(ctx, d, groups)
 	}
-	result.HubsCreated, result.HubsChanged, result.HubsUnchanged, result.HubsFailed = runHubsPass(ctx, d, idx, groups)
-	if summary, masterOutcome, masterErr := upsertMasterIndex(ctx, d, idx, groups); masterErr != nil {
+	hubsPass := runHubsPass(ctx, d, idx, groups)
+	result.HubsCreated = hubsPass.Created
+	result.HubsChanged = hubsPass.Changed
+	result.HubsUnchanged = hubsPass.Unchanged
+	result.HubsFailed = hubsPass.Failed
+	// D-02: the hub/master diff-check already fetched (or read back) every body
+	// we need to hash. Carry them on Result.Snapshot so the engine's
+	// content-hash pass reuses them — a no-op cycle does zero extra reads.
+	result.Snapshot.Hubs = hubsPass.Hubs
+	if master, masterErr := upsertMasterIndex(ctx, d, idx, groups); masterErr != nil {
 		d.Logf("ERROR: %v", masterErr)
 		result.MasterFailed = 1
 	} else {
-		incrementOutcome(masterOutcome, &result.MasterCreated, &result.MasterChanged, &result.MasterUnchanged)
-		d.Logf("%s", summary)
+		incrementOutcome(master.Outcome, &result.MasterCreated, &result.MasterChanged, &result.MasterUnchanged)
+		result.Snapshot.Master = master.Body
+		d.Logf("%s", master.Summary)
 	}
 	totalFailed := result.Failed()
 	if totalFailed > 0 {

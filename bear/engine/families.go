@@ -118,11 +118,13 @@ func runDomainAndSave(
 	if opts.DomainTimingHook != nil {
 		opts.DomainTimingHook(d.Tag, elapsed)
 	}
-	// Compute content hash from fresh master + hubs read. regen has
-	// already written the master + hubs through bearcli; the snapshot
-	// re-read captures the canonical post-write state. Returns "" on
-	// read failure — caller preserves prior hash.
-	hash := computeDomainHash(ctx, d)
+	// Compute content hash from the bodies regen already fetched (D-02).
+	// regen.Run captured each hub/master's canonical body during its diff-
+	// check (reusing the existing read on no-op, or reading back the stored
+	// form once per overwrite) onto regenResult.Snapshot — no extra reads
+	// here. Returns "" when the snapshot has no master yet; caller preserves
+	// the prior hash.
+	hash := computeDomainHash(regenResult.Snapshot)
 	stateMu.Lock()
 	defer stateMu.Unlock()
 	if hash != "" {

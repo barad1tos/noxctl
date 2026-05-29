@@ -40,6 +40,14 @@ type RecordingBackend struct {
 	notesByTag map[string][]domain.Note
 	noteByID   map[string]domain.Note
 
+	// NormalizeReadBack, when set, collapses trailing whitespace on every
+	// `cat` read-back. It models a backend (like Bear) that normalizes stored
+	// markdown so the read-back bytes differ from what was written — the D-02
+	// hash-stability landmine. Combined with write-through (overwrite mutates
+	// the corpus), it proves the changed-branch read-back captures the STORED
+	// form, keeping the next cycle's hash stable.
+	NormalizeReadBack bool
+
 	mu      sync.Mutex
 	records []Record
 }
@@ -59,17 +67,17 @@ func NewRecordingBackend(notesByTag map[string][]domain.Note) *RecordingBackend 
 }
 
 // Run satisfies bearcli.Backend: classify, record, then answer from corpus.
-func (b *RecordingBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+func (b *RecordingBackend) Run(_ context.Context, args []string, stdin string) ([]byte, error) {
 	kind := recordingKindFromArgs(args)
 	tag := recordingTagFromArgs(args)
 	b.mu.Lock()
 	b.records = append(b.records, Record{Kind: kind, Tag: tag})
 	b.mu.Unlock()
-	return b.payload(kind, tag, args)
+	return b.payload(kind, tag, args, stdin)
 }
 
 // payload answers a classified call from the in-memory corpus.
-func (b *RecordingBackend) payload(kind, tag string, args []string) ([]byte, error) {
+func (b *RecordingBackend) payload(kind, tag string, args []string, stdin string) ([]byte, error) {
 	switch kind {
 	case "list":
 		return json.Marshal(b.notesByTag[tag])
@@ -80,22 +88,70 @@ func (b *RecordingBackend) payload(kind, tag string, args []string) ([]byte, err
 	case "create":
 		return recordingCreatePayload(args), nil
 	case "overwrite":
+		b.applyOverwrite(args, stdin)
 		return []byte(`{"ok":true}`), nil
 	default:
 		return []byte(`{}`), nil
 	}
 }
 
+// applyOverwrite write-through: persist the new body into the corpus so a
+// later `cat` of the same ID reads back the stored form. When
+// NormalizeReadBack is set, the stored body is normalized — modeling Bear's
+// markdown normalization on write so the read-back differs from the rendered
+// input (the D-02 landmine). No-op when the ID is unknown.
+func (b *RecordingBackend) applyOverwrite(args []string, body string) {
+	if len(args) < 2 {
+		return
+	}
+	id := args[1]
+	stored := body
+	if b.NormalizeReadBack {
+		stored = normalizeBody(body)
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := b.noteByID[id]
+	n.ID = id
+	n.Content = stored
+	b.noteByID[id] = n
+	for tag, notes := range b.notesByTag {
+		for i := range notes {
+			if notes[i].ID == id {
+				b.notesByTag[tag][i].Content = stored
+			}
+		}
+	}
+}
+
+// normalizeBody collapses trailing whitespace on each line — a minimal stand-in
+// for Bear's on-write markdown normalization.
+func normalizeBody(body string) string {
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " \t")
+	}
+	return strings.Join(lines, "\n")
+}
+
 // catNote resolves the corpus note for a `cat <id>` call, returning an
 // empty note when the ID is unknown (matches bearcli returning a bare object).
+// Honors NormalizeReadBack so a read-back of an un-overwritten note also
+// models the stored-normalized form.
 func (b *RecordingBackend) catNote(args []string) domain.Note {
 	if len(args) < 2 {
 		return domain.Note{}
 	}
-	if n, ok := b.noteByID[args[1]]; ok {
-		return n
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n, ok := b.noteByID[args[1]]
+	if !ok {
+		return domain.Note{ID: args[1]}
 	}
-	return domain.Note{ID: args[1]}
+	if b.NormalizeReadBack {
+		n.Content = normalizeBody(n.Content)
+	}
+	return n
 }
 
 // Records returns a copy of every observed call in invocation order.

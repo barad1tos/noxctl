@@ -23,6 +23,7 @@ import (
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/regen"
 	"github.com/barad1tos/noxctl/bear/render"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
@@ -104,6 +105,80 @@ func TestApply_NoOpCycle_ZeroPerBucketList(t *testing.T) {
 		t.Errorf("no-op cycle = hubsUnchanged:%d masterUnchanged:%d, want 1/1",
 			result.HubsUnchanged, result.MasterUnchanged)
 	}
+}
+
+// TestApply_NoOpCycle_NoRedundantSnapshotRead is the D-02 (plan 14-02) read-
+// amplification proof: a no-op regen of a hub-routed domain (B buckets) issues
+// exactly 1 `list` (the initial listNotes) AND no MORE than B+1 `cat` (the B hub
+// diff-check cats + 1 master diff-check cat). The post-domain content hash is
+// sourced from regen.Result.Snapshot — content already fetched during the
+// diff-check — so the no-op cycle does ZERO extra reads for hashing (no second
+// list, no extra cat). Pre-D-02 the engine hash pass re-read every hub via
+// FetchHubContents (+1 list) and the master via FetchMasterContent (+1 list,
+// +1 cat); this asserts those are gone.
+//
+// Golden parity: the hash computed from Result.Snapshot must equal the hash the
+// pre-phase snapshotDomainContent re-read path produced for the same steady-
+// state fixture. Both hash sources see the SAME stripped bytes, so the state.json
+// fingerprint is byte-identical across the optimization.
+func TestApply_NoOpCycle_NoRedundantSnapshotRead(t *testing.T) {
+	bearcli.ResetPoolForTest(1)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+
+	d := noOpHubRoutedDomain()
+	corpus := noOpHubRoutedCorpus(d)
+	backend := testutil.NewRecordingBackend(corpus)
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
+
+	result := regen.Run(ctx, d)
+
+	const buckets = 1 // B == 1 ("Biko")
+	if got := backend.CountKind("list", d.Tag); got != 1 {
+		t.Errorf("no-op cycle issued %d `list` calls for tag %q, want exactly 1 (initial listNotes only; no snapshot re-list)",
+			got, d.Tag)
+	}
+	// B hub diff-check cats + 1 master diff-check cat == B+1. No extra cat for
+	// the hash — it reuses the diff-check content via Result.Snapshot.
+	if got := backend.CountKind("cat", ""); got != buckets+1 {
+		t.Errorf("no-op cycle issued %d `cat` calls, want %d (B hub + 1 master diff-check cats; zero extra for hashing)",
+			got, buckets+1)
+	}
+
+	// Result.Snapshot must carry the post-fetch master + hub BODIES (stripped),
+	// not be left empty — that is what the engine hash pass now consumes.
+	if result.Snapshot.Master == "" {
+		t.Fatal("Result.Snapshot.Master is empty; D-02 must populate it from the diff-check content")
+	}
+	hubTitle := d.HubTitle("Biko")
+	if _, ok := result.Snapshot.Hubs[hubTitle]; !ok {
+		t.Fatalf("Result.Snapshot.Hubs missing hub %q; D-02 must surface every hub body", hubTitle)
+	}
+
+	// Golden parity: the hash from the Snapshot path equals the hash the old
+	// re-read path produced for the same fixture. The old path stripped the
+	// existing master/hub bodies and hashed them — reproduce that here from the
+	// corpus to pin byte-identity across the optimization.
+	wantMaster := domain.StripNewNoteURLsFromBody(corpusNoteContent(corpus, d.Tag, d.IndexTitle))
+	wantHubs := map[string]string{
+		hubTitle: domain.StripNewNoteURLsFromBody(corpusNoteContent(corpus, d.Tag, hubTitle)),
+	}
+	wantHash := engine.ComputeContentHash(wantMaster, wantHubs)
+	gotHash := engine.ComputeContentHash(result.Snapshot.Master, result.Snapshot.Hubs)
+	if gotHash != wantHash {
+		t.Errorf("hash via Snapshot path = %q, want golden re-read hash %q (byte-divergence in reused content)",
+			gotHash, wantHash)
+	}
+}
+
+// corpusNoteContent returns the body of the note with the given title from the
+// recording-backend corpus for tag. Test helper for the golden-parity assertion.
+func corpusNoteContent(corpus map[string][]domain.Note, tag, title string) string {
+	for _, n := range corpus[tag] {
+		if n.Title == title {
+			return n.Content
+		}
+	}
+	return ""
 }
 
 // TestApply_HubCreate_PatchesIndexNoRelist proves a freshly-created hub/master
