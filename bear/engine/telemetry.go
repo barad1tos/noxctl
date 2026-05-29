@@ -90,19 +90,23 @@ func installTimingAccumulator(opts *ApplyOpts) *timingAccumulator {
 // --sweep value the baseline is zero (fresh/reset pool), so the delta equals the
 // full-cycle snapshot — same numbers as before, still correct.
 func cycleDelta(baseline, end bearcli.Metrics) bearcli.Metrics {
+	// Snapshots are per-cycle-monotonic (counters only grow within a cycle), so
+	// end >= baseline always holds in the normal case. The max(0, ...) clamp
+	// defends against an out-of-band metrics reset mid-cycle (ResetMetrics from a
+	// concurrent caller), which would otherwise yield a silently negative int64.
 	calls := make(map[string]int64, len(end.CallsByKind))
 	for kind, n := range end.CallsByKind {
-		calls[kind] = n - baseline.CallsByKind[kind]
+		calls[kind] = max(0, n-baseline.CallsByKind[kind])
 	}
 	return bearcli.Metrics{
 		Capacity:           end.Capacity,
 		PeakConcurrent:     end.PeakConcurrent, // already cycle-scoped, not a delta
-		AcquireCount:       end.AcquireCount - baseline.AcquireCount,
-		WaitNanosSum:       end.WaitNanosSum - baseline.WaitNanosSum,
+		AcquireCount:       max(0, end.AcquireCount-baseline.AcquireCount),
+		WaitNanosSum:       max(0, end.WaitNanosSum-baseline.WaitNanosSum),
 		CallsByKind:        calls,
-		HashConflictsTotal: end.HashConflictsTotal - baseline.HashConflictsTotal,
-		RetriesSucceeded:   end.RetriesSucceeded - baseline.RetriesSucceeded,
-		RetriesFailed:      end.RetriesFailed - baseline.RetriesFailed,
+		HashConflictsTotal: max(0, end.HashConflictsTotal-baseline.HashConflictsTotal),
+		RetriesSucceeded:   max(0, end.RetriesSucceeded-baseline.RetriesSucceeded),
+		RetriesFailed:      max(0, end.RetriesFailed-baseline.RetriesFailed),
 	}
 }
 

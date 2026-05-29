@@ -308,8 +308,102 @@ func TestApply_TelemetryIsPerCycleNotCumulative(t *testing.T) {
 		t.Errorf("cycle 2 calls_list = %d, want %d (per-cycle, NOT cumulative); a cumulative leak doubles it\n"+
 			"cycle1: %s\ncycle2: %s", c2List, c1List, lines[0], lines[1])
 	}
-	if peak := telemetryField(t, lines[1], "peak_concurrency"); peak < 1 {
-		t.Errorf("cycle 2 peak_concurrency = %d, want >= 1 (per-cycle peak)\nline:\n%s", peak, lines[1])
+	// Per-cycle peak scoping: the pool capacity is 1, so each isolated cycle's
+	// peak is at most 1 — and identical across both cycles. A LIFETIME CAS-max
+	// would still be >= 1 here, so the >= 1 form cannot distinguish per-cycle
+	// from lifetime; pinning cycle-2 peak == cycle-1 peak (and bounded by the
+	// pool capacity) is what actually proves the per-cycle reset fires.
+	c1Peak := telemetryField(t, lines[0], "peak_concurrency")
+	c2Peak := telemetryField(t, lines[1], "peak_concurrency")
+	if c1Peak <= 0 || c1Peak > 1 {
+		t.Errorf("cycle 1 peak_concurrency = %d, want 1 (pool capacity is 1)\nline:\n%s", c1Peak, lines[0])
+	}
+	if c2Peak != c1Peak {
+		t.Errorf("cycle 2 peak_concurrency = %d, want %d (per-cycle scoped, equal across cycles); "+
+			"a lifetime CAS-max would drift\ncycle1: %s\ncycle2: %s", c2Peak, c1Peak, lines[0], lines[1])
+	}
+}
+
+// TestCycleDelta_MissingBaselineKeyYieldsFullEndValue pins the per-cycle delta
+// math for the first-cycle / fresh-pool case: when the baseline snapshot has no
+// entry for a call kind (nil-safe map read returns 0), the delta for that kind
+// is the full end value — never a panic, never a negative. This is the daemon's
+// very first cycle, where the baseline is the zeroed pool: the emitted line must
+// report the cycle's real counts, not garbage.
+func TestCycleDelta_MissingBaselineKeyYieldsFullEndValue(t *testing.T) {
+	baseline := bearcli.Metrics{
+		// Baseline observed only "list" traffic; "cat"/"overwrite" keys absent.
+		CallsByKind: map[string]int64{"list": 2},
+	}
+	end := bearcli.Metrics{
+		CallsByKind: map[string]int64{"list": 5, "cat": 9, "overwrite": 3},
+	}
+
+	delta := engine.CycleDeltaForTest(baseline, end)
+
+	// "list" present in both: 5 - 2 == 3.
+	if got := delta.CallsByKind["list"]; got != 3 {
+		t.Errorf("delta calls_list = %d, want 3 (5 end - 2 baseline)", got)
+	}
+	// "cat" missing from baseline (reads as 0): full end value 9.
+	if got := delta.CallsByKind["cat"]; got != 9 {
+		t.Errorf("delta calls_cat = %d, want 9 (full end value; missing baseline key must read 0, not panic)", got)
+	}
+	if got := delta.CallsByKind["overwrite"]; got != 3 {
+		t.Errorf("delta calls_overwrite = %d, want 3 (full end value)", got)
+	}
+}
+
+// TestCycleDelta_PeakConcurrentPassedThroughNotSubtracted pins that
+// PeakConcurrent is carried straight from the end snapshot, NOT differenced
+// against the baseline. It is a per-cycle CAS-max (scoped at cycle start), so
+// subtracting two maxes would report a meaningless value. With a baseline peak
+// HIGHER than the end peak, a naive subtraction would go negative; the
+// pass-through must report the end peak verbatim.
+func TestCycleDelta_PeakConcurrentPassedThroughNotSubtracted(t *testing.T) {
+	baseline := bearcli.Metrics{PeakConcurrent: 7, CallsByKind: map[string]int64{}}
+	end := bearcli.Metrics{PeakConcurrent: 4, Capacity: 8, CallsByKind: map[string]int64{}}
+
+	delta := engine.CycleDeltaForTest(baseline, end)
+
+	if got := delta.PeakConcurrent; got != 4 {
+		t.Errorf("delta peak_concurrency = %d, want 4 (end value passed through, not baseline-subtracted)", got)
+	}
+	if got := delta.Capacity; got != 8 {
+		t.Errorf("delta capacity = %d, want 8 (config copied straight through)", got)
+	}
+}
+
+// TestCycleDelta_ClampsNegativeOnOutOfBandReset pins the defensive clamp: if an
+// out-of-band metrics reset drops the end snapshot BELOW the cycle baseline
+// (concurrent ResetMetrics), the additive deltas must clamp to 0 — never emit a
+// silently negative int64 that would corrupt the telemetry line.
+func TestCycleDelta_ClampsNegativeOnOutOfBandReset(t *testing.T) {
+	baseline := bearcli.Metrics{
+		AcquireCount:       100,
+		WaitNanosSum:       500,
+		HashConflictsTotal: 9,
+		RetriesSucceeded:   4,
+		RetriesFailed:      2,
+		CallsByKind:        map[string]int64{"cat": 50},
+	}
+	// A mid-cycle reset zeroed the pool, so end is below baseline everywhere.
+	end := bearcli.Metrics{CallsByKind: map[string]int64{"cat": 0}}
+
+	delta := engine.CycleDeltaForTest(baseline, end)
+
+	checks := map[string]int64{
+		"AcquireCount":       delta.AcquireCount,
+		"WaitNanosSum":       delta.WaitNanosSum,
+		"HashConflictsTotal": delta.HashConflictsTotal,
+		"RetriesSucceeded":   delta.RetriesSucceeded,
+		"RetriesFailed":      delta.RetriesFailed,
+		"CallsByKind[cat]":   delta.CallsByKind["cat"],
+	}
+	for field, got := range checks {
+		if got < 0 {
+			t.Errorf("delta %s = %d, want clamped to >= 0 (out-of-band reset must not yield a negative counter)", field, got)
+		}
 	}
 }
 

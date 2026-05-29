@@ -33,3 +33,11 @@ func EmitCycleTelemetryForTest(w io.Writer, m bearcli.Metrics, timings []DomainT
 	}
 	emitCycleTelemetry(w, m, internal, totalWall)
 }
+
+// CycleDeltaForTest exposes the unexported cycleDelta to external tests so the
+// per-cycle delta math (additive baseline subtraction + the negative-clamp, and
+// the pass-through of the already-scoped PeakConcurrent) is pinned at the
+// directory gap, same precedent as EmitCycleTelemetryForTest.
+func CycleDeltaForTest(baseline, end bearcli.Metrics) bearcli.Metrics {
+	return cycleDelta(baseline, end)
+}
