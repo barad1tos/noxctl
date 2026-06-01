@@ -459,6 +459,15 @@ func timePromotionCatalog() *config.Catalog {
 	return catalog
 }
 
+func missingPromotionTargetCatalog() *config.Catalog {
+	catalog := disabledFeatureCatalog()
+	catalog.Features.TimePromotion = truePtr()
+	catalog.Promotions = []config.Promotion{
+		{From: "test/daily", To: "test/missing", Boundary: "day"},
+	}
+	return catalog
+}
+
 func TestRunApply_PrePassWriteFailureReturnsFailureSentinel(t *testing.T) {
 	dir := t.TempDir()
 	daily := render.NewFlatListDomain("test/daily", "Daily")
@@ -480,5 +489,42 @@ func TestRunApply_PrePassWriteFailureReturnsFailureSentinel(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "time_promotion") || !strings.Contains(stdout.String(), "failed=1") {
 		t.Fatalf("stdout = %q, want time_promotion failed=1 recap row", stdout.String())
+	}
+}
+
+func TestRunApply_QuietReportsNonFatalPrePassDiagnostic(t *testing.T) {
+	dir := t.TempDir()
+	daily := render.NewFlatListDomain("test/daily", "Daily")
+	backend := testutil.NewRecordingBackend(map[string][]domain.Note{
+		daily.Tag: {{
+			ID:      "aged-1",
+			Title:   "Aged",
+			Tags:    []string{"#test/daily"},
+			Content: "# Aged\n#test/daily | [[Daily]]\n---\nbody\n",
+			Created: time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC),
+		}},
+	})
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
+	var stdout, stderr bytes.Buffer
+
+	err := cli.RunApply(ctx, cli.ApplyOptions{
+		Domains:   []*domain.Domain{daily},
+		Catalog:   missingPromotionTargetCatalog(),
+		PinTarget: filepath.Join(dir, "pins.json"),
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Quiet:     true,
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+	})
+	if err != nil {
+		t.Fatalf("RunApply quiet success with warning: %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want no quiet success stdout", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "no domain registered") ||
+		!strings.Contains(stderr.String(), "test/missing") {
+		t.Fatalf("stderr = %q, want missing promotion target warning", stderr.String())
 	}
 }
