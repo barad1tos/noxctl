@@ -17,12 +17,16 @@
 
 Declarative macOS CLI for Bear notes structure management — *Terraform for Bear notes*. Describe your Bear-vault layout (tags, hubs, masters, buckets) in a TOML file and `noxctl` keeps the vault matching that description idempotently.
 
+> **Pre-release note:** noxctl is in active development and is looking for feedback before the first stable release. It mutates Bear notes when you run `apply`, so read the safety notes and make a Bear backup before trying it on notes you care about.
+
 **Standing on two shoulders.** The *what* comes from [Forever ✱ Notes](https://www.myforevernotes.com/) — a framework for organizing a knowledge vault around clickable master/hub notes (the `✱` master marker noxctl stamps on every index title is borrowed straight from it). The *how* comes from Terraform — declarative desired-state config plus `plan`/`apply` idempotent convergence. noxctl is Forever Notes' structure, maintained the Terraform way.
 
 ## Contents
 
 - [What noxctl does to your vault](#what-noxctl-does-to-your-vault)
 - [Quick start](#quick-start)
+- [One-shot vs daemon mode](#one-shot-vs-daemon-mode)
+- [User-level trade-offs](#user-level-trade-offs)
 - [Choosing a blueprint](#choosing-a-blueprint)
 - [Status & scope](#status--scope)
 - [What this is not](#what-this-is-not)
@@ -31,6 +35,8 @@ Declarative macOS CLI for Bear notes structure management — *Terraform for Bea
 Everything else — comparison to Forever Notes, safety/undo, how `import` infers a blueprint, the full subcommand list, config shape, daemon internals, and build/deploy — lives in collapsible sections next to the topic it belongs to.
 
 ## What noxctl does to your vault
+
+In plain English: noxctl is a structure maintainer for Bear. You still write normal notes in Bear. noxctl reads the rules from `noxctl.toml`, looks at the matching Bear tags, and creates or updates the generated structure around those notes: index notes, hub notes, grouped lists, and links.
 
 For each managed tag, noxctl writes two things to Bear:
 
@@ -145,7 +151,7 @@ noxctl apply --config ~/.config/noxctl/noxctl.toml    # write it to Bear
 
 > **Before your first `apply`:** it writes straight to Bear's SQLite database and has no undo button — back up via **File → Backup Database…** first (details in *Safety, backup & undo* below).
 
-Optional: run `noxctl daemon --config ~/.config/noxctl/noxctl.toml` to keep the vault reconciled live as you edit notes in Bear.
+Optional: run `noxctl daemon --config ~/.config/noxctl/noxctl.toml` when you want continuous reconciliation. The daemon does **not** install itself as a background service; see [One-shot vs daemon mode](#one-shot-vs-daemon-mode) if you want it to keep running after logout or reboot.
 
 <details>
 <summary><b>Safety, backup & undo</b></summary>
@@ -206,8 +212,6 @@ When two blueprints are a close call (the `grouped-vertical` ↔ `hub-routed-wit
 
 Tidy the inferred fields (`index_title`, bucket names, `hub_h2_prefix`) before you paste — they are educated starting points, not final values. Bulk multi-tag import (`noxctl import --all`) is on the roadmap; for now, run `import` per tag and concatenate the output.
 
-The signals, thresholds, and tie-breaks above are the narrative view of the recommender in `bear/recommend/` — `recommend.go` holds the authoritative decision tree and the threshold constants, so check it there if this section ever looks out of date.
-
 </details>
 
 <details>
@@ -222,7 +226,7 @@ noxctl audit                 read-only lint sweep across every managed tag
 noxctl lint [--apply]        report or auto-fix structural defects
 noxctl verify                hard gate: catalog ↔ vault alignment check
 noxctl daemon-config         inspect resolved daemon configuration
-noxctl destroy <tag>         remove all atoms + hub for a managed tag
+noxctl destroy <tag>         trash generated masters/hubs and strip managed lines from atoms
 noxctl import <bear-tag>     bootstrap a noxctl.toml stanza from Bear
 noxctl init                  interactive wizard for a fresh config
 noxctl version               print version + build metadata
@@ -231,6 +235,87 @@ noxctl version               print version + build metadata
 `apply` is the one-shot reconciliation; the daemon runs the same engine on a debounce-2s FSEvents signal plus an `mtime` poll fallback for cases where Bear defers a SQLite WAL commit past the file-system event window. `audit` and `lint` operate on note structure (broken-H1 titles, malformed canonical tag-lines, orphan families, duplicate titles) without touching the hub/master layout `apply` owns.
 
 </details>
+
+## One-shot vs daemon mode
+
+noxctl has two operating modes. Start with the one-shot mode until you trust the plan output on your own vault.
+
+| Mode | What it does | When to use it | Persistence |
+|------|--------------|----------------|-------------|
+| `validate → plan → apply` | Runs once, shows a diff, then applies it only when you ask | First runs, careful changes, manual control | Exits after the command finishes |
+| `daemon` | Runs continuously and reconciles managed structures when Bear changes | Mature configs you want kept in sync automatically | Lives only while the process is running unless you install a LaunchAgent |
+
+Run the daemon manually when testing continuous reconciliation:
+
+```bash
+noxctl daemon --config ~/.config/noxctl/noxctl.toml
+```
+
+That process will stop when the terminal/session ends. noxctl does not install a background service by itself. On macOS, the user-level way to keep it alive after logout or reboot is a per-user `launchd` **LaunchAgent**.
+
+> Use a LaunchAgent (`~/Library/LaunchAgents/...plist`), not a system LaunchDaemon. noxctl works with the current user's Bear data, so it should run in the same user context.
+
+Example `~/Library/LaunchAgents/com.barad1tos.noxctl.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.barad1tos.noxctl</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOUR_USER/go/bin/noxctl</string>
+    <string>daemon</string>
+    <string>--config</string>
+    <string>/Users/YOUR_USER/.config/noxctl/noxctl.toml</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOUR_USER/Library/Logs/noxctl.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/YOUR_USER/Library/Logs/noxctl.err.log</string>
+</dict>
+</plist>
+```
+
+Replace `YOUR_USER` and the binary path before loading it.
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.barad1tos.noxctl.plist
+launchctl enable gui/$(id -u)/com.barad1tos.noxctl
+launchctl kickstart -k gui/$(id -u)/com.barad1tos.noxctl
+```
+
+To stop and unload it:
+
+```bash
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.barad1tos.noxctl.plist
+```
+
+## User-level trade-offs
+
+noxctl is useful when Bear is still the place you want to write, but manual structure maintenance has become the annoying part.
+
+| You gain | You trade away | Why it matters |
+|----------|----------------|----------------|
+| Generated index/hub notes | Some generated structure is now tool-owned | Edit your content freely, but do not hand-tune generated masters/hubs and expect those edits to survive regeneration |
+| Reviewable `plan` output before writes | You need to understand the plan before applying it | Safer than silent automation, but still requires attention |
+| Consistent structure across many tags | A config file becomes part of your note system | Your organization rules live in `noxctl.toml`, not only in your head |
+| Optional live reconciliation | A long-running process may be running on your Mac | Great for stable configs, but start manually before installing a LaunchAgent |
+| Obsidian-like organization depth inside Bear | macOS + Bear + terminal are required | This is for Bear power users on macOS, not a cross-platform no-code workflow |
+| Faster cleanup of drift | Bad config can produce bad structure quickly | Always back up before first use and inspect `plan` output |
+
+A good first test is one low-risk tag with a small number of notes. Import it, review the generated config, run `plan`, read the diff, back up Bear, and only then run `apply`.
 
 ## Choosing a blueprint
 
