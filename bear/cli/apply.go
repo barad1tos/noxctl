@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cliutil"
@@ -111,8 +112,9 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 	if benchErr != nil {
 		return benchErr
 	}
+	logSink := logSinkForApply(opts.Stderr, opts.Quiet)
 	engineOpts := engine.ApplyOpts{
-		Domains:                domainsForApply(opts.Domains, opts.Quiet),
+		Domains:                domainsForApply(opts.Domains, logSink),
 		Pins:                   pins,
 		StatePath:              opts.StatePath,
 		LockPath:               opts.LockPath,
@@ -120,6 +122,7 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 		NoWait:                 opts.NoWait,
 		AuditEnabled:           false,
 		Stderr:                 opts.Stderr,
+		LogSink:                logSink,
 		DailyDefaultTag:        cliutil.DailyDefaultTagFromCatalog(opts.Catalog),
 		PromotionRules:         cliutil.PromotionRulesFromCatalog(opts.Catalog),
 		WithMetrics:            bench.WithMetrics,
@@ -146,8 +149,8 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 	return nil
 }
 
-func domainsForApply(domains []*domain.Domain, quiet bool) []*domain.Domain {
-	if !quiet {
+func domainsForApply(domains []*domain.Domain, logSink func(format string, args ...any)) []*domain.Domain {
+	if logSink == nil {
 		return domains
 	}
 	out := make([]*domain.Domain, 0, len(domains))
@@ -157,10 +160,48 @@ func domainsForApply(domains []*domain.Domain, quiet bool) []*domain.Domain {
 			continue
 		}
 		clone := *d
-		clone.LogSink = func(string, ...any) {}
+		clone.LogSink = logSink
 		out = append(out, &clone)
 	}
 	return out
+}
+
+func logSinkForApply(stderr io.Writer, quiet bool) func(format string, args ...any) {
+	if !quiet {
+		return nil
+	}
+	return func(format string, args ...any) {
+		if !isQuietDiagnosticLog(format) {
+			return
+		}
+		_, _ = fmt.Fprintf(stderr, format+"\n", args...)
+	}
+}
+
+func isQuietDiagnosticLog(format string) bool {
+	lower := strings.ToLower(format)
+	for _, needle := range []string{
+		"ambiguous",
+		"bug",
+		"conflict",
+		"error",
+		"failed",
+		"failure",
+		"failures",
+		"hash deferred",
+		"no creation date",
+		"no foreign tag",
+		"no override",
+		"no registered domain",
+		"skipping",
+		"suppressed",
+		"warn",
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func warnInterruptedApply(stderr io.Writer, statePath string) {

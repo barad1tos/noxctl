@@ -11,7 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 
@@ -69,7 +68,7 @@ func ApplyDomainBootstrapResult(ctx context.Context, domainsByTag map[string]*do
 		}
 	}
 	if result.Changed > 0 {
-		log.Printf("domain-bootstrap: %d note(s) canonicalized", result.Changed)
+		logf(ctx, "domain-bootstrap: %d note(s) canonicalized", result.Changed)
 	}
 	return result, nil
 }
@@ -95,7 +94,7 @@ func applyDomainBootstrapOne(
 	if strings.HasPrefix(note.Title, "✱ ") {
 		return passSkipped
 	}
-	d := matchOwningDomain(note.Tags, domainsByTag, note.ID, warned)
+	d := matchOwningDomain(ctx, note.Tags, domainsByTag, note.ID, warned)
 	if d == nil {
 		return passSkipped
 	}
@@ -105,7 +104,7 @@ func applyDomainBootstrapOne(
 	// refactors that might drop the resolution OR cases where
 	// `domainsByTag` carries a bare umbrella without its child wiring.
 	if d.SkipAtomicsPass {
-		log.Printf("domain-bootstrap: BUG — umbrella %q leaked past matchOwningDomain "+
+		logf(ctx, "domain-bootstrap: BUG — umbrella %q leaked past matchOwningDomain "+
 			"for note %q; skipping", d.Tag, note.ID)
 		return passSkipped
 	}
@@ -135,11 +134,11 @@ func applyDomainBootstrapOne(
 		return passSkipped
 	}
 	if err := bearcli.OverwriteWithRetry(ctx, note.ID, canonical); err != nil {
-		log.Printf("domain-bootstrap %q: %v", note.Title, err)
+		logf(ctx, "domain-bootstrap %q: %v", note.Title, err)
 		return passFailed
 	}
-	bootstrapLoop.recordRewrite(note.ID, note.Title)
-	log.Printf("domain-bootstrap: %s → canonical %s", note.Title, d.Tag)
+	bootstrapLoop.recordRewrite(ctx, note.ID, note.Title)
+	logf(ctx, "domain-bootstrap: %s → canonical %s", note.Title, d.Tag)
 	return passChanged
 }
 
@@ -199,7 +198,7 @@ func (g *bootstrapLoopGuard) shouldSkipNote(noteID string) bool {
 // emergency-disables the pass at `bootstrapStuckEmergencyCap` stuck
 // notes. Both transitions are logged once (no log spam on subsequent
 // ticks).
-func (g *bootstrapLoopGuard) recordRewrite(noteID, title string) {
+func (g *bootstrapLoopGuard) recordRewrite(ctx context.Context, noteID, title string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.counts[noteID]++
@@ -208,13 +207,13 @@ func (g *bootstrapLoopGuard) recordRewrite(noteID, title string) {
 	}
 	if _, already := g.stuck[noteID]; !already {
 		g.stuck[noteID] = struct{}{}
-		log.Printf("domain-bootstrap: LOOP detected for note %q (%s); "+
+		logf(ctx, "domain-bootstrap: LOOP detected for note %q (%s); "+
 			"rewrite_count=%d ≥ cap=%d; suppressing on future ticks",
 			title, noteID, g.counts[noteID], bootstrapNoteRewriteCap)
 	}
 	if !g.disabled && len(g.stuck) >= bootstrapStuckEmergencyCap {
 		g.disabled = true
-		log.Printf(
+		logf(ctx,
 			"domain-bootstrap: EMERGENCY DISABLE — %d distinct notes hit rewrite-loop cap; "+
 				"pass disabled until daemon restart. Set REGEN_DOMAIN_BOOTSTRAP=off and "+
 				"investigate render idempotency.",
@@ -282,6 +281,7 @@ func hasCanonicalLineForLeaf(content, tag string) bool {
 // `DefaultChild` leaf.
 // 4. Otherwise return nil.
 func matchOwningDomain(
+	ctx context.Context,
 	noteTags []string,
 	domainsByTag map[string]*domain.Domain,
 	noteID string,
@@ -310,7 +310,7 @@ func matchOwningDomain(
 	case 1:
 		return leaves[0]
 	default:
-		return mostSpecificOrSkip(leaves, noteID, warned)
+		return mostSpecificOrSkip(ctx, leaves, noteID, warned)
 	}
 }
 
@@ -320,7 +320,12 @@ func matchOwningDomain(
 // `warned` set is allocated per-tick by `ApplyDomainBootstrap` so an
 // ambiguous note re-warns on the next tick if it still carries
 // ambiguous tags — the visibility we want for stuck-state debugging.
-func mostSpecificOrSkip(leaves []*domain.Domain, noteID string, warned map[string]struct{}) *domain.Domain {
+func mostSpecificOrSkip(
+	ctx context.Context,
+	leaves []*domain.Domain,
+	noteID string,
+	warned map[string]struct{},
+) *domain.Domain {
 	longest := leaves[0]
 	tied := false
 	for _, d := range leaves[1:] {
@@ -341,7 +346,7 @@ func mostSpecificOrSkip(leaves []*domain.Domain, noteID string, warned map[strin
 		for _, d := range leaves {
 			tags = append(tags, d.Tag)
 		}
-		log.Printf("domain-bootstrap: note %q has ambiguous managed tags %v — "+
+		logf(ctx, "domain-bootstrap: note %q has ambiguous managed tags %v — "+
 			"skipping (resolve manually)", noteID, tags)
 	}
 	return nil

@@ -261,6 +261,9 @@ func TestApply_OverwriteConvergesToStableHash(t *testing.T) {
 	if counts := resultChanged.Domains[d.Tag]; counts.Changed == 0 || counts.Failed != 0 {
 		t.Fatalf("changed cycle counts = %+v, want changed>0 failed=0", counts)
 	}
+	if got := backend.CountKind("overwrite", ""); got != 2 {
+		t.Fatalf("changed cycle issued %d overwrites, want 2 (hub + master)", got)
+	}
 	hashChanged := readHash(t, opts.StatePath, d.Tag)
 
 	resultNoOp, err := engine.Apply(ctx, opts)
@@ -269,6 +272,9 @@ func TestApply_OverwriteConvergesToStableHash(t *testing.T) {
 	}
 	if counts := resultNoOp.Domains[d.Tag]; counts.Changed != 0 || counts.Failed != 0 {
 		t.Fatalf("no-op cycle counts = %+v, want changed=0 failed=0", counts)
+	}
+	if got := backend.CountKind("overwrite", ""); got != 2 {
+		t.Fatalf("no-op cycle total overwrites = %d, want still 2", got)
 	}
 	hashNoOp := readHash(t, opts.StatePath, d.Tag)
 
@@ -343,8 +349,10 @@ func staleHubRoutedCorpus(d *domain.Domain) map[string][]domain.Note {
 	notes := corpus[d.Tag]
 	for i := range notes {
 		switch notes[i].Title {
-		case d.HubTitle("Biko"), d.IndexTitle:
+		case d.HubTitle("Biko"):
 			notes[i].Content = strings.Replace(notes[i].Content, "Poem One", "Poem One (stale)", 1)
+		case d.IndexTitle:
+			notes[i].Content = "# stale master\n"
 		}
 	}
 	return corpus

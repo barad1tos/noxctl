@@ -8,6 +8,7 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +34,21 @@ func falsePtr() *bool {
 
 func truePtr() *bool {
 	return new(true)
+}
+
+type notifyingWriter struct {
+	dst    *bytes.Buffer
+	needle string
+	seen   chan struct{}
+	once   sync.Once
+}
+
+func (w *notifyingWriter) Write(p []byte) (int, error) {
+	n, err := w.dst.Write(p)
+	if strings.Contains(string(p), w.needle) {
+		w.once.Do(func() { close(w.seen) })
+	}
+	return n, err
 }
 
 func disabledFeatureCatalog() *config.Catalog {
@@ -83,6 +99,9 @@ func TestRunApply_DomainFailureReturnsFailureSentinel(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "failed=1") {
 		t.Fatalf("stdout = %q, want failed=1 recap row", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "bearcli unavailable") {
+		t.Fatalf("stderr = %q, want quiet failure diagnostics", stderr.String())
 	}
 }
 
@@ -173,7 +192,13 @@ func TestRunApply_QuietSuppressesCycleTelemetry(t *testing.T) {
 
 	dir := t.TempDir()
 	d := render.NewFlatListDomain("test/quiet", "Quiet")
+	catalog := disabledFeatureCatalog()
+	catalog.Features.AutoTagDefault = truePtr()
+	catalog.Meta.DailyDefaultTag = d.Tag
 	backend := testutil.NewRecordingBackend(map[string][]domain.Note{
+		"": {
+			{ID: "untagged-1", Title: "Loose", Content: "# Loose\nbody\n"},
+		},
 		d.Tag: {{ID: "atom-1", Title: "Atom", Content: "# Atom\n#test/quiet | [[Quiet]]\n---\nbody\n"}},
 	})
 	ctx := bearcli.ContextWithBackend(context.Background(), backend)
@@ -191,7 +216,7 @@ func TestRunApply_QuietSuppressesCycleTelemetry(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := cli.RunApply(ctx, cli.ApplyOptions{
 		Domains:   []*domain.Domain{d},
-		Catalog:   disabledFeatureCatalog(),
+		Catalog:   catalog,
 		PinTarget: filepath.Join(dir, "pins.json"),
 		StatePath: filepath.Join(dir, "state.json"),
 		LockPath:  filepath.Join(dir, ".lock"),
@@ -223,8 +248,16 @@ func TestRunApply_QuietStillReportsHeldLockWait(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcquireApply first lock: %v", err)
 	}
+	var releaseOnce sync.Once
+	releaseLock := func() { releaseOnce.Do(release) }
+	defer releaseLock()
 
 	var stderr bytes.Buffer
+	stderrSignal := &notifyingWriter{
+		dst:    &stderr,
+		needle: "waiting for lock",
+		seen:   make(chan struct{}),
+	}
 	done := make(chan error, 1)
 	go func() {
 		done <- cli.RunApply(context.Background(), cli.ApplyOptions{
@@ -234,12 +267,19 @@ func TestRunApply_QuietStillReportsHeldLockWait(t *testing.T) {
 			LockPath:  lockPath,
 			Quiet:     true,
 			Stdout:    io.Discard,
-			Stderr:    &stderr,
+			Stderr:    stderrSignal,
 		})
 	}()
 
-	time.Sleep(50 * time.Millisecond)
-	release()
+	select {
+	case <-stderrSignal.seen:
+	case waitErr := <-done:
+		t.Fatalf("RunApply completed before lock advisory: err=%v stderr=%q", waitErr, stderr.String())
+	case <-time.After(2 * time.Second):
+		releaseLock()
+		t.Fatalf("timed out waiting for lock advisory; stderr=%q", stderr.String())
+	}
+	releaseLock()
 	if waitErr := <-done; waitErr != nil {
 		t.Fatalf("RunApply after lock release: %v", waitErr)
 	}
