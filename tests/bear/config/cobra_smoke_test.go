@@ -119,6 +119,13 @@ func TestCobraSmoke(t *testing.T) {
 		{"import-help-five-blueprints", []string{"import", "--help"}, "five blueprints", true},
 		{"destroy-no-arg", []string{"destroy", "--config", validFixture}, "accepts 1 arg", false},
 		{"import-no-arg", []string{"import", "--config", validFixture}, "accepts 1 arg", false},
+		// doctor is the read-only environment preflight subcommand. Smoke
+		// its flag surface + group labels via --help so a future refactor
+		// cannot silently unwire it from rootCmd or drop --output.
+		{"help-doctor", []string{"--help"}, "doctor", true},
+		{"doctor-help-output", []string{"doctor", "--help"}, "--output", true},
+		{"doctor-help-group", []string{"doctor", "--help"}, "Bear DB", true},
+		{"doctor-help-readonly", []string{"doctor", "--help"}, "read-only", true},
 	}
 
 	for _, tc := range cases {
