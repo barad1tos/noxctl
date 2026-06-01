@@ -66,6 +66,39 @@ func RenderRecap(out io.Writer, result *engine.ApplyResult, quiet bool) {
 	_ = rw.Flush()
 }
 
+// RenderBenchSummary writes the user-visible `noxctl apply --bench` summary.
+// It intentionally stays compact and stdout-oriented: plain apply keeps the
+// normal recap, while explicit bench mode adds the captured bearcli pool
+// metrics so the flag has an observable CLI effect.
+func RenderBenchSummary(out io.Writer, result *engine.ApplyResult) {
+	if result == nil {
+		return
+	}
+	m := result.Metrics
+	_, _ = fmt.Fprintln(out, "")
+	_, _ = fmt.Fprintln(out, "BENCH "+strings.Repeat("*", 54))
+	_, _ = fmt.Fprintf(out,
+		"bearcli: capacity=%d peak_concurrency=%d calls_list=%d calls_cat=%d "+
+			"calls_overwrite=%d calls_create=%d avg_queue_ms=%.1f retries_ok=%d retries_fail=%d\n",
+		m.Capacity,
+		m.PeakConcurrent,
+		m.CallsByKind["list"],
+		m.CallsByKind["cat"],
+		m.CallsByKind["overwrite"],
+		m.CallsByKind["create"],
+		benchAverageQueueMs(m.AcquireCount, m.WaitNanosSum),
+		m.RetriesSucceeded,
+		m.RetriesFailed,
+	)
+}
+
+func benchAverageQueueMs(acquireCount, waitNanos int64) float64 {
+	if acquireCount <= 0 {
+		return 0
+	}
+	return float64(waitNanos) / float64(acquireCount) / 1e6
+}
+
 // sortedKeys returns map keys in sort.Strings ascending order. Used
 // to deterministically iterate ApplyResult maps so the rendered diff
 // stays stable across runs.

@@ -18,6 +18,7 @@ package engine_test
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
@@ -25,6 +26,7 @@ import (
 	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/regen"
 	"github.com/barad1tos/noxctl/bear/render"
+	"github.com/barad1tos/noxctl/bear/state"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
@@ -116,10 +118,10 @@ func TestApply_NoOpCycle_ZeroPerBucketList(t *testing.T) {
 // FetchHubContents (+1 list) and the master via FetchMasterContent (+1 list,
 // +1 cat); this asserts those are gone.
 //
-// Golden parity: the hash computed from Result.Snapshot must equal the hash the
+// Golden parity: the hash persisted by engine.Apply must equal the hash the
 // pre-phase snapshotDomainContent re-read path produced for the same steady-
-// state fixture. Both hash sources see the SAME stripped bytes, so the state.json
-// fingerprint is byte-identical across the optimization.
+// state fixture. Both hash sources see the SAME stripped bytes, so the
+// state.json fingerprint is byte-identical across the optimization.
 func TestApply_NoOpCycle_NoRedundantSnapshotRead(t *testing.T) {
 	bearcli.ResetPoolForTest(1)
 	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
@@ -128,8 +130,18 @@ func TestApply_NoOpCycle_NoRedundantSnapshotRead(t *testing.T) {
 	corpus := noOpHubRoutedCorpus(d)
 	backend := testutil.NewRecordingBackend(corpus)
 	ctx := bearcli.ContextWithBackend(context.Background(), backend)
+	dir := t.TempDir()
 
-	result := regen.Run(ctx, d)
+	result, err := engine.Apply(ctx, engine.ApplyOpts{
+		Domains:   []*domain.Domain{d},
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{},
+		SkipFlock: true,
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
 
 	const buckets = 1 // B == 1 ("Biko")
 	if got := backend.CountKind("list", d.Tag); got != 1 {
@@ -142,30 +154,27 @@ func TestApply_NoOpCycle_NoRedundantSnapshotRead(t *testing.T) {
 		t.Errorf("no-op cycle issued %d `cat` calls, want %d (B hub + 1 master diff-check cats; zero extra for hashing)",
 			got, buckets+1)
 	}
-
-	// Result.Snapshot must carry the post-fetch master + hub BODIES (stripped),
-	// not be left empty — that is what the engine hash pass now consumes.
-	if result.Snapshot.Master == "" {
-		t.Fatal("Result.Snapshot.Master is empty; it must be populated from the diff-check content")
-	}
 	hubTitle := d.HubTitle("Biko")
-	if _, ok := result.Snapshot.Hubs[hubTitle]; !ok {
-		t.Fatalf("Result.Snapshot.Hubs missing hub %q; it must surface every hub body", hubTitle)
+	if counts := result.Domains[d.Tag]; counts.Created != 0 || counts.Changed != 0 || counts.Failed != 0 {
+		t.Errorf("domain counts = %+v, want no-op apply with created=0 changed=0 failed=0", counts)
 	}
 
-	// Golden parity: the hash from the Snapshot path equals the hash the old
-	// re-read path produced for the same fixture. The old path stripped the
-	// existing master/hub bodies and hashed them — reproduce that here from the
-	// corpus to pin byte-identity across the optimization.
+	// Golden parity: the persisted hash equals the hash the old re-read path
+	// produced for the same fixture. The old path stripped the existing
+	// master/hub bodies and hashed them — reproduce that here from the corpus to
+	// pin byte-identity across the optimization.
 	wantMaster := domain.StripNewNoteURLsFromBody(corpusNoteContent(corpus, d.Tag, d.IndexTitle))
 	wantHubs := map[string]string{
 		hubTitle: domain.StripNewNoteURLsFromBody(corpusNoteContent(corpus, d.Tag, hubTitle)),
 	}
 	wantHash := engine.ComputeContentHash(wantMaster, wantHubs)
-	gotHash := engine.ComputeContentHash(result.Snapshot.Master, result.Snapshot.Hubs)
-	if gotHash != wantHash {
-		t.Errorf("hash via Snapshot path = %q, want golden re-read hash %q (byte-divergence in reused content)",
-			gotHash, wantHash)
+	st, err := state.Load(filepath.Join(dir, "state.json"))
+	if err != nil {
+		t.Fatalf("state.Load: %v", err)
+	}
+	if got := st.Domains[d.Tag].ContentHash; got != wantHash {
+		t.Errorf("persisted ContentHash = %q, want golden hash %q (engine.Apply must persist snapshot-derived hash)",
+			got, wantHash)
 	}
 }
 

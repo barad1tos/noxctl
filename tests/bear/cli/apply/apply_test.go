@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/barad1tos/noxctl/bear/domain"
 	"github.com/barad1tos/noxctl/bear/render"
 	"github.com/barad1tos/noxctl/bear/state"
+	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
 type failingBackend struct{}
@@ -156,6 +158,53 @@ func TestRunApply_RejectsNegativeConcurrency(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "concurrency") {
 		t.Fatalf("RunApply(--concurrency=-1) err = %v, want an error mentioning concurrency", err)
+	}
+}
+
+// TestRunApply_QuietSuppressesCycleTelemetry pins that `noxctl apply -q`
+// stays quiet on successful runs. The engine keeps daemon telemetry enabled by
+// default, but the one-shot CLI boundary must not leak the success-only
+// `regen cycle:` line through the process-global logger when quiet is set.
+func TestRunApply_QuietSuppressesCycleTelemetry(t *testing.T) {
+	bearcli.ResetPoolForTest(1)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+
+	dir := t.TempDir()
+	d := render.NewFlatListDomain("test/quiet", "Quiet")
+	backend := testutil.NewRecordingBackend(map[string][]domain.Note{
+		d.Tag: {{ID: "atom-1", Title: "Atom", Content: "# Atom\n#test/quiet | [[Quiet]]\n---\nbody\n"}},
+	})
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
+
+	var logBuf bytes.Buffer
+	restoreOutput := log.Writer()
+	restoreFlags := log.Flags()
+	log.SetOutput(&logBuf)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(restoreOutput)
+		log.SetFlags(restoreFlags)
+	})
+
+	var stdout, stderr bytes.Buffer
+	err := cli.RunApply(ctx, cli.ApplyOptions{
+		Domains:   []*domain.Domain{d},
+		Catalog:   disabledFeatureCatalog(),
+		PinTarget: filepath.Join(dir, "pins.json"),
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Quiet:     true,
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+	})
+	if err != nil {
+		t.Fatalf("RunApply quiet success: %v", err)
+	}
+	if strings.Contains(logBuf.String(), "regen cycle:") {
+		t.Fatalf("log = %q, want quiet apply to suppress success cycle telemetry", logBuf.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want no quiet success stderr", stderr.String())
 	}
 }
 

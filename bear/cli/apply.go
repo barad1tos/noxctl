@@ -43,10 +43,9 @@ type ApplyOptions struct {
 	Stdout    io.Writer
 	Stderr    io.Writer
 	// Bench, when set by `noxctl apply --bench`, enables bearcli pool metrics
-	// capture for the run (engine.ApplyOpts.WithMetrics). The cycle-telemetry
-	// line emits unconditionally either way; bench mode additionally retains the
-	// pool snapshot in ApplyResult.Metrics. Per-domain timings are accumulated
-	// by engine.Apply on every run (not just bench), so no caller hook is needed.
+	// capture for the run (engine.ApplyOpts.WithMetrics) and renders a concise
+	// stdout summary. Per-domain timings are accumulated by engine.Apply on
+	// every run (not just bench), so no caller hook is needed.
 	Bench bool
 	// Concurrency is the operator-supplied --concurrency value (single run) or
 	// the per-iteration value the --sweep loop sets in cmd/noxctl. Zero means
@@ -112,25 +111,33 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 	if benchErr != nil {
 		return benchErr
 	}
+	engineStderr := opts.Stderr
+	if opts.Quiet {
+		engineStderr = io.Discard
+	}
 
 	engineOpts := engine.ApplyOpts{
-		Domains:            opts.Domains,
-		Pins:               pins,
-		StatePath:          opts.StatePath,
-		LockPath:           opts.LockPath,
-		Features:           cliutil.FeaturesFromCatalog(opts.Catalog),
-		NoWait:             opts.NoWait,
-		AuditEnabled:       false,
-		Stderr:             opts.Stderr,
-		DailyDefaultTag:    cliutil.DailyDefaultTagFromCatalog(opts.Catalog),
-		PromotionRules:     cliutil.PromotionRulesFromCatalog(opts.Catalog),
-		WithMetrics:        bench.WithMetrics,
-		BearcliConcurrency: bench.BearcliConcurrency,
+		Domains:                opts.Domains,
+		Pins:                   pins,
+		StatePath:              opts.StatePath,
+		LockPath:               opts.LockPath,
+		Features:               cliutil.FeaturesFromCatalog(opts.Catalog),
+		NoWait:                 opts.NoWait,
+		AuditEnabled:           false,
+		Stderr:                 engineStderr,
+		DailyDefaultTag:        cliutil.DailyDefaultTagFromCatalog(opts.Catalog),
+		PromotionRules:         cliutil.PromotionRulesFromCatalog(opts.Catalog),
+		WithMetrics:            bench.WithMetrics,
+		BearcliConcurrency:     bench.BearcliConcurrency,
+		SuppressCycleTelemetry: opts.Quiet,
 	}
 
 	result, runErr := engine.Apply(ctx, engineOpts)
 	if result != nil {
 		RenderRecap(opts.Stdout, result, opts.Quiet)
+		if opts.Bench {
+			RenderBenchSummary(opts.Stdout, result)
+		}
 	}
 	if runErr != nil {
 		return runErr

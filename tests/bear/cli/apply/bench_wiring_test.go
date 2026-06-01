@@ -27,8 +27,8 @@ import (
 // concurrency=4 and asserts the global bearcli pool ended at Capacity==4. The
 // pool is re-armed to a deliberately-different baseline (8) before the run so a
 // parsed-but-unthreaded --concurrency would leave Capacity at 8, failing the
-// assertion. It also asserts the cycle-telemetry line was emitted, proving the
-// run completed through the metrics path.
+// assertion. It also asserts bench mode renders a visible summary even when the
+// normal success recap is quiet.
 func TestBenchWiring_ConcurrencyReachesPool(t *testing.T) {
 	// Re-arm the process-global pool to a baseline that differs from the value
 	// under test. ResetPoolForTest re-arms the sync.Once gate so engine.Apply's
@@ -77,8 +77,11 @@ func TestBenchWiring_ConcurrencyReachesPool(t *testing.T) {
 	if got := bearcli.MetricsSnapshot().Capacity; got != 4 {
 		t.Fatalf("Capacity = %d, want 4 (bench --concurrency=4 not threaded to engine.ApplyOpts)", got)
 	}
-	// The run completed through the unconditional telemetry path.
-	if !strings.Contains(logBuf.String(), "regen cycle:") {
-		t.Fatalf("log = %q, want a 'regen cycle:' telemetry line", logBuf.String())
+	if strings.Contains(logBuf.String(), "regen cycle:") {
+		t.Fatalf("log = %q, want quiet bench apply to suppress global cycle telemetry", logBuf.String())
+	}
+	gotStdout := stdout.String()
+	if !strings.Contains(gotStdout, "BENCH") || !strings.Contains(gotStdout, "capacity=4") {
+		t.Fatalf("stdout = %q, want visible bench summary with capacity=4", gotStdout)
 	}
 }
