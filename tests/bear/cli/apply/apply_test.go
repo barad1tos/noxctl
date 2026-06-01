@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/barad1tos/noxctl/bear/cli"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/engine"
 	"github.com/barad1tos/noxctl/bear/render"
 	"github.com/barad1tos/noxctl/bear/state"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
@@ -203,8 +205,78 @@ func TestRunApply_QuietSuppressesCycleTelemetry(t *testing.T) {
 	if strings.Contains(logBuf.String(), "regen cycle:") {
 		t.Fatalf("log = %q, want quiet apply to suppress success cycle telemetry", logBuf.String())
 	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want no quiet success stdout", stdout.String())
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want no quiet success stderr", stderr.String())
+	}
+}
+
+// TestRunApply_QuietStillReportsHeldLockWait pins quiet-mode's boundary:
+// success noise is suppressed, but a blocked apply still tells the operator why
+// the command is waiting instead of looking hung.
+func TestRunApply_QuietStillReportsHeldLockWait(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, ".lock")
+	release, err := engine.AcquireApply(context.Background(), lockPath, false, io.Discard)
+	if err != nil {
+		t.Fatalf("AcquireApply first lock: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- cli.RunApply(context.Background(), cli.ApplyOptions{
+			Catalog:   disabledFeatureCatalog(),
+			PinTarget: filepath.Join(dir, "pins.json"),
+			StatePath: filepath.Join(dir, "state.json"),
+			LockPath:  lockPath,
+			Quiet:     true,
+			Stdout:    io.Discard,
+			Stderr:    &stderr,
+		})
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	release()
+	if waitErr := <-done; waitErr != nil {
+		t.Fatalf("RunApply after lock release: %v", waitErr)
+	}
+	if !strings.Contains(stderr.String(), "waiting for lock") {
+		t.Fatalf("stderr = %q, want held-lock wait advisory", stderr.String())
+	}
+}
+
+// TestRunApply_BenchSkipsSummaryOnEarlyLockError pins that --bench reports only
+// completed apply cycles. A fail-fast lock error returns before engine metrics
+// are populated, so printing a zero-valued BENCH block would mislead operators.
+func TestRunApply_BenchSkipsSummaryOnEarlyLockError(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, ".lock")
+	release, err := engine.AcquireApply(context.Background(), lockPath, false, io.Discard)
+	if err != nil {
+		t.Fatalf("AcquireApply first lock: %v", err)
+	}
+	defer release()
+
+	var stdout, stderr bytes.Buffer
+	err = cli.RunApply(context.Background(), cli.ApplyOptions{
+		Catalog:     disabledFeatureCatalog(),
+		PinTarget:   filepath.Join(dir, "pins.json"),
+		StatePath:   filepath.Join(dir, "state.json"),
+		LockPath:    lockPath,
+		NoWait:      true,
+		Stdout:      &stdout,
+		Stderr:      &stderr,
+		Bench:       true,
+		Concurrency: 4,
+	})
+	if err == nil || !strings.Contains(err.Error(), "lock") {
+		t.Fatalf("RunApply bench no-wait err = %v, want lock error", err)
+	}
+	if strings.Contains(stdout.String(), "BENCH") || strings.Contains(stdout.String(), "capacity=0") {
+		t.Fatalf("stdout = %q, want no bench summary for early lock error", stdout.String())
 	}
 }
 

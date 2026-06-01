@@ -81,7 +81,20 @@ func TestBenchWiring_ConcurrencyReachesPool(t *testing.T) {
 		t.Fatalf("log = %q, want quiet bench apply to suppress global cycle telemetry", logBuf.String())
 	}
 	gotStdout := stdout.String()
-	if !strings.Contains(gotStdout, "BENCH") || !strings.Contains(gotStdout, "capacity=4") {
-		t.Fatalf("stdout = %q, want visible bench summary with capacity=4", gotStdout)
+	for _, want := range []string{
+		"BENCH",
+		"capacity=4",
+		"peak_concurrency=",
+		"calls_list=1",
+		"calls_cat=",
+		"calls_overwrite=",
+		"calls_create=",
+		"avg_queue_ms=",
+		"retries_ok=",
+		"retries_fail=",
+	} {
+		if !strings.Contains(gotStdout, want) {
+			t.Fatalf("stdout = %q, want bench summary field %q", gotStdout, want)
+		}
 	}
 }

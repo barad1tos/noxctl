@@ -73,17 +73,25 @@ func AcquireApply(ctx context.Context, lockPath string, noWait bool, stderr io.W
 		_ = os.Remove(sentinelPath)
 		return nil, fmt.Errorf("AcquireApply open %s: %w", lockPath, openErr)
 	}
-	how := unix.LOCK_EX
 	if noWait {
-		how |= unix.LOCK_NB
-	} else {
+		if flockErr := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); flockErr != nil {
+			_ = unix.Close(fd)
+			_ = os.Remove(sentinelPath)
+			return nil, fmt.Errorf("AcquireApply flock: %w", flockErr)
+		}
+	} else if flockErr := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); flockErr != nil {
+		if !isLockHeld(flockErr) {
+			_ = unix.Close(fd)
+			_ = os.Remove(sentinelPath)
+			return nil, fmt.Errorf("AcquireApply flock: %w", flockErr)
+		}
 		// Single-line stderr advisory before the blocking flock call.
 		_, _ = fmt.Fprintf(stderr, "noxctl: waiting for lock at %s\n", lockPath)
-	}
-	if flockErr := unix.Flock(fd, how); flockErr != nil {
-		_ = unix.Close(fd)
-		_ = os.Remove(sentinelPath)
-		return nil, fmt.Errorf("AcquireApply flock: %w", flockErr)
+		if flockErr = unix.Flock(fd, unix.LOCK_EX); flockErr != nil {
+			_ = unix.Close(fd)
+			_ = os.Remove(sentinelPath)
+			return nil, fmt.Errorf("AcquireApply flock: %w", flockErr)
+		}
 	}
 	writeLockPID(fd)
 	return func() {
@@ -91,6 +99,10 @@ func AcquireApply(ctx context.Context, lockPath string, noWait bool, stderr io.W
 		_ = unix.Close(fd)
 		_ = os.Remove(sentinelPath)
 	}, nil
+}
+
+func isLockHeld(err error) bool {
+	return errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN)
 }
 
 // AcquireDaemon is the daemon-side blocking lock acquire. No sentinel

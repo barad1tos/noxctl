@@ -111,11 +111,6 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 	if benchErr != nil {
 		return benchErr
 	}
-	engineStderr := opts.Stderr
-	if opts.Quiet {
-		engineStderr = io.Discard
-	}
-
 	engineOpts := engine.ApplyOpts{
 		Domains:                opts.Domains,
 		Pins:                   pins,
@@ -124,7 +119,7 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 		Features:               cliutil.FeaturesFromCatalog(opts.Catalog),
 		NoWait:                 opts.NoWait,
 		AuditEnabled:           false,
-		Stderr:                 engineStderr,
+		Stderr:                 opts.Stderr,
 		DailyDefaultTag:        cliutil.DailyDefaultTagFromCatalog(opts.Catalog),
 		PromotionRules:         cliutil.PromotionRulesFromCatalog(opts.Catalog),
 		WithMetrics:            bench.WithMetrics,
@@ -135,12 +130,12 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 	result, runErr := engine.Apply(ctx, engineOpts)
 	if result != nil {
 		RenderRecap(opts.Stdout, result, opts.Quiet)
-		if opts.Bench {
-			RenderBenchSummary(opts.Stdout, result)
-		}
 	}
 	if runErr != nil {
 		return runErr
+	}
+	if result != nil && opts.Bench {
+		RenderBenchSummary(opts.Stdout, result)
 	}
 	if result != nil && result.Interrupted {
 		return ErrApplyInterrupted
