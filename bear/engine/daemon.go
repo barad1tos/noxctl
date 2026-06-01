@@ -51,6 +51,7 @@ package engine
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -102,6 +103,12 @@ const (
 	// — see DaemonOpts.AutoTagPollInterval for the full semantics.
 	DefaultAutoTagPollInterval = 2 * time.Second
 
+	// defaultDaemonLogBasename is the file Bear's daemon writes its log
+	// to under ~/.cache. Joined with the resolved home directory by
+	// DefaultDaemonLogPath — the single source of truth both verify and
+	// doctor resolve their daemon-log default through.
+	defaultDaemonLogBasename = "regen-watchd.log"
+
 	// dbFilename is the SQLite main-DB file Bear writes to. Used by the
 	// poll path and the FSEvent filter (isWatchedDBEvent). Bear runs in
 	// journal_mode=delete, so neither
@@ -110,6 +117,21 @@ const (
 	// coverage in case Bear changes journal modes in a future release.
 	dbFilename = "database.sqlite"
 )
+
+// DefaultDaemonLogPath resolves ~/.cache/regen-watchd.log — the default
+// location the daemon writes its log to. The single source of truth both
+// `noxctl verify` (daemon-log scan) and `noxctl doctor` (daemon-log
+// freshness) resolve through, so the two commands can never disagree on
+// where the daemon writes. Mirrors how LaunchdServiceLabel centralizes
+// the launchd label. Returns the wrapped UserHomeDir error when home
+// cannot be resolved.
+func DefaultDaemonLogPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("UserHomeDir: %w", err)
+	}
+	return filepath.Join(home, ".cache", defaultDaemonLogBasename), nil
+}
 
 // DaemonOpts is the long-running counterpart to ApplyOpts. Each cycle
 // internally calls engine.Apply with the embedded ApplyOpts; BearDBDir

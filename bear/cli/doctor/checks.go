@@ -2,7 +2,6 @@ package doctor
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -322,7 +321,7 @@ func checkDaemonService(opts Options) diag.Check {
 func checkDaemonLog(opts Options) diag.Check {
 	path := opts.LogPath
 	if path == "" {
-		resolved, err := defaultDaemonLogPath()
+		resolved, err := engine.DefaultDaemonLogPath()
 		if err != nil {
 			return warnCheck(groupDaemon, nameDaemonLog,
 				fmt.Sprintf("could not resolve daemon log path: %v", err),
@@ -343,15 +342,4 @@ func checkDaemonLog(opts Options) diag.Check {
 			"the daemon may be stopped; check `launchctl print`")
 	}
 	return okCheck(groupDaemon, nameDaemonLog, "daemon log fresh")
-}
-
-// defaultDaemonLogPath resolves ~/.cache/regen-watchd.log — the same
-// location verify uses, so doctor and verify agree on where the daemon
-// writes.
-func defaultDaemonLogPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("UserHomeDir: %w", err)
-	}
-	return filepath.Join(home, ".cache", "regen-watchd.log"), nil
 }
