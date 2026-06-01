@@ -230,6 +230,32 @@ func TestCheckDaemonLogStaleWarns(t *testing.T) {
 	}
 }
 
+// TestBlockingErrorChecksCarryRemediation pins WR-05: every blocking
+// (StatusError) check ships a concrete next-step in its Remediation
+// field — the actionable failures must not be the least guided.
+func TestBlockingErrorChecksCarryRemediation(t *testing.T) {
+	opts := happyOptions(t)
+	// Drive every blocking leg to error at once: nothing exists, the DB
+	// open fails, and the config is broken.
+	opts.StatFn = statMissing
+	opts.OpenFn = openFail
+	opts.ConfigPath = writeBrokenConfig(t)
+
+	var sawError bool
+	for _, c := range collectChecks(t, opts) {
+		if c.Status != diag.StatusError {
+			continue
+		}
+		sawError = true
+		if c.Remediation == "" {
+			t.Errorf("blocking error check %q has no remediation hint", c.Name)
+		}
+	}
+	if !sawError {
+		t.Fatal("expected at least one blocking error check in a fully-broken environment")
+	}
+}
+
 // TestHappyPathAllPassOrWarn asserts the fully-ready environment
 // produces zero error-status checks across every group.
 func TestHappyPathAllPassOrWarn(t *testing.T) {

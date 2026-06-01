@@ -54,21 +54,34 @@ func newCheck(group, name string, status diag.Status, message string) diag.Check
 	return diag.Check{Group: group, Name: name, Status: status, Message: message}
 }
 
-// okCheck / errorCheck are the warning-free shortcuts.
+// okCheck is the pass shortcut.
 func okCheck(group, name, message string) diag.Check {
 	return newCheck(group, name, diag.StatusPass, message)
 }
 
-func errorCheck(group, name, message string) diag.Check {
-	return newCheck(group, name, diag.StatusError, message)
+// checkWithFix builds a Check carrying a remediation hint. The shared
+// body for both the blocking-error and the soft-warn remediated
+// constructors — they differ only in the status constant, so folding
+// them keeps the dupl threshold happy.
+func checkWithFix(group, name string, status diag.Status, message, remediation string) diag.Check {
+	check := newCheck(group, name, status, message)
+	check.Remediation = remediation
+	return check
+}
+
+// errorCheckWithFix is the blocking-error counterpart to warnCheck: it
+// attaches a concrete remediation hint so the exit-1 failures (the ones
+// that actually stop the operator) carry a next-step, not just the
+// soft advisories. Every blocking check routes through this — there is
+// no remediation-less error constructor.
+func errorCheckWithFix(group, name, message, remediation string) diag.Check {
+	return checkWithFix(group, name, diag.StatusError, message, remediation)
 }
 
 // warnCheck additionally carries a remediation hint, the field that
 // makes a warning actionable instead of merely informational.
 func warnCheck(group, name, message, remediation string) diag.Check {
-	check := newCheck(group, name, diag.StatusWarn, message)
-	check.Remediation = remediation
-	return check
+	return checkWithFix(group, name, diag.StatusWarn, message, remediation)
 }
 
 // systemChecks runs the System group: OS, Bear.app presence, bearcli
@@ -99,8 +112,9 @@ func checkSystemMacOS(opts Options) diag.Check {
 // (blocking: no Bear, nothing to manage).
 func checkSystemBearApp(opts Options) diag.Check {
 	if _, err := opts.StatFn(bearAppPath); err != nil {
-		return errorCheck(groupSystem, nameBearApp,
-			fmt.Sprintf("Bear.app not found at %s: %v", bearAppPath, err))
+		return errorCheckWithFix(groupSystem, nameBearApp,
+			fmt.Sprintf("Bear.app not found at %s: %v", bearAppPath, err),
+			"install Bear from the App Store / verify the app bundle")
 	}
 	return okCheck(groupSystem, nameBearApp, "Bear.app installed")
 }
@@ -111,12 +125,14 @@ func checkSystemBearApp(opts Options) diag.Check {
 func checkSystemBearcli(opts Options) diag.Check {
 	info, err := opts.StatFn(bearcli.BinaryPath)
 	if err != nil {
-		return errorCheck(groupSystem, nameBearcli,
-			fmt.Sprintf("bearcli not found at %s: %v", bearcli.BinaryPath, err))
+		return errorCheckWithFix(groupSystem, nameBearcli,
+			fmt.Sprintf("bearcli not found at %s: %v", bearcli.BinaryPath, err),
+			"reinstall Bear; bearcli ships inside the app bundle")
 	}
 	if !info.Mode().IsRegular() {
-		return errorCheck(groupSystem, nameBearcli,
-			fmt.Sprintf("bearcli at %s is not a regular file", bearcli.BinaryPath))
+		return errorCheckWithFix(groupSystem, nameBearcli,
+			fmt.Sprintf("bearcli at %s is not a regular file", bearcli.BinaryPath),
+			"reinstall Bear; bearcli ships inside the app bundle")
 	}
 	return okCheck(groupSystem, nameBearcli, "bearcli present")
 }
@@ -154,12 +170,14 @@ func bearDBChecks(opts Options) []diag.Check {
 func checkBearDBDir(opts Options) diag.Check {
 	info, err := opts.StatFn(opts.BearDBDir)
 	if err != nil {
-		return errorCheck(groupBearDB, nameDBDir,
-			fmt.Sprintf("Bear DB directory not found at %s: %v", opts.BearDBDir, err))
+		return errorCheckWithFix(groupBearDB, nameDBDir,
+			fmt.Sprintf("Bear DB directory not found at %s: %v", opts.BearDBDir, err),
+			"point --bear-db at your Bear group container, or check BEAR_DB_DIR")
 	}
 	if !info.IsDir() {
-		return errorCheck(groupBearDB, nameDBDir,
-			fmt.Sprintf("Bear DB path %s is not a directory", opts.BearDBDir))
+		return errorCheckWithFix(groupBearDB, nameDBDir,
+			fmt.Sprintf("Bear DB path %s is not a directory", opts.BearDBDir),
+			"point --bear-db at your Bear group container, or check BEAR_DB_DIR")
 	}
 	return okCheck(groupBearDB, nameDBDir, "Bear DB directory present")
 }
@@ -171,8 +189,9 @@ func checkBearDBReadable(opts Options) diag.Check {
 	dbPath := filepath.Join(opts.BearDBDir, bearDatabaseFile)
 	file, err := opts.OpenFn(dbPath)
 	if err != nil {
-		return errorCheck(groupBearDB, nameDBReadable,
-			fmt.Sprintf("cannot open %s read-only: %v", dbPath, err))
+		return errorCheckWithFix(groupBearDB, nameDBReadable,
+			fmt.Sprintf("cannot open %s read-only: %v", dbPath, err),
+			"check filesystem permissions on the Bear DB directory")
 	}
 	_ = file.Close()
 	return okCheck(groupBearDB, nameDBReadable, "Bear database readable")
@@ -191,8 +210,9 @@ func configChecks(opts Options) []diag.Check {
 // (blocking: no catalog, nothing to apply).
 func checkConfigFound(opts Options) diag.Check {
 	if _, err := opts.StatFn(opts.ConfigPath); err != nil {
-		return errorCheck(groupConfig, nameConfigFound,
-			fmt.Sprintf("config not found at %s: %v", opts.ConfigPath, err))
+		return errorCheckWithFix(groupConfig, nameConfigFound,
+			fmt.Sprintf("config not found at %s: %v", opts.ConfigPath, err),
+			"create noxctl.toml or pass --config")
 	}
 	return okCheck(groupConfig, nameConfigFound, fmt.Sprintf("config found at %s", opts.ConfigPath))
 }
@@ -203,8 +223,9 @@ func checkConfigFound(opts Options) diag.Check {
 // carries the uniform path:line:col: kind: message shape.
 func checkConfigValid(opts Options) diag.Check {
 	if _, _, err := config.Load(opts.ConfigPath); err != nil {
-		return errorCheck(groupConfig, nameConfigValid,
-			config.FormatLoadError(err, opts.ConfigPath))
+		return errorCheckWithFix(groupConfig, nameConfigValid,
+			config.FormatLoadError(err, opts.ConfigPath),
+			"fix the reported config error and re-run `noxctl validate`")
 	}
 	return okCheck(groupConfig, nameConfigValid, "config valid")
 }
