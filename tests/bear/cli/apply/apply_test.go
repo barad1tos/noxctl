@@ -24,13 +24,11 @@ func (failingBackend) Run(_ context.Context, _ []string, _ string) ([]byte, erro
 }
 
 func falsePtr() *bool {
-	value := false
-	return &value
+	return new(false)
 }
 
 func truePtr() *bool {
-	value := true
-	return &value
+	return new(true)
 }
 
 func disabledFeatureCatalog() *config.Catalog {
