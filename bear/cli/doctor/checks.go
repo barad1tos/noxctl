@@ -217,19 +217,29 @@ func stateChecks(opts Options) []diag.Check {
 	}
 }
 
-// checkStatePresent loads state.json. A missing file yields a fresh
-// zero State (LastApply zero) → warn "first run"; a present prior apply
-// → pass. Never errors — state.Load only returns a real error on an
-// unreadable (non-missing) file, which we still surface as warn so the
-// gate stays passable. doctor reports, it does not block on state.
+// checkStatePresent reads state.json READ-ONLY via state.Peek — doctor
+// MUTATES NOTHING, so it must never route through state.Load (which
+// renames a corrupt file). A missing file → warn "first run"; a corrupt
+// file → warn "investigate" (NOT renamed); a present prior apply → pass.
+// Never errors — doctor reports state, it does not block on it.
 func checkStatePresent(opts Options) diag.Check {
-	loaded, err := state.Load(opts.StatePath)
+	lastApply, present, corrupt, err := state.Peek(opts.StatePath)
 	if err != nil {
 		return warnCheck(groupState, nameStatePresent,
 			fmt.Sprintf("could not read state at %s: %v", opts.StatePath, err),
 			"check filesystem permissions on .noxctl/")
 	}
-	if loaded.LastApply.IsZero() {
+	if !present {
+		return warnCheck(groupState, nameStatePresent,
+			"no prior apply recorded (first run)",
+			"run `noxctl apply` to establish baseline state")
+	}
+	if corrupt {
+		return warnCheck(groupState, nameStatePresent,
+			fmt.Sprintf("state at %s is unreadable (corrupt); investigate", opts.StatePath),
+			"inspect the file, then re-run `noxctl apply` to rebuild it")
+	}
+	if lastApply.IsZero() {
 		return warnCheck(groupState, nameStatePresent,
 			"no prior apply recorded (first run)",
 			"run `noxctl apply` to establish baseline state")
@@ -238,18 +248,22 @@ func checkStatePresent(opts Options) diag.Check {
 }
 
 // checkStateFreshness warns when the last apply is older than
-// StaleThreshold. A zero LastApply is the first-run case already
-// surfaced by state.present, so freshness reports skipped there. Never
-// errors.
+// StaleThreshold. Reads READ-ONLY via state.Peek (same MUTATES-NOTHING
+// invariant). A missing/corrupt file or a zero LastApply is the
+// first-run/unreadable case already surfaced by state.present, so
+// freshness reports skipped there. Never errors.
 func checkStateFreshness(opts Options) diag.Check {
-	loaded, err := state.Load(opts.StatePath)
-	if err != nil || loaded.LastApply.IsZero() {
+	lastApply, present, corrupt, err := state.Peek(opts.StatePath)
+	if err != nil || !present || corrupt || lastApply.IsZero() {
 		return diag.Check{
 			Group: groupState, Name: nameStateFreshness, Status: diag.StatusSkipped,
 			Message: "no prior apply to age-check (see state.present)",
 		}
 	}
-	age := time.Since(loaded.LastApply)
+	// Clamp a future LastApply (clock skew, restored-from-backup state)
+	// to "just now" so the human-facing day count is never negative; the
+	// threshold comparison below then treats it as fresh.
+	age := max(time.Since(lastApply), 0)
 	if age > StaleThreshold {
 		return warnCheck(groupState, nameStateFreshness,
 			fmt.Sprintf("last apply was %d day(s) ago", int(age.Hours()/24)),
