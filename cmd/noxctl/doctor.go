@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -11,7 +13,11 @@ import (
 )
 
 // doctor-specific flag state.
-var doctorOutput string
+var (
+	doctorOutput    string
+	doctorBearDB    string // --bear-db override (mirrors daemonCmd)
+	doctorStatePath string // --state-path override
+)
 
 // doctorCmd is the `noxctl doctor` read-only environment preflight
 // subcommand. It mirrors verifyCmd's shim shape: a thin RunE that
@@ -25,7 +31,8 @@ reports five groups of checks:
   System  — macOS, Bear.app, bearcli, whether Bear is running
   Bear DB — the Bear database directory and its read-only readability
   Config  — noxctl.toml presence and validity (delegated to the loader)
-  State   — ./.noxctl/state.json presence and apply freshness
+  State   — state.json presence and apply freshness (resolved like the
+            daemon: --state-path > REGEN_STATE_PATH > $HOME/.noxctl/state.json)
   Daemon  — launchd service status and daemon log freshness
 
 Doctor is strictly read-only: it never invokes bearcli, only runs
@@ -63,7 +70,11 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	if cat != nil && cat.Meta.Locale != "" {
 		domain.SetLocale(cat.Meta.Locale)
 	}
-	bearDBDir, err := resolveBearDB(cat, "")
+	bearDBDir, err := resolveBearDB(cat, doctorBearDB)
+	if err != nil {
+		return err
+	}
+	statePath, err := resolveDoctorStatePath(doctorStatePath)
 	if err != nil {
 		return err
 	}
@@ -71,16 +82,41 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	return doctor.Run(cmd.Context(), doctor.Options{
 		ConfigPath: configPath,
 		BearDBDir:  bearDBDir,
-		StatePath:  "./.noxctl/state.json",
+		StatePath:  statePath,
 		Output:     doctorOutput,
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,
 	})
 }
 
+// resolveDoctorStatePath picks the state.json doctor stats, matching the
+// daemon's effective resolution so the two commands inspect the SAME
+// file. Precedence (highest to lowest): --state-path flag →
+// REGEN_STATE_PATH env (config.EnvStatePath) → $HOME/.noxctl/state.json
+// default. The hardcoded literal previously used (./.noxctl/state.json)
+// made doctor stat a project-relative file the daemon never writes,
+// reporting a false "first run" on a vault applied for weeks.
+func resolveDoctorStatePath(cliFlag string) (string, error) {
+	if cliFlag != "" {
+		return cliFlag, nil
+	}
+	if env := os.Getenv(config.EnvStatePath); env != "" {
+		return env, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolveDoctorStatePath: UserHomeDir: %w", err)
+	}
+	return filepath.Join(home, ".noxctl", "state.json"), nil
+}
+
 func init() {
 	doctorCmd.Flags().StringVarP(&doctorOutput, "output", "o", "text",
 		"output format: text|json")
+	doctorCmd.Flags().StringVar(&doctorBearDB, "bear-db", "",
+		"Bear DB directory (precedence: this flag > BEAR_DB_DIR env > [meta].bear_db > default)")
+	doctorCmd.Flags().StringVar(&doctorStatePath, "state-path", "",
+		"state.json path (precedence: this flag > REGEN_STATE_PATH env > $HOME/.noxctl/state.json)")
 	registerEnumCompletion(doctorCmd, "output", []string{"text", "json"})
 	rootCmd.AddCommand(doctorCmd)
 }
