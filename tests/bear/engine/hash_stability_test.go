@@ -11,6 +11,7 @@ package engine_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
@@ -230,6 +231,62 @@ func TestApply_CreateConvergesToStableHash(t *testing.T) {
 	}
 }
 
+// TestApply_OverwriteConvergesToStableHash is the changed-branch counterpart
+// to the create guard above: existing hub/master notes are stale, so cycle 1
+// overwrites them, then cycle 2 is a steady no-op. Under a NORMALIZING backend,
+// the overwrite branch must hash Bear's stored read-back form. Hashing rendered
+// bytes would make the cycle-1 hash differ from the cycle-2 no-op hash.
+func TestApply_OverwriteConvergesToStableHash(t *testing.T) {
+	bearcli.ResetPoolForTest(1)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+
+	d := noOpHubRoutedDomain()
+	backend := testutil.NewRecordingBackend(staleHubRoutedCorpus(d))
+	backend.NormalizeReadBack = true
+	ctx := bearcli.ContextWithBackend(context.Background(), backend)
+
+	dir := t.TempDir()
+	opts := engine.ApplyOpts{
+		Domains:   []*domain.Domain{d},
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Features:  engine.Features{},
+		SkipFlock: true,
+	}
+
+	resultChanged, err := engine.Apply(ctx, opts)
+	if err != nil {
+		t.Fatalf("Apply changed cycle: %v", err)
+	}
+	if counts := resultChanged.Domains[d.Tag]; counts.Changed == 0 || counts.Failed != 0 {
+		t.Fatalf("changed cycle counts = %+v, want changed>0 failed=0", counts)
+	}
+	if got := backend.CountKind("overwrite", ""); got != 2 {
+		t.Fatalf("changed cycle issued %d overwrites, want 2 (hub + master)", got)
+	}
+	hashChanged := readHash(t, opts.StatePath, d.Tag)
+
+	resultNoOp, err := engine.Apply(ctx, opts)
+	if err != nil {
+		t.Fatalf("Apply no-op cycle: %v", err)
+	}
+	if counts := resultNoOp.Domains[d.Tag]; counts.Changed != 0 || counts.Failed != 0 {
+		t.Fatalf("no-op cycle counts = %+v, want changed=0 failed=0", counts)
+	}
+	if got := backend.CountKind("overwrite", ""); got != 2 {
+		t.Fatalf("no-op cycle total overwrites = %d, want still 2", got)
+	}
+	hashNoOp := readHash(t, opts.StatePath, d.Tag)
+
+	if hashChanged == "" {
+		t.Fatalf("overwrite cycle produced empty ContentHash for %q", d.Tag)
+	}
+	if hashChanged != hashNoOp {
+		t.Errorf("ContentHash flipped after overwrite under normalizing backend: changed=%q no-op=%q "+
+			"(overwrite branch must hash Bear's STORED form, not rendered bytes)", hashChanged, hashNoOp)
+	}
+}
+
 // TestApply_ReadBackFailureAfterWriteIsNonFatal is the read-back-failure guard: a hub-routed
 // domain whose hub+master have STALE bodies (forcing an overwrite) runs under a
 // backend whose post-write read-back `cat` fails transiently. The write to the
@@ -245,18 +302,7 @@ func TestApply_ReadBackFailureAfterWriteIsNonFatal(t *testing.T) {
 	d := noOpHubRoutedDomain()
 	// Hub + master exist but carry STALE content, so the diff-check forces an
 	// overwrite on this cycle (the changed branch, where the read-back fires).
-	atom := domain.Note{
-		ID:      "atom-1",
-		Title:   "Poem One",
-		Content: "# Poem One\n#library/poetry | [[Biko]]\n---\nbody\n",
-		Tags:    []string{"#library/poetry"},
-	}
-	corpus := []domain.Note{
-		atom,
-		{ID: "hub-biko", Title: d.HubTitle("Biko"), Content: "# stale hub\n", Tags: []string{"#library/poetry"}},
-		{ID: "master", Title: d.IndexTitle, Content: "# stale master\n", Tags: []string{"#library/poetry"}},
-	}
-	backend := testutil.NewRecordingBackend(map[string][]domain.Note{d.Tag: corpus})
+	backend := testutil.NewRecordingBackend(staleHubRoutedCorpus(d))
 	backend.FailReadBackAfterWrite = true
 	ctx := bearcli.ContextWithBackend(context.Background(), backend)
 
@@ -296,4 +342,27 @@ func TestApply_ReadBackFailureAfterWriteIsNonFatal(t *testing.T) {
 	if got := after.Domains[d.Tag].ContentHash; got != priorHash {
 		t.Errorf("ContentHash = %q, want prior %q preserved (incomplete snapshot must not overwrite the hash)", got, priorHash)
 	}
+}
+
+func staleHubRoutedCorpus(d *domain.Domain) map[string][]domain.Note {
+	corpus := noOpHubRoutedCorpus(d)
+	notes := corpus[d.Tag]
+	for i := range notes {
+		switch notes[i].Title {
+		case d.HubTitle("Biko"):
+			notes[i].Content = strings.Replace(notes[i].Content, "Poem One", "Poem One (stale)", 1)
+		case d.IndexTitle:
+			notes[i].Content = "# stale master\n"
+		}
+	}
+	return corpus
+}
+
+func readHash(t *testing.T, statePath, tag string) string {
+	t.Helper()
+	st, err := state.Load(statePath)
+	if err != nil {
+		t.Fatalf("state.Load: %v", err)
+	}
+	return st.Domains[tag].ContentHash
 }

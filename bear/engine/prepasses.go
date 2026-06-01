@@ -8,7 +8,6 @@ package engine
 import (
 	"context"
 	"errors"
-	"log"
 
 	"github.com/barad1tos/noxctl/bear/audit"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -23,13 +22,16 @@ type prePassSpec struct {
 	enabled bool
 	name    string // PrePasses-map key, e.g. "foreign_tag"
 	label   string // log prefix, e.g. "foreign-tag escape"
+	logf    func(format string, args ...any)
 	fn      func() (PrePassCounts, error)
 }
 
 func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
+	logSink := applyLogSink(opts)
+	ctx = fastpass.ContextWithLogSink(ctx, opts.LogSink)
 	if opts.AuditEnabled {
 		findings := audit.Scan(ctx, opts.Domains)
-		audit.LogAuditFindings(findings, log.Printf)
+		audit.LogAuditFindings(findings, logSink)
 	}
 	// canonical-bootstrap wiring: build the tag→*Domain lookup
 	// once so both fast-pass paths can write destination-canonical form
@@ -61,6 +63,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			enabled: opts.Features.ForeignTagEscape,
 			name:    "foreign_tag",
 			label:   "foreign-tag escape",
+			logf:    logSink,
 			fn: func() (PrePassCounts, error) {
 				passResult, err := fastpass.ApplyForeignTagEscapeResult(ctx, domainsByTag)
 				return prePassCountsFromFastPass(passResult), err
@@ -70,6 +73,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			enabled: dailyTagOn,
 			name:    "auto_tag",
 			label:   "auto-tag",
+			logf:    logSink,
 			fn: func() (PrePassCounts, error) {
 				passResult, err := fastpass.ApplyDailyDefaultTagResult(ctx, domainsByTag[opts.DailyDefaultTag])
 				return prePassCountsFromFastPass(passResult), err
@@ -79,6 +83,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			enabled: opts.Features.DomainBootstrap,
 			name:    "domain_bootstrap",
 			label:   "domain-bootstrap canonicalize",
+			logf:    logSink,
 			fn: func() (PrePassCounts, error) {
 				passResult, err := fastpass.ApplyDomainBootstrapResult(ctx, domainsByTag)
 				return prePassCountsFromFastPass(passResult), err
@@ -88,6 +93,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			enabled: opts.Features.AutoTagDefault,
 			name:    "placeholder_refresh",
 			label:   "placeholder refresh",
+			logf:    logSink,
 			fn: func() (PrePassCounts, error) {
 				passResult, err := fastpass.ApplyPlaceholderRefreshResult(ctx, domainsByTag)
 				return prePassCountsFromFastPass(passResult), err
@@ -97,6 +103,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			enabled: opts.Features.CrossDomainMoves,
 			name:    "cross_domain",
 			label:   "cross-domain moves",
+			logf:    logSink,
 			fn: func() (PrePassCounts, error) {
 				passResult, err := fastpass.ApplyCrossDomainMovesResult(ctx, opts.Domains, opts.Pins)
 				return prePassCountsFromFastPass(passResult), err
@@ -106,6 +113,7 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 			enabled: opts.Features.TimePromotion,
 			name:    "time_promotion",
 			label:   "time-promotion",
+			logf:    logSink,
 			fn: func() (PrePassCounts, error) {
 				passResult, err := fastpass.ApplyTimeBasedPromotionResult(
 					ctx, opts.Domains, opts.Pins, opts.PromotionRules,
@@ -119,14 +127,14 @@ func applyPrePasses(ctx context.Context, opts ApplyOpts, result *ApplyResult) {
 	}
 	if opts.Pins != nil {
 		if err := opts.Pins.Save(); err != nil {
-			log.Printf("pins: save failed: %v (in-memory state preserved)", err)
+			logSink("pins: save failed: %v (in-memory state preserved)", err)
 		}
 	}
 	clearDuplicateRegistries(opts.Domains)
 	if opts.Features.DuplicateRegistry && len(opts.Domains) > 0 {
 		registry, err := regen.BuildCorpusDuplicateRegistry(ctx)
 		if err != nil {
-			log.Printf("duplicates: registry build failed: %v (continuing with plain wikilinks)", err)
+			logSink("duplicates: registry build failed: %v (continuing with plain wikilinks)", err)
 			result.PrePasses["duplicate_registry"] = PrePassCounts{Failed: 1}
 		} else {
 			for _, d := range opts.Domains {
@@ -151,7 +159,7 @@ func runPrePass(spec prePassSpec, result *ApplyResult) {
 			result.PrePasses[spec.name] = counts
 			return
 		}
-		log.Printf("%s failed: %v (continuing per-domain regen)", spec.label, err)
+		spec.logf("%s failed: %v (continuing per-domain regen)", spec.label, err)
 		if counts.Failed == 0 {
 			counts.Failed = 1
 		}

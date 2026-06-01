@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
@@ -184,7 +183,7 @@ func ApplyForeignTagEscapeResult(ctx context.Context, domainsByTag map[string]*d
 		}
 	}
 	if result.Changed > 0 {
-		log.Printf("foreign-tag escape: %d note(s) released from quicknote", result.Changed)
+		logf(ctx, "foreign-tag escape: %d note(s) released from quicknote", result.Changed)
 	}
 	return result, nil
 }
@@ -209,7 +208,7 @@ func processForeignTagEscape(ctx context.Context, note domain.AutoTagNote, domai
 		foreignTag = firstForeignTagFromTags(note.Tags)
 	}
 	if foreignTag == "" {
-		log.Printf("foreign-tag escape %q: no foreign tag identified, skipping", note.Title)
+		logf(ctx, "foreign-tag escape %q: no foreign tag identified, skipping", note.Title)
 		return passSkipped
 	}
 	stripped := SubstituteQuicknoteInBody(note.Content, foreignTag)
@@ -220,15 +219,15 @@ func processForeignTagEscape(ctx context.Context, note domain.AutoTagNote, domai
 	if destDomain := domainsByTag[strings.TrimPrefix(foreignTag, "#")]; destDomain != nil {
 		newContent = destDomain.RenderCanonicalForBootstrap(stripped)
 	} else {
-		log.Printf("foreign-tag escape %q: %s has no registered domain, "+
+		logf(ctx, "foreign-tag escape %q: %s has no registered domain, "+
 			"writing stripped body without canonical bootstrap",
 			note.Title, foreignTag)
 	}
 	if writeErr := bearcli.OverwriteWithRetry(ctx, note.ID, newContent); writeErr != nil {
-		log.Printf("foreign-tag escape %q failed: %v", note.Title, writeErr)
+		logf(ctx, "foreign-tag escape %q failed: %v", note.Title, writeErr)
 		return passFailed
 	}
-	log.Printf("foreign-tag escape: %s — %s replaced quicknote tag", note.Title, foreignTag)
+	logf(ctx, "foreign-tag escape: %s — %s replaced quicknote tag", note.Title, foreignTag)
 	return passChanged
 }
 

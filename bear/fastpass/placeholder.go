@@ -10,7 +10,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
@@ -112,10 +111,10 @@ func refreshOnePlaceholder(
 		return passSkipped
 	}
 	if err := bearcli.OverwriteWithRetry(ctx, note.ID, newContent); err != nil {
-		log.Printf("placeholder refresh %q failed: %v", note.Title, err)
+		logf(ctx, "placeholder refresh %q failed: %v", note.Title, err)
 		return passFailed
 	}
-	log.Printf("placeholder refresh: %s → # %s", note.Title, stamp)
+	logf(ctx, "placeholder refresh: %s → # %s", note.Title, stamp)
 	return passChanged
 }
 

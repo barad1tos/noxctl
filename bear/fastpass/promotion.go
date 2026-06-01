@@ -3,7 +3,6 @@ package fastpass
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
@@ -205,7 +204,7 @@ func ApplyTimeBasedPromotionResult(
 	for _, source := range domainByTag {
 		notes, err := bearcli.ListNotesForTag(ctx, source.Tag)
 		if err != nil {
-			log.Printf("time-promotion: list %s failed: %v", source.Tag, err)
+			logf(ctx, "time-promotion: list %s failed: %v", source.Tag, err)
 			result.Failed++
 			continue
 		}
@@ -250,7 +249,7 @@ func processAtomForPromotion(
 		return passSkipped
 	}
 	if atom.Created.IsZero() {
-		log.Printf("time-promotion: %q has no creation date; skipping", atom.Title)
+		logf(ctx, "time-promotion: %q has no creation date; skipping", atom.Title)
 		return passSkipped
 	}
 	if pins.IsPinned(atom.ID, now) {
@@ -262,12 +261,12 @@ func processAtomForPromotion(
 	}
 	target := domainByTag[newTag]
 	if target == nil {
-		log.Printf("time-promotion: %q would move to %q but no domain registered", atom.Title, newTag)
+		logf(ctx, "time-promotion: %q would move to %q but no domain registered", atom.Title, newTag)
 		return passSkipped
 	}
 	changed, err := promoteAtomToDomain(ctx, atom, source, target)
 	if err != nil {
-		log.Printf("time-promotion: %q failed: %v", atom.Title, err)
+		logf(ctx, "time-promotion: %q failed: %v", atom.Title, err)
 		return passFailed
 	}
 	if !changed {

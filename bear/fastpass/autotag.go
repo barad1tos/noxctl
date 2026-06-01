@@ -30,7 +30,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -106,15 +105,15 @@ func ApplyDailyDefaultTagResult(ctx context.Context, dailyDomain *domain.Domain)
 		}
 		newContent := dailyDomain.RenderCanonicalForBootstrap(note.Content)
 		if err = bearcli.OverwriteWithRetry(ctx, note.ID, newContent); err != nil {
-			log.Printf("auto-tag %q failed: %v", note.Title, err)
+			logf(ctx, "auto-tag %q failed: %v", note.Title, err)
 			result.Failed++
 			continue
 		}
-		log.Printf("auto-tag: %s → #quicknote/daily", note.Title)
+		logf(ctx, "auto-tag: %s → #quicknote/daily", note.Title)
 		result.Changed++
 	}
 	if result.Changed > 0 {
-		log.Printf("auto-tag: %d untagged note(s) stamped with #quicknote/daily", result.Changed)
+		logf(ctx, "auto-tag: %d untagged note(s) stamped with #quicknote/daily", result.Changed)
 	}
 	return result, nil
 }

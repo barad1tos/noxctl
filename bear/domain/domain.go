@@ -215,6 +215,11 @@ type Domain struct {
 	// Set by NewUmbrellaDomainForTest. Production callers use
 	// NewUmbrellaDomain which panics on the same error class.
 	ValidationError error
+
+	// LogSink, when set, receives Domain.Logf messages instead of the global
+	// logger. Nil preserves the daemon/default behavior. CLI one-shot callers
+	// use this to keep quiet-mode success runs silent without muting daemon logs.
+	LogSink func(format string, args ...any)
 }
 
 // MasterSection is one entry of a hub-routed domain's vertical-sections

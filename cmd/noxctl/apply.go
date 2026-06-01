@@ -120,7 +120,7 @@ func init() {
 	applyCmd.Flags().StringVar(&applyBearDBFlag, "bear-db", "",
 		"Bear DB watch directory (precedence: this flag > BEAR_DB_DIR env > [meta].bear_db > default)")
 	applyCmd.Flags().BoolVar(&applyBench, "bench", false,
-		"enable bearcli pool metrics capture for this apply run (telemetry line prints either way)")
+		"print a BENCH summary with bearcli pool metrics for this apply run")
 	applyCmd.Flags().StringVar(&applySweep, "sweep", "",
 		"comma-separated concurrency values to benchmark (e.g. \"4,8\"); implies --bench, re-arms the pool per value")
 	applyCmd.Flags().IntVar(&applyConcurrency, "concurrency", 0,

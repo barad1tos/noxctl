@@ -33,6 +33,15 @@ type ApplyOpts struct {
 	Features  Features            // REQUIRED — flat pre-pass toggles
 	NoWait    bool                // optional; --no-wait fail-fast on lock contention
 	Stderr    io.Writer           // optional; default os.Stderr — used by lock-acquire wait advisory
+	// LogSink, when non-nil, receives engine and fast-pass diagnostics instead
+	// of the process-global logger. CLI quiet mode uses this to suppress success
+	// telemetry without hiding warnings or failures; daemon mode leaves nil.
+	LogSink func(format string, args ...any)
+	// SuppressCycleTelemetry disables the final `regen cycle:` line for callers
+	// whose public contract suppresses success noise (for example
+	// `noxctl apply --quiet`). Leave false for daemon cycles so production logs
+	// keep their per-cycle observability.
+	SuppressCycleTelemetry bool
 	// AuditEnabled, when true, runs the Scan pre-pass. Mirrors
 	// the legacy daemon's REGEN_AUDIT != "off" gate. Default false.
 	AuditEnabled bool
@@ -201,10 +210,12 @@ func Apply(ctx context.Context, opts ApplyOpts) (*ApplyResult, error) {
 	// and failed finalize branches alike — a completed-with-outcome cycle still
 	// gets its one telemetry line. Early aborts (Steps 0-2: lock or state-load
 	// failure) return before this point and emit nothing, by design.
-	logCycleTelemetry(
-		cycleDelta(metricsBaseline, bearcli.MetricsSnapshot()),
-		timings.snapshot(),
-		time.Since(result.StartedAt),
-	)
+	if !opts.SuppressCycleTelemetry {
+		logCycleTelemetry(
+			cycleDelta(metricsBaseline, bearcli.MetricsSnapshot()),
+			timings.snapshot(),
+			time.Since(result.StartedAt),
+		)
+	}
 	return res, err
 }

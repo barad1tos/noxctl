@@ -12,7 +12,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"strings"
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
 	"github.com/barad1tos/noxctl/bear/cliutil"
@@ -43,10 +45,9 @@ type ApplyOptions struct {
 	Stdout    io.Writer
 	Stderr    io.Writer
 	// Bench, when set by `noxctl apply --bench`, enables bearcli pool metrics
-	// capture for the run (engine.ApplyOpts.WithMetrics). The cycle-telemetry
-	// line emits unconditionally either way; bench mode additionally retains the
-	// pool snapshot in ApplyResult.Metrics. Per-domain timings are accumulated
-	// by engine.Apply on every run (not just bench), so no caller hook is needed.
+	// capture for the run (engine.ApplyOpts.WithMetrics) and renders a concise
+	// stdout summary. Per-domain timings are accumulated by engine.Apply on
+	// every run (not just bench), so no caller hook is needed.
 	Bench bool
 	// Concurrency is the operator-supplied --concurrency value (single run) or
 	// the per-iteration value the --sweep loop sets in cmd/noxctl. Zero means
@@ -112,20 +113,22 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 	if benchErr != nil {
 		return benchErr
 	}
-
+	logSink := logSinkForApply(opts.Stderr, opts.Quiet)
 	engineOpts := engine.ApplyOpts{
-		Domains:            opts.Domains,
-		Pins:               pins,
-		StatePath:          opts.StatePath,
-		LockPath:           opts.LockPath,
-		Features:           cliutil.FeaturesFromCatalog(opts.Catalog),
-		NoWait:             opts.NoWait,
-		AuditEnabled:       false,
-		Stderr:             opts.Stderr,
-		DailyDefaultTag:    cliutil.DailyDefaultTagFromCatalog(opts.Catalog),
-		PromotionRules:     cliutil.PromotionRulesFromCatalog(opts.Catalog),
-		WithMetrics:        bench.WithMetrics,
-		BearcliConcurrency: bench.BearcliConcurrency,
+		Domains:                domainsForApply(opts.Domains, logSink),
+		Pins:                   pins,
+		StatePath:              opts.StatePath,
+		LockPath:               opts.LockPath,
+		Features:               cliutil.FeaturesFromCatalog(opts.Catalog),
+		NoWait:                 opts.NoWait,
+		AuditEnabled:           false,
+		Stderr:                 opts.Stderr,
+		LogSink:                logSink,
+		DailyDefaultTag:        cliutil.DailyDefaultTagFromCatalog(opts.Catalog),
+		PromotionRules:         cliutil.PromotionRulesFromCatalog(opts.Catalog),
+		WithMetrics:            bench.WithMetrics,
+		BearcliConcurrency:     bench.BearcliConcurrency,
+		SuppressCycleTelemetry: opts.Quiet,
 	}
 
 	result, runErr := engine.Apply(ctx, engineOpts)
@@ -135,6 +138,9 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 	if runErr != nil {
 		return runErr
 	}
+	if result != nil && opts.Bench {
+		RenderBenchSummary(opts.Stdout, result)
+	}
 	if result != nil && result.Interrupted {
 		return ErrApplyInterrupted
 	}
@@ -142,6 +148,81 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 		return ErrApplyFailures
 	}
 	return nil
+}
+
+func domainsForApply(domains []*domain.Domain, logSink func(format string, args ...any)) []*domain.Domain {
+	if logSink == nil {
+		return domains
+	}
+	out := make([]*domain.Domain, 0, len(domains))
+	for _, d := range domains {
+		if d == nil {
+			out = append(out, nil)
+			continue
+		}
+		clone := *d
+		clone.LogSink = logSink
+		out = append(out, &clone)
+	}
+	return out
+}
+
+func logSinkForApply(stderr io.Writer, quiet bool) func(format string, args ...any) {
+	if !quiet {
+		return nil
+	}
+	logger := log.New(stderr, "", 0)
+	return func(format string, args ...any) {
+		if !isQuietDiagnosticLog(format, args...) {
+			return
+		}
+		logger.Printf(format, args...)
+	}
+}
+
+func isQuietDiagnosticLog(format string, args ...any) bool {
+	lower := strings.ToLower(format)
+	if strings.Contains(lower, "atomics: ") {
+		return quietIntArg(args, 1) > 0
+	}
+	if strings.Contains(lower, "atomics pilot mode ") {
+		return quietIntArg(args, 2) > 0
+	}
+	for _, needle := range []string{
+		"ambiguous",
+		"bug",
+		"conflict",
+		"error",
+		"failed",
+		"failure",
+		"failures",
+		"hash deferred",
+		"no creation date",
+		"no domain registered",
+		"no foreign tag",
+		"no override",
+		"no registered domain",
+		"skipping",
+		"suppressed",
+		"warn",
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func quietIntArg(args []any, idx int) int {
+	if idx < 0 || idx >= len(args) {
+		return 0
+	}
+	switch v := args[idx].(type) {
+	case int:
+		return v
+	default:
+		return 0
+	}
 }
 
 func warnInterruptedApply(stderr io.Writer, statePath string) {
