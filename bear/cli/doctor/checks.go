@@ -13,9 +13,9 @@ import (
 	"github.com/barad1tos/noxctl/bear/state"
 )
 
-// Group labels — the human-readable section headers diag's grouped text
-// renderer prints once per group change. Fixed order in Run keeps the
-// output stable.
+// Group labels — the human-readable section headers the diag package's
+// grouped text renderer prints once per group change. Fixed order in Run
+// keeps the output stable.
 const (
 	groupSystem = "System"
 	groupBearDB = "Bear DB"
@@ -27,6 +27,24 @@ const (
 // bearAppPath is the macOS install location doctor stats to confirm
 // Bear itself is present. Stat-only — doctor never launches it.
 const bearAppPath = "/Applications/Bear.app"
+
+// Check names — the stable dotted IDs each check reports under. Centralized
+// so the JSON/text contract has one source of truth and the same identifier
+// is never spelled twice. Tests assert these literal values independently.
+const (
+	nameMacOS          = "system.macos"
+	nameBearApp        = "system.bear-app"
+	nameBearcli        = "system.bearcli"
+	nameBearRunning    = "system.bear-running"
+	nameDBDir          = "bear.db-dir"
+	nameDBReadable     = "bear.db-readable"
+	nameConfigFound    = "config.found"
+	nameConfigValid    = "config.valid"
+	nameStatePresent   = "state.present"
+	nameStateFreshness = "state.freshness"
+	nameDaemonService  = "daemon.service"
+	nameDaemonLog      = "daemon.log"
+)
 
 // newCheck is the single-shot Check constructor every per-check
 // function routes through. Hoisting the {Group, Name, Status, Message}
@@ -70,9 +88,9 @@ func systemChecks(opts Options) []diag.Check {
 // is advisory off-platform).
 func checkSystemMacOS(opts Options) diag.Check {
 	if opts.GOOS == "darwin" {
-		return okCheck(groupSystem, "system.macos", "running on macOS")
+		return okCheck(groupSystem, nameMacOS, "running on macOS")
 	}
-	return warnCheck(groupSystem, "system.macos",
+	return warnCheck(groupSystem, nameMacOS,
 		fmt.Sprintf("host OS is %q, not darwin; Bear is macOS-only", opts.GOOS),
 		"run noxctl on the macOS host where Bear is installed")
 }
@@ -81,10 +99,10 @@ func checkSystemMacOS(opts Options) diag.Check {
 // (blocking: no Bear, nothing to manage).
 func checkSystemBearApp(opts Options) diag.Check {
 	if _, err := opts.StatFn(bearAppPath); err != nil {
-		return errorCheck(groupSystem, "system.bear-app",
+		return errorCheck(groupSystem, nameBearApp,
 			fmt.Sprintf("Bear.app not found at %s: %v", bearAppPath, err))
 	}
-	return okCheck(groupSystem, "system.bear-app", "Bear.app installed")
+	return okCheck(groupSystem, nameBearApp, "Bear.app installed")
 }
 
 // checkSystemBearcli stats bearcli.BinaryPath (the exported SSOT path).
@@ -93,14 +111,14 @@ func checkSystemBearApp(opts Options) diag.Check {
 func checkSystemBearcli(opts Options) diag.Check {
 	info, err := opts.StatFn(bearcli.BinaryPath)
 	if err != nil {
-		return errorCheck(groupSystem, "system.bearcli",
+		return errorCheck(groupSystem, nameBearcli,
 			fmt.Sprintf("bearcli not found at %s: %v", bearcli.BinaryPath, err))
 	}
 	if !info.Mode().IsRegular() {
-		return errorCheck(groupSystem, "system.bearcli",
+		return errorCheck(groupSystem, nameBearcli,
 			fmt.Sprintf("bearcli at %s is not a regular file", bearcli.BinaryPath))
 	}
-	return okCheck(groupSystem, "system.bearcli", "bearcli present")
+	return okCheck(groupSystem, nameBearcli, "bearcli present")
 }
 
 // checkSystemBearRunning probes whether Bear is running. Running →
@@ -110,16 +128,16 @@ func checkSystemBearcli(opts Options) diag.Check {
 func checkSystemBearRunning(opts Options) diag.Check {
 	running, err := opts.ProcessRunningFn("Bear")
 	if err != nil {
-		return warnCheck(groupSystem, "system.bear-running",
+		return warnCheck(groupSystem, nameBearRunning,
 			fmt.Sprintf("could not determine whether Bear is running: %v", err),
 			"ignore unless apply behaves unexpectedly")
 	}
 	if running {
-		return warnCheck(groupSystem, "system.bear-running",
+		return warnCheck(groupSystem, nameBearRunning,
 			"Bear is running; concurrent edits may race apply/daemon writes",
 			"quit Bear before a large apply to avoid sync races")
 	}
-	return okCheck(groupSystem, "system.bear-running", "Bear not running")
+	return okCheck(groupSystem, nameBearRunning, "Bear not running")
 }
 
 // bearDBChecks runs the Bear DB group: directory presence then
@@ -136,14 +154,14 @@ func bearDBChecks(opts Options) []diag.Check {
 func checkBearDBDir(opts Options) diag.Check {
 	info, err := opts.StatFn(opts.BearDBDir)
 	if err != nil {
-		return errorCheck(groupBearDB, "bear.db-dir",
+		return errorCheck(groupBearDB, nameDBDir,
 			fmt.Sprintf("Bear DB directory not found at %s: %v", opts.BearDBDir, err))
 	}
 	if !info.IsDir() {
-		return errorCheck(groupBearDB, "bear.db-dir",
+		return errorCheck(groupBearDB, nameDBDir,
 			fmt.Sprintf("Bear DB path %s is not a directory", opts.BearDBDir))
 	}
-	return okCheck(groupBearDB, "bear.db-dir", "Bear DB directory present")
+	return okCheck(groupBearDB, nameDBDir, "Bear DB directory present")
 }
 
 // checkBearDBReadable opens database.sqlite read-only and immediately
@@ -153,11 +171,11 @@ func checkBearDBReadable(opts Options) diag.Check {
 	dbPath := filepath.Join(opts.BearDBDir, bearDatabaseFile)
 	file, err := opts.OpenFn(dbPath)
 	if err != nil {
-		return errorCheck(groupBearDB, "bear.db-readable",
+		return errorCheck(groupBearDB, nameDBReadable,
 			fmt.Sprintf("cannot open %s read-only: %v", dbPath, err))
 	}
 	_ = file.Close()
-	return okCheck(groupBearDB, "bear.db-readable", "Bear database readable")
+	return okCheck(groupBearDB, nameDBReadable, "Bear database readable")
 }
 
 // configChecks runs the Config group: file presence then validity
@@ -173,10 +191,10 @@ func configChecks(opts Options) []diag.Check {
 // (blocking: no catalog, nothing to apply).
 func checkConfigFound(opts Options) diag.Check {
 	if _, err := opts.StatFn(opts.ConfigPath); err != nil {
-		return errorCheck(groupConfig, "config.found",
+		return errorCheck(groupConfig, nameConfigFound,
 			fmt.Sprintf("config not found at %s: %v", opts.ConfigPath, err))
 	}
-	return okCheck(groupConfig, "config.found", fmt.Sprintf("config found at %s", opts.ConfigPath))
+	return okCheck(groupConfig, nameConfigFound, fmt.Sprintf("config found at %s", opts.ConfigPath))
 }
 
 // checkConfigValid delegates validity entirely to config.Load +
@@ -185,10 +203,10 @@ func checkConfigFound(opts Options) diag.Check {
 // carries the uniform path:line:col: kind: message shape.
 func checkConfigValid(opts Options) diag.Check {
 	if _, _, err := config.Load(opts.ConfigPath); err != nil {
-		return errorCheck(groupConfig, "config.valid",
+		return errorCheck(groupConfig, nameConfigValid,
 			config.FormatLoadError(err, opts.ConfigPath))
 	}
-	return okCheck(groupConfig, "config.valid", "config valid")
+	return okCheck(groupConfig, nameConfigValid, "config valid")
 }
 
 // stateChecks runs the State group: state.json presence then freshness.
@@ -207,16 +225,16 @@ func stateChecks(opts Options) []diag.Check {
 func checkStatePresent(opts Options) diag.Check {
 	loaded, err := state.Load(opts.StatePath)
 	if err != nil {
-		return warnCheck(groupState, "state.present",
+		return warnCheck(groupState, nameStatePresent,
 			fmt.Sprintf("could not read state at %s: %v", opts.StatePath, err),
 			"check filesystem permissions on .noxctl/")
 	}
 	if loaded.LastApply.IsZero() {
-		return warnCheck(groupState, "state.present",
+		return warnCheck(groupState, nameStatePresent,
 			"no prior apply recorded (first run)",
 			"run `noxctl apply` to establish baseline state")
 	}
-	return okCheck(groupState, "state.present", "state.json present")
+	return okCheck(groupState, nameStatePresent, "state.json present")
 }
 
 // checkStateFreshness warns when the last apply is older than
@@ -227,17 +245,17 @@ func checkStateFreshness(opts Options) diag.Check {
 	loaded, err := state.Load(opts.StatePath)
 	if err != nil || loaded.LastApply.IsZero() {
 		return diag.Check{
-			Group: groupState, Name: "state.freshness", Status: diag.StatusSkipped,
+			Group: groupState, Name: nameStateFreshness, Status: diag.StatusSkipped,
 			Message: "no prior apply to age-check (see state.present)",
 		}
 	}
 	age := time.Since(loaded.LastApply)
 	if age > StaleThreshold {
-		return warnCheck(groupState, "state.freshness",
+		return warnCheck(groupState, nameStateFreshness,
 			fmt.Sprintf("last apply was %d day(s) ago", int(age.Hours()/24)),
 			"re-run `noxctl apply` to refresh the vault")
 	}
-	return okCheck(groupState, "state.freshness", "state recently applied")
+	return okCheck(groupState, nameStateFreshness, "state recently applied")
 }
 
 // daemonChecks runs the Daemon group: launchd service status then log
@@ -256,11 +274,11 @@ func daemonChecks(opts Options) []diag.Check {
 // — it never loads, starts, or unloads it.
 func checkDaemonService(opts Options) diag.Check {
 	if err := opts.LaunchctlPrintFn(engine.LaunchdServiceLabel); err != nil {
-		return warnCheck(groupDaemon, "daemon.service",
+		return warnCheck(groupDaemon, nameDaemonService,
 			fmt.Sprintf("launchd service %s not loaded", engine.LaunchdServiceLabel),
 			"load the daemon plist with launchctl if you want the background watcher")
 	}
-	return okCheck(groupDaemon, "daemon.service", "daemon service loaded")
+	return okCheck(groupDaemon, nameDaemonService, "daemon service loaded")
 }
 
 // checkDaemonLog stats the resolved daemon log path. Absent → warn,
@@ -271,7 +289,7 @@ func checkDaemonLog(opts Options) diag.Check {
 	if path == "" {
 		resolved, err := defaultDaemonLogPath()
 		if err != nil {
-			return warnCheck(groupDaemon, "daemon.log",
+			return warnCheck(groupDaemon, nameDaemonLog,
 				fmt.Sprintf("could not resolve daemon log path: %v", err),
 				"set --log-path or check $HOME")
 		}
@@ -279,17 +297,17 @@ func checkDaemonLog(opts Options) diag.Check {
 	}
 	info, err := opts.StatFn(path)
 	if err != nil {
-		return warnCheck(groupDaemon, "daemon.log",
+		return warnCheck(groupDaemon, nameDaemonLog,
 			fmt.Sprintf("daemon log absent at %s (daemon may never have run)", path),
 			"start the daemon to begin logging")
 	}
 	if time.Since(info.ModTime()) > StaleThreshold {
-		return warnCheck(groupDaemon, "daemon.log",
+		return warnCheck(groupDaemon, nameDaemonLog,
 			fmt.Sprintf("daemon log at %s is stale (no writes in over %d days)",
 				path, int(StaleThreshold.Hours()/24)),
 			"the daemon may be stopped; check `launchctl print`")
 	}
-	return okCheck(groupDaemon, "daemon.log", "daemon log fresh")
+	return okCheck(groupDaemon, nameDaemonLog, "daemon log fresh")
 }
 
 // defaultDaemonLogPath resolves ~/.cache/regen-watchd.log — the same
