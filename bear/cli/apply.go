@@ -112,7 +112,7 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 		return benchErr
 	}
 	engineOpts := engine.ApplyOpts{
-		Domains:                opts.Domains,
+		Domains:                domainsForApply(opts.Domains, opts.Quiet),
 		Pins:                   pins,
 		StatePath:              opts.StatePath,
 		LockPath:               opts.LockPath,
@@ -144,6 +144,23 @@ func RunApply(ctx context.Context, opts ApplyOptions) error {
 		return ErrApplyFailures
 	}
 	return nil
+}
+
+func domainsForApply(domains []*domain.Domain, quiet bool) []*domain.Domain {
+	if !quiet {
+		return domains
+	}
+	out := make([]*domain.Domain, 0, len(domains))
+	for _, d := range domains {
+		if d == nil {
+			out = append(out, nil)
+			continue
+		}
+		clone := *d
+		clone.LogSink = func(string, ...any) {}
+		out = append(out, &clone)
+	}
+	return out
 }
 
 func warnInterruptedApply(stderr io.Writer, statePath string) {

@@ -41,6 +41,10 @@ func (d *Domain) LogPrefix() string {
 // Logf writes a log line prefixed with the domain's LogPrefix. Centralizes the
 // prefix concern so individual call sites can't accidentally drop it.
 func (d *Domain) Logf(format string, args ...any) {
+	if d.LogSink != nil {
+		d.LogSink(d.LogPrefix()+": "+format, args...)
+		return
+	}
 	log.Printf(d.LogPrefix()+": "+format, args...)
 }
 

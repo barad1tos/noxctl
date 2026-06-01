@@ -202,8 +202,8 @@ func TestRunApply_QuietSuppressesCycleTelemetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunApply quiet success: %v", err)
 	}
-	if strings.Contains(logBuf.String(), "regen cycle:") {
-		t.Fatalf("log = %q, want quiet apply to suppress success cycle telemetry", logBuf.String())
+	if logBuf.Len() != 0 {
+		t.Fatalf("log = %q, want no quiet success logs", logBuf.String())
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want no quiet success stdout", stdout.String())
