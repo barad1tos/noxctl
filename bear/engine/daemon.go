@@ -72,6 +72,14 @@ const (
 	// constant moves with it.
 	DaemonStartupLogMarker = "regen-watchd starting"
 
+	// LaunchdServiceLabel is the launchd job label the daemon runs
+	// under — the single Go source of truth for the service name.
+	// doctor's daemon.service check references it via
+	// `launchctl print gui/$uid/<label>` (read-only inspection only;
+	// never bootstrap/kickstart), so the label literal lives here once
+	// instead of being re-typed at the check site.
+	LaunchdServiceLabel = "com.bear.regen-watchd"
+
 	// DefaultMaxBurstWindow caps the wait when the user keeps typing —
 	// 1 minute brackets a typical note-editing burst without letting
 	// the daemon stall indefinitely.
