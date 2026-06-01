@@ -100,8 +100,19 @@ type Options struct {
 // Run assembles the five check groups into a diag.Result, renders it,
 // and returns the verdict: ErrNotReady when any check is StatusError,
 // nil otherwise. Warnings never fail the gate.
-func Run(_ context.Context, opts Options) error {
-	defaults(&opts)
+//
+// ctx is threaded into the launchctl/pgrep probe seams (exec.CommandContext)
+// so a SIGINT during a hung probe is honored. Output is validated up front
+// so an invalid -o short-circuits before any check — and before any
+// subprocess probe — runs.
+func Run(ctx context.Context, opts Options) error {
+	defaults(ctx, &opts)
+
+	// Fail-fast: reject an invalid -o BEFORE assembling any check, so a
+	// bad flag never spawns the launchctl/pgrep subprocess probes.
+	if err := diag.ValidateOutput(opts.Output); err != nil {
+		return err
+	}
 
 	result := diag.Result{
 		SchemaVersion: diag.SchemaVersion,
@@ -127,8 +138,10 @@ func Run(_ context.Context, opts Options) error {
 }
 
 // defaults fills nil IO sinks + seams with their real implementations
-// and resolves the path defaults. Idempotent.
-func defaults(opts *Options) {
+// and resolves the path defaults. Idempotent. ctx is captured by the
+// default probe seams so their subprocesses honor cancellation
+// (exec.CommandContext).
+func defaults(ctx context.Context, opts *Options) {
 	if opts.Stdout == nil {
 		opts.Stdout = os.Stdout
 	}
@@ -145,10 +158,10 @@ func defaults(opts *Options) {
 		opts.OpenFn = os.Open
 	}
 	if opts.LaunchctlPrintFn == nil {
-		opts.LaunchctlPrintFn = launchctlPrint
+		opts.LaunchctlPrintFn = func(label string) error { return launchctlPrint(ctx, label) }
 	}
 	if opts.ProcessRunningFn == nil {
-		opts.ProcessRunningFn = processRunning
+		opts.ProcessRunningFn = func(name string) (bool, error) { return processRunning(ctx, name) }
 	}
 	if opts.GOOS == "" {
 		opts.GOOS = runtime.GOOS
@@ -160,21 +173,23 @@ func defaults(opts *Options) {
 // argv: the subcommand is always "print" and the label is the
 // compile-time engine.LaunchdServiceLabel constant — never operator
 // input. uid comes from os.Getuid(), not user input. There is no code
-// path here that selects any service-lifecycle subcommand.
-func launchctlPrint(label string) error {
+// path here that selects any service-lifecycle subcommand. ctx cancels
+// a hung probe (exec.CommandContext) so SIGINT is honored.
+func launchctlPrint(ctx context.Context, label string) error {
 	uid := strconv.Itoa(os.Getuid())
 	target := "gui/" + uid + "/" + label
 	// Fixed argv: subcommand is always "print" (read-only); target is
 	// built from os.Getuid + the compile-time label, never user input.
-	cmd := exec.Command("launchctl", "print", target) //nolint:gosec // fixed argv, read-only
+	cmd := exec.CommandContext(ctx, "launchctl", "print", target) //nolint:gosec // fixed argv, read-only
 	return cmd.Run()
 }
 
 // processRunning reports whether a process named name is running via a
 // read-only `pgrep -x <name>` probe with fixed argv. pgrep exits 1 when
-// no process matches — that is "not running", not an error.
-func processRunning(name string) (bool, error) {
-	cmd := exec.Command("pgrep", "-x", name) //nolint:gosec // fixed argv; name is a compile-time constant
+// no process matches — that is "not running", not an error. ctx cancels
+// a hung probe (exec.CommandContext) so SIGINT is honored.
+func processRunning(ctx context.Context, name string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "pgrep", "-x", name) //nolint:gosec // fixed argv; name is a compile-time constant
 	err := cmd.Run()
 	if err == nil {
 		return true, nil
