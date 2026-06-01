@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
@@ -170,16 +171,23 @@ func logSinkForApply(stderr io.Writer, quiet bool) func(format string, args ...a
 	if !quiet {
 		return nil
 	}
+	logger := log.New(stderr, "", 0)
 	return func(format string, args ...any) {
-		if !isQuietDiagnosticLog(format) {
+		if !isQuietDiagnosticLog(format, args...) {
 			return
 		}
-		_, _ = fmt.Fprintf(stderr, format+"\n", args...)
+		logger.Printf(format, args...)
 	}
 }
 
-func isQuietDiagnosticLog(format string) bool {
+func isQuietDiagnosticLog(format string, args ...any) bool {
 	lower := strings.ToLower(format)
+	if strings.Contains(lower, "atomics: ") {
+		return quietIntArg(args, 1) > 0
+	}
+	if strings.Contains(lower, "atomics pilot mode ") {
+		return quietIntArg(args, 2) > 0
+	}
 	for _, needle := range []string{
 		"ambiguous",
 		"bug",
@@ -190,6 +198,7 @@ func isQuietDiagnosticLog(format string) bool {
 		"failures",
 		"hash deferred",
 		"no creation date",
+		"no domain registered",
 		"no foreign tag",
 		"no override",
 		"no registered domain",
@@ -202,6 +211,18 @@ func isQuietDiagnosticLog(format string) bool {
 		}
 	}
 	return false
+}
+
+func quietIntArg(args []any, idx int) int {
+	if idx < 0 || idx >= len(args) {
+		return 0
+	}
+	switch v := args[idx].(type) {
+	case int:
+		return v
+	default:
+		return 0
+	}
 }
 
 func warnInterruptedApply(stderr io.Writer, statePath string) {

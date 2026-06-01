@@ -28,6 +28,43 @@ func (failingBackend) Run(_ context.Context, _ []string, _ string) ([]byte, erro
 	return nil, errors.New("bearcli unavailable")
 }
 
+type bootstrapFailureBackend struct{}
+
+func (bootstrapFailureBackend) Run(_ context.Context, args []string, _ string) ([]byte, error) {
+	if len(args) == 0 {
+		return []byte(`{}`), nil
+	}
+	switch args[0] {
+	case "list":
+		if hasArgValue(args, "--location", "notes") {
+			return []byte(`[{"id":"bootstrap-1","title":"Bootstrap Atom","tags":["#test/bootstrap"],"content":"# Bootstrap Atom\nbody\n"}]`), nil
+		}
+		return []byte(`[]`), nil
+	case "show":
+		return []byte(`{"hash":"deadbeef"}`), nil
+	case "overwrite":
+		if len(args) > 1 && args[1] == "bootstrap-1" {
+			return nil, errors.New("bootstrap overwrite denied")
+		}
+		return []byte(`{"ok":true}`), nil
+	case "create":
+		return []byte(`{"id":"created","title":"created","content":"","tags":[]}`), nil
+	case "cat":
+		return []byte(`{"id":"created","title":"created","content":"","tags":[]}`), nil
+	default:
+		return []byte(`{}`), nil
+	}
+}
+
+func hasArgValue(args []string, flag, value string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == flag && args[i+1] == value {
+			return true
+		}
+	}
+	return false
+}
+
 func falsePtr() *bool {
 	return new(false)
 }
@@ -102,6 +139,40 @@ func TestRunApply_DomainFailureReturnsFailureSentinel(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "bearcli unavailable") {
 		t.Fatalf("stderr = %q, want quiet failure diagnostics", stderr.String())
+	}
+}
+
+func TestRunApply_QuietReportsDomainBootstrapFailure(t *testing.T) {
+	bearcli.ResetPoolForTest(1)
+	t.Cleanup(func() { bearcli.ResetPoolForTest(1) })
+
+	dir := t.TempDir()
+	d := render.NewFlatListDomain("test/bootstrap", "Bootstrap")
+	catalog := disabledFeatureCatalog()
+	catalog.Features.DomainBootstrap = truePtr()
+	ctx := bearcli.ContextWithBackend(context.Background(), bootstrapFailureBackend{})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := cli.RunApply(ctx, cli.ApplyOptions{
+		Domains:   []*domain.Domain{d},
+		Catalog:   catalog,
+		PinTarget: filepath.Join(dir, "pins.json"),
+		StatePath: filepath.Join(dir, "state.json"),
+		LockPath:  filepath.Join(dir, ".lock"),
+		Quiet:     true,
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+	})
+	if !errors.Is(err, cli.ErrApplyFailures) {
+		t.Fatalf("RunApply err = %v, want ErrApplyFailures", err)
+	}
+	if !strings.Contains(stdout.String(), "domain_bootstrap") || !strings.Contains(stdout.String(), "failed=1") {
+		t.Fatalf("stdout = %q, want failed domain_bootstrap recap row", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "domain-bootstrap") ||
+		!strings.Contains(stderr.String(), "bootstrap overwrite denied") {
+		t.Fatalf("stderr = %q, want quiet bootstrap failure diagnostics", stderr.String())
 	}
 }
 
@@ -199,7 +270,7 @@ func TestRunApply_QuietSuppressesCycleTelemetry(t *testing.T) {
 		"": {
 			{ID: "untagged-1", Title: "Loose", Content: "# Loose\nbody\n"},
 		},
-		d.Tag: {{ID: "atom-1", Title: "Atom", Content: "# Atom\n#test/quiet | [[Quiet]]\n---\nbody\n"}},
+		d.Tag: {{ID: "atom-1", Title: "Atom", Content: "# Atom\nbody\n", Tags: []string{"#test/quiet"}}},
 	})
 	ctx := bearcli.ContextWithBackend(context.Background(), backend)
 

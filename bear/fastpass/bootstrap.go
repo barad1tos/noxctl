@@ -134,7 +134,7 @@ func applyDomainBootstrapOne(
 		return passSkipped
 	}
 	if err := bearcli.OverwriteWithRetry(ctx, note.ID, canonical); err != nil {
-		logf(ctx, "domain-bootstrap %q: %v", note.Title, err)
+		logf(ctx, "domain-bootstrap %q failed: %v", note.Title, err)
 		return passFailed
 	}
 	bootstrapLoop.recordRewrite(ctx, note.ID, note.Title)
@@ -207,14 +207,14 @@ func (g *bootstrapLoopGuard) recordRewrite(ctx context.Context, noteID, title st
 	}
 	if _, already := g.stuck[noteID]; !already {
 		g.stuck[noteID] = struct{}{}
-		logf(ctx, "domain-bootstrap: LOOP detected for note %q (%s); "+
+		logf(ctx, "WARN: domain-bootstrap LOOP detected for note %q (%s); "+
 			"rewrite_count=%d ≥ cap=%d; suppressing on future ticks",
 			title, noteID, g.counts[noteID], bootstrapNoteRewriteCap)
 	}
 	if !g.disabled && len(g.stuck) >= bootstrapStuckEmergencyCap {
 		g.disabled = true
 		logf(ctx,
-			"domain-bootstrap: EMERGENCY DISABLE — %d distinct notes hit rewrite-loop cap; "+
+			"WARN: domain-bootstrap EMERGENCY DISABLE — %d distinct notes hit rewrite-loop cap; "+
 				"pass disabled until daemon restart. Set REGEN_DOMAIN_BOOTSTRAP=off and "+
 				"investigate render idempotency.",
 			len(g.stuck),
