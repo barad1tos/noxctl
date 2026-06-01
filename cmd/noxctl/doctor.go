@@ -1,9 +1,7 @@
 package main
 
 import (
-	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -74,7 +72,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	statePath, err := resolveDoctorStatePath(doctorStatePath)
+	statePath, err := doctor.ResolveStatePath(doctorStatePath)
 	if err != nil {
 		return err
 	}
@@ -87,27 +85,6 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,
 	})
-}
-
-// resolveDoctorStatePath picks the state.json doctor stats, matching the
-// daemon's effective resolution so the two commands inspect the SAME
-// file. Precedence (highest to lowest): --state-path flag →
-// REGEN_STATE_PATH env (config.EnvStatePath) → $HOME/.noxctl/state.json
-// default. The hardcoded literal previously used (./.noxctl/state.json)
-// made doctor stat a project-relative file the daemon never writes,
-// reporting a false "first run" on a vault applied for weeks.
-func resolveDoctorStatePath(cliFlag string) (string, error) {
-	if cliFlag != "" {
-		return cliFlag, nil
-	}
-	if env := os.Getenv(config.EnvStatePath); env != "" {
-		return env, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolveDoctorStatePath: UserHomeDir: %w", err)
-	}
-	return filepath.Join(home, ".noxctl", "state.json"), nil
 }
 
 func init() {
