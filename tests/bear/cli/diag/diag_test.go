@@ -35,6 +35,25 @@ func TestSummarize_CountsEveryStatus(t *testing.T) {
 	}
 }
 
+// TestSummarize_UnknownStatusRoutesToError — a Check carrying a status
+// outside the known five must never vanish from the rollup. Summarize
+// routes it to the Error bucket (fail-loud) so total==len(Checks) holds
+// even for a malformed Check.
+func TestSummarize_UnknownStatusRoutesToError(t *testing.T) {
+	checks := []diag.Check{
+		{Name: "a", Status: diag.StatusPass},
+		{Name: "b", Status: diag.Status("bogus")},
+	}
+	got := diag.Summarize(checks)
+	if got.Error != 1 {
+		t.Errorf("unknown status not routed to Error: got %+v", got)
+	}
+	total := got.Pass + got.Warn + got.Fail + got.Skipped + got.Error
+	if total != len(checks) {
+		t.Errorf("summary total %d != check count %d (a check vanished)", total, len(checks))
+	}
+}
+
 // TestSummarize_EmptyIsZero — no checks yields a zero Summary, the
 // resting state doctor reports on a clean environment with nothing run.
 func TestSummarize_EmptyIsZero(t *testing.T) {

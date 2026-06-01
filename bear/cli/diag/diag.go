@@ -96,6 +96,16 @@ func Summarize(checks []Check) Summary {
 			summary.Skipped++
 		case StatusError:
 			summary.Error++
+		default:
+			// An unrecognized status (typo'd literal, a producer using a
+			// constant outside the known five) must never vanish from the
+			// rollup — that would silently break the total==len(Checks)
+			// invariant consumers rely on. Route it to Error (fail-loud)
+			// so a malformed Check surfaces instead of disappearing.
+			// verify never emits a status outside the four it uses, so this
+			// arm is unreachable on the verify path and its output stays
+			// byte-identical.
+			summary.Error++
 		}
 	}
 	return summary
