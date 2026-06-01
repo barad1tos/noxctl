@@ -1,0 +1,86 @@
+package main
+
+import (
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/barad1tos/noxctl/bear/cli/doctor"
+	"github.com/barad1tos/noxctl/bear/config"
+	"github.com/barad1tos/noxctl/bear/domain"
+)
+
+// doctor-specific flag state.
+var doctorOutput string
+
+// doctorCmd is the `noxctl doctor` read-only environment preflight
+// subcommand. It mirrors verifyCmd's shim shape: a thin RunE that
+// adapts cobra state into a doctor.Options and delegates to doctor.Run.
+var doctorCmd = &cobra.Command{
+	Use:   "doctor",
+	Short: "Read-only environment / config / state / daemon readiness report",
+	Long: `Doctor inspects your environment before you ever mutate your vault and
+reports five groups of checks:
+
+  System  — macOS, Bear.app, bearcli, whether Bear is running
+  Bear DB — the Bear database directory and its read-only readability
+  Config  — noxctl.toml presence and validity (delegated to the loader)
+  State   — ./.noxctl/state.json presence and apply freshness
+  Daemon  — launchd service status and daemon log freshness
+
+Doctor is strictly read-only: it never invokes bearcli, only runs
+'launchctl print' (never loads or starts the service), opens the Bear
+database read-only, and parses config/state without writing.
+
+Exit codes: 0 = ready (warnings allowed), 1 = not ready (Bear.app or
+bearcli missing, Bear DB unreadable, or config invalid). Warnings —
+daemon not loaded, first run, stale state, Bear running — never fail
+the gate.`,
+	Args: cobra.NoArgs,
+	RunE: runDoctor,
+}
+
+// runDoctor is the thin RunE shim. It best-effort loads the catalog
+// (a missing/invalid config is itself a doctor check, NOT a hard abort),
+// resolves the Bear DB directory the same way the daemon does, threads
+// every input into doctor.Options, and delegates to doctor.Run.
+//
+// doctor.Run returns doctor.ErrNotReady on a blocking problem; that
+// plain error propagates to Cobra → main.go maps a generic error to
+// ExitError = 1, which is exactly the doctor exit-1 contract. No
+// cmd-level sentinel or new main.go arm is needed.
+func runDoctor(cmd *cobra.Command, _ []string) error {
+	// Output validation happens inside doctor.Run → diag.Render; we
+	// don't duplicate the check at the cmd layer (single owner, same
+	// convention as runVerify).
+
+	// Best-effort catalog load: tolerate a nil catalog so doctor still
+	// reports every other group when config is missing/invalid (the
+	// config.found / config.valid checks own that verdict). Apply the
+	// catalog locale when present so any locale-sensitive path agrees
+	// with apply/verify.
+	_, cat, _ := config.Load(configPath)
+	if cat != nil && cat.Meta.Locale != "" {
+		domain.SetLocale(cat.Meta.Locale)
+	}
+	bearDBDir, err := resolveBearDB(cat, "")
+	if err != nil {
+		return err
+	}
+
+	return doctor.Run(cmd.Context(), doctor.Options{
+		ConfigPath: configPath,
+		BearDBDir:  bearDBDir,
+		StatePath:  "./.noxctl/state.json",
+		Output:     doctorOutput,
+		Stdout:     os.Stdout,
+		Stderr:     os.Stderr,
+	})
+}
+
+func init() {
+	doctorCmd.Flags().StringVarP(&doctorOutput, "output", "o", "text",
+		"output format: text|json")
+	registerEnumCompletion(doctorCmd, "output", []string{"text", "json"})
+	rootCmd.AddCommand(doctorCmd)
+}
