@@ -157,8 +157,8 @@ jobs:
         # --rerun-fails=0: disable auto-rerun so Codecov sees true flakiness.
         # --junitfile-testsuite-name=relative: shorter package paths in UI.
         run: |
-          mkdir -p test-results
-          gotestsum \
+          mkdir -p test-results coverage-e2e
+          NOXCTL_E2E_COVERDIR="$PWD/coverage-e2e" gotestsum \
             --junitfile test-results/junit.xml \
             --junitfile-testsuite-name relative \
             --format pkgname \
@@ -166,11 +166,12 @@ jobs:
             -- -count=1 -race -coverpkg=./... \
                -coverprofile=coverage.out -covermode=atomic \
                ./...
+          go tool covdata textfmt -i=coverage-e2e -o=coverage-e2e.out
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v5
         with:
-          files: coverage.out
+          files: coverage.out,coverage-e2e.out
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
