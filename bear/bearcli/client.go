@@ -29,7 +29,12 @@ const Timeout = 10 * time.Second
 // wrappers in bearcli/notes.go and the overwrite path) need to build
 // argument slices that match the same conventions.
 const (
-	binary = "/Applications/Bear.app/Contents/MacOS/bearcli"
+	// BinaryPath is the absolute path to Bear's command-line tool —
+	// the single source of truth every bearcli invocation execs.
+	// Exported so doctor's system.bearcli check can stat this path
+	// without re-hardcoding the literal (doctor only stats it; it never
+	// invokes bearcli).
+	BinaryPath = "/Applications/Bear.app/Contents/MacOS/bearcli"
 
 	FlagFormat = "--format"
 	FlagFields = "--fields"
@@ -73,7 +78,7 @@ func Run(ctx context.Context, args []string, stdin string) ([]byte, error) {
 
 	callCtx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
-	cmd := exec.CommandContext(callCtx, binary, args...)
+	cmd := exec.CommandContext(callCtx, BinaryPath, args...)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}

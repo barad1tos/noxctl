@@ -18,6 +18,7 @@ package config_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,6 +35,12 @@ import (
 // produced by buildBinary(t) into t.TempDir (no untrusted input).
 const envBinary = "/usr/bin/env"
 
+// e2eCoverDirEnv lets CI request coverage from the child noxctl binary.
+// go test owns GOCOVERDIR when -coverprofile is active, so the test
+// process uses this private variable and passes GOCOVERDIR only to the
+// instrumented smoke-test child process.
+const e2eCoverDirEnv = "NOXCTL_E2E_COVERDIR"
+
 // newCmd builds an *exec.Cmd that runs the locally-built noxctl binary
 // with the supplied args. NO_COLOR=1 is forced so smoke assertions
 // match plain-text output regardless of the developer's shell theme.
@@ -43,7 +50,17 @@ func newCmd(bin string, args []string) *exec.Cmd {
 	envArgs = append(envArgs, args...)
 	cmd := exec.Command(envBinary, envArgs...)
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	if coverDir := e2eCoverDir(); coverDir != "" {
+		cmd.Env = append(cmd.Env, "GOCOVERDIR="+coverDir)
+	}
 	return cmd
+}
+
+func e2eCoverDir() string {
+	if coverDir := os.Getenv(e2eCoverDirEnv); coverDir != "" {
+		return coverDir
+	}
+	return os.Getenv("GOCOVERDIR")
 }
 
 // TestCobraSmoke exercises the noxctl binary end-to-end: build,
@@ -119,6 +136,16 @@ func TestCobraSmoke(t *testing.T) {
 		{"import-help-five-blueprints", []string{"import", "--help"}, "five blueprints", true},
 		{"destroy-no-arg", []string{"destroy", "--config", validFixture}, "accepts 1 arg", false},
 		{"import-no-arg", []string{"import", "--config", validFixture}, "accepts 1 arg", false},
+		// doctor is the read-only environment preflight subcommand. Smoke
+		// its flag surface + group labels via --help so a future refactor
+		// cannot silently unwire it from rootCmd or drop --output.
+		{"help-doctor", []string{"--help"}, "doctor", true},
+		{"doctor-help-output", []string{"doctor", "--help"}, "--output", true},
+		{"doctor-help-group", []string{"doctor", "--help"}, "Bear DB", true},
+		{"doctor-help-readonly", []string{"doctor", "--help"}, "read-only", true},
+		{"doctor-help-bear-db", []string{"doctor", "--help"}, "--bear-db", true},
+		{"doctor-help-state-path", []string{"doctor", "--help"}, "--state-path", true},
+		{"doctor-help-log-path", []string{"doctor", "--help"}, "--log-path", true},
 	}
 
 	for _, tc := range cases {
@@ -141,6 +168,106 @@ func TestCobraSmoke(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCobraDoctorInvalidDaemonConfigStillReports(t *testing.T) {
+	bin := buildBinary(t)
+	root := repoRoot(t)
+	validFixture := filepath.Join(root, "tests", "bear", "config", "testdata", "valid-minimal.toml")
+	home := t.TempDir()
+	daemonConfigPath := filepath.Join(home, ".noxctl", "daemon.toml")
+	if err := os.MkdirAll(filepath.Dir(daemonConfigPath), 0o755); err != nil {
+		t.Fatalf("mkdir daemon config dir: %v", err)
+	}
+	if err := os.WriteFile(daemonConfigPath, []byte("[daemon.paths\n"), 0o600); err != nil {
+		t.Fatalf("write invalid daemon config: %v", err)
+	}
+	dbDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dbDir, "database.sqlite"), []byte("SQLite format 3\x00"), 0o600); err != nil {
+		t.Fatalf("write database fixture: %v", err)
+	}
+
+	cmd := newCmd(bin, []string{
+		"doctor",
+		"--config", validFixture,
+		"--bear-db", dbDir,
+		"--state-path", filepath.Join(t.TempDir(), "state.json"),
+		"--output", "json",
+	})
+	cmd.Env = append(cmd.Env, "HOME="+home, "REGEN_LOG_PATH=")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if runErr := cmd.Run(); runErr == nil {
+		t.Log("doctor exited 0; output contract is still asserted below")
+	}
+
+	if !strings.Contains(out.String(), `"name": "daemon.log"`) {
+		t.Errorf("doctor output missing daemon.log check\nfull: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "config: parse") {
+		t.Errorf("doctor output missing daemon config parse error\nfull: %s", out.String())
+	}
+}
+
+func TestCobraDoctorReportsStaleStateFromExplicitStatePath(t *testing.T) {
+	bin := buildBinary(t)
+	root := repoRoot(t)
+	validFixture := filepath.Join(root, "tests", "bear", "config", "testdata", "valid-minimal.toml")
+	dbDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dbDir, "database.sqlite"), []byte("SQLite format 3\x00"), 0o600); err != nil {
+		t.Fatalf("write database fixture: %v", err)
+	}
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	oldApply := time.Now().UTC().Add(-30 * 24 * time.Hour).Format(time.RFC3339Nano)
+	stateBody := []byte(`{"version":"1","last_apply":"` + oldApply + `"}`)
+	if err := os.WriteFile(statePath, stateBody, 0o600); err != nil {
+		t.Fatalf("write stale state fixture: %v", err)
+	}
+	logPath := filepath.Join(t.TempDir(), "daemon.log")
+	if err := os.WriteFile(logPath, []byte("daemon started\n"), 0o600); err != nil {
+		t.Fatalf("write daemon log fixture: %v", err)
+	}
+
+	cmd := newCmd(bin, []string{
+		"doctor",
+		"--config", validFixture,
+		"--bear-db", dbDir,
+		"--state-path", statePath,
+		"--log-path", logPath,
+		"--output", "json",
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if runErr := cmd.Run(); runErr == nil {
+		t.Log("doctor exited 0; state freshness contract is still asserted below")
+	}
+
+	var result struct {
+		Checks []struct {
+			Name    string `json:"name"`
+			Status  string `json:"status"`
+			Message string `json:"message"`
+		} `json:"checks"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode doctor JSON: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
+	for _, check := range result.Checks {
+		if check.Name != "state.freshness" {
+			continue
+		}
+		if check.Status != "warn" {
+			t.Fatalf("state.freshness status = %q, want warn\nstdout: %s\nstderr: %s", check.Status, stdout.String(), stderr.String())
+		}
+		if !strings.Contains(check.Message, "last apply was") {
+			t.Fatalf("state.freshness message = %q, want stale-apply warning", check.Message)
+		}
+		return
+	}
+	t.Fatalf("doctor JSON missing state.freshness check\nstdout: %s\nstderr: %s", stdout.String(), stderr.String())
 }
 
 // TestCobraInitWritesTemplate asserts `noxctl init <path>` writes a
@@ -260,8 +387,15 @@ func TestCobraValidatePerformance(t *testing.T) {
 func buildBinary(t *testing.T) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "noxctl")
-	cmd := exec.Command(envBinary, "--",
-		"go", "build", "-o", bin, "github.com/barad1tos/noxctl/cmd/noxctl")
+	args := []string{"--", "go", "build", "-o", bin}
+	if coverDir := e2eCoverDir(); coverDir != "" {
+		if err := os.MkdirAll(coverDir, 0o755); err != nil {
+			t.Fatalf("mkdir GOCOVERDIR: %v", err)
+		}
+		args = append(args, "-cover", "-covermode=atomic", "-coverpkg=./...")
+	}
+	args = append(args, "github.com/barad1tos/noxctl/cmd/noxctl")
+	cmd := exec.Command(envBinary, args...)
 	cmd.Dir = repoRoot(t)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go build failed: %v\n%s", err, out)

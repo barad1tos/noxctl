@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
+	"github.com/barad1tos/noxctl/bear/cli/diag"
 	"github.com/barad1tos/noxctl/bear/cliutil"
 	"github.com/barad1tos/noxctl/bear/config"
 	"github.com/barad1tos/noxctl/bear/domain"
@@ -69,50 +70,37 @@ type Options struct {
 	Stderr io.Writer
 }
 
-// Status is the per-check verdict. JSON-stable string values.
-type Status string
+// Status is the per-check verdict. Aliased to diag.Status so verify and
+// doctor share one model; the JSON-stable string values are unchanged.
+type Status = diag.Status
 
 const (
 	// StatusPass — check ran and the contract holds.
-	StatusPass Status = "pass"
+	StatusPass = diag.StatusPass
 	// StatusFail — check ran and the contract is broken (e.g. drift
 	// detected, log has warnings, idempotency violated).
-	StatusFail Status = "fail"
+	StatusFail = diag.StatusFail
 	// StatusSkipped — check intentionally not run (e.g.
 	// apply-idempotency without --with-apply).
-	StatusSkipped Status = "skipped"
+	StatusSkipped = diag.StatusSkipped
 	// StatusError — check could not run (e.g. bearcli unreachable,
 	// config file missing, daemon log absent). Distinct from FAIL —
 	// signals "verify can't make a verdict", not "verdict is no".
-	StatusError Status = "error"
+	StatusError = diag.StatusError
 )
 
-// Check is one named verification result.
-type Check struct {
-	Name    string   `json:"name"`
-	Status  Status   `json:"status"`
-	Message string   `json:"message"`
-	Details []string `json:"details,omitempty"`
-}
+// Check is one named verification result. Aliased to diag.Check; verify
+// leaves diag's additive Group/Remediation fields zero, so its JSON
+// stays byte-identical.
+type Check = diag.Check
 
-// Summary aggregates per-status counts for the JSON output.
-type Summary struct {
-	Pass    int `json:"pass"`
-	Fail    int `json:"fail"`
-	Skipped int `json:"skipped"`
-	Error   int `json:"error"`
-}
+// Summary aggregates per-status counts for the JSON output. Aliased to
+// diag.Summary; verify never increments the additive Warn counter.
+type Summary = diag.Summary
 
-// Result is the full Run output — every check plus the summary.
-type Result struct {
-	SchemaVersion int       `json:"schema_version"`
-	StartedAt     time.Time `json:"started_at"`
-	CompletedAt   time.Time `json:"completed_at"`
-	Checks        []Check   `json:"checks"`
-	Summary       Summary   `json:"summary"`
-}
-
-const resultSchemaVersion = 1
+// Result is the full Run output — every check plus the summary. Aliased
+// to diag.Result.
+type Result = diag.Result
 
 // ErrVerifyFailed is returned when one or more checks FAIL. Maps to
 // CLI exit code 2 (same convention as `noxctl plan -detailed-exitcode`).
@@ -139,12 +127,10 @@ var ErrVerifyInterrupted = errors.New("noxctl verify: interrupted")
 
 // ValidateOutput rejects values other than "text" and "json". Hoisted
 // to a public helper so cmd/noxctl can validate the flag before
-// constructing Options.
+// constructing Options. Delegates to diag.ValidateOutput so the error
+// message stays identical to the shared model's.
 func ValidateOutput(output string) error {
-	if output != "text" && output != "json" {
-		return fmt.Errorf("invalid -o value %q (expected text|json)", output)
-	}
-	return nil
+	return diag.ValidateOutput(output)
 }
 
 // Run is the verify orchestrator. Loads the catalog, runs each
@@ -166,7 +152,7 @@ func Run(ctx context.Context, opts Options) error {
 	defer stop()
 
 	result := Result{
-		SchemaVersion: resultSchemaVersion,
+		SchemaVersion: diag.SchemaVersion,
 		StartedAt:     time.Now().UTC(),
 		Checks:        make([]Check, 0, 3),
 	}
@@ -232,19 +218,8 @@ func defaultIOAndPool(opts *Options) {
 // render-then-translate ordering and gives the operator
 // post-mortem visibility instead of a silent stop.
 func finalize(ctx context.Context, opts Options, result *Result) error {
-	for _, check := range result.Checks {
-		switch check.Status {
-		case StatusPass:
-			result.Summary.Pass++
-		case StatusFail:
-			result.Summary.Fail++
-		case StatusSkipped:
-			result.Summary.Skipped++
-		case StatusError:
-			result.Summary.Error++
-		}
-	}
-	if err := render(opts, result); err != nil {
+	result.Summary = diag.Summarize(result.Checks)
+	if err := diag.Render(opts.Stdout, opts.Output, "verify", result); err != nil {
 		return err
 	}
 	// Interrupted trumps every other verdict. The operator's

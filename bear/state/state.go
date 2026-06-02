@@ -90,6 +90,33 @@ func Load(path string) (*State, error) {
 	return &loaded, nil
 }
 
+// Peek reads state.json read-only — it mirrors Load's missing/parse
+// handling but performs ZERO mutation: a corrupt file is reported via
+// the corrupt flag, NEVER renamed. This is the path the read-only
+// `noxctl doctor` State checks use; apply/daemon keep using Load
+// (rename-on-corrupt is correct there — they own the mutation budget).
+//
+// Returns:
+//   - missing file: present=false, corrupt=false, err=nil
+//   - parse error: present=true, corrupt=true, err=nil (file is on disk
+//     but unreadable; the operator must investigate it themselves)
+//   - other I/O error: present=false, err=wrapped (caller decides)
+//   - valid file: present=true, corrupt=false, lastApply set
+func Peek(path string) (lastApply time.Time, present, corrupt bool, err error) {
+	raw, readErr := os.ReadFile(path)
+	if errors.Is(readErr, fs.ErrNotExist) {
+		return time.Time{}, false, false, nil
+	}
+	if readErr != nil {
+		return time.Time{}, false, false, fmt.Errorf("state peek %s: %w", path, readErr)
+	}
+	var loaded State
+	if json.Unmarshal(raw, &loaded) != nil {
+		return time.Time{}, true, true, nil
+	}
+	return loaded.LastApply, true, false, nil
+}
+
 // Save writes State to path via the domain.AtomicWriteJSON helper. perm
 // is fixed at 0o600: state.json carries hashes of the applied config,
 // not secrets, but defensive perm closes the multi-user

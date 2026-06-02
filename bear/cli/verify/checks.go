@@ -161,17 +161,13 @@ func checkDaemonLog(opts Options) Check {
 }
 
 // resolveDaemonLogPath honors an explicit override; otherwise falls
-// back to `~/.cache/regen-watchd.log` (matching the daemon's hardcoded
-// default).
+// back to engine.DefaultDaemonLogPath (~/.cache/regen-watchd.log) — the
+// single source of truth doctor's daemon-log check resolves through too.
 func resolveDaemonLogPath(override string) (string, error) {
 	if override != "" {
 		return override, nil
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("UserHomeDir: %w", err)
-	}
-	return filepath.Join(home, ".cache", "regen-watchd.log"), nil
+	return engine.DefaultDaemonLogPath()
 }
 
 // ScanDaemonLogForTest exposes scanLogSinceStartup to the external test package.
