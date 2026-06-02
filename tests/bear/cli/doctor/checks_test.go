@@ -150,6 +150,21 @@ func TestCheckConfigMissingIsError(t *testing.T) {
 	}
 }
 
+func TestCheckConfigValidSkippedWhenConfigMissing(t *testing.T) {
+	opts := happyOptions(t)
+	opts.ConfigPath = filepath.Join(t.TempDir(), "does-not-exist.toml")
+	opts.StatFn = func(path string) (os.FileInfo, error) {
+		if path == opts.ConfigPath {
+			return nil, fs.ErrNotExist
+		}
+		return statAll(path)
+	}
+	got := findCheck(t, opts, "config.valid")
+	if got.Status != diag.StatusSkipped {
+		t.Errorf("config.valid with missing file = %q, want skipped", got.Status)
+	}
+}
+
 func TestCheckConfigInvalidIsError(t *testing.T) {
 	opts := happyOptions(t)
 	opts.ConfigPath = writeBrokenConfig(t)

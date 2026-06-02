@@ -73,6 +73,11 @@ func renderCheck(out io.Writer, check Check) error {
 			return err
 		}
 	}
+	if check.Remediation != "" {
+		if _, err := fmt.Fprintf(out, "    Fix: %s\n", check.Remediation); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

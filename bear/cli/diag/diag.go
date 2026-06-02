@@ -54,12 +54,11 @@ type Check struct {
 }
 
 // Summary aggregates per-status counts for the JSON output. Warn is
-// NEW; the four legacy counters keep their always-emit shape so a
-// scripted consumer decoding verify's summary into a struct is
-// unaffected by the additive warn:0 field.
+// NEW and omitted when zero so verify's zero-warn JSON remains
+// byte-identical after verify moves onto the shared diag model.
 type Summary struct {
 	Pass    int `json:"pass"`
-	Warn    int `json:"warn"`
+	Warn    int `json:"warn,omitempty"`
 	Fail    int `json:"fail"`
 	Skipped int `json:"skipped"`
 	Error   int `json:"error"`

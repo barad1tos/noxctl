@@ -8,19 +8,21 @@ import (
 	"github.com/barad1tos/noxctl/bear/config"
 )
 
-// ResolveStatePath picks the state.json doctor stats, matching the
-// daemon's effective resolution so the two commands inspect the SAME
-// file. Precedence (highest to lowest): cliFlag (the --state-path flag)
-// → REGEN_STATE_PATH env (config.EnvStatePath) → $HOME/.noxctl/state.json
-// default. A hardcoded project-relative literal would make doctor stat a
-// file the daemon never writes, reporting a false "first run" on a vault
-// applied for weeks.
+// ResolveStatePath picks the state.json doctor stats. Precedence
+// (highest to lowest): cliFlag (the --state-path flag) →
+// REGEN_STATE_PATH env (config.EnvStatePath) → project-local apply
+// state when present → $HOME/.noxctl/state.json daemon/home default.
+// This lets doctor report the state file the ordinary `noxctl apply`
+// path writes without hiding explicit daemon/operator overrides.
 func ResolveStatePath(cliFlag string) (string, error) {
 	if cliFlag != "" {
 		return cliFlag, nil
 	}
 	if env := os.Getenv(config.EnvStatePath); env != "" {
 		return env, nil
+	}
+	if _, err := os.Stat(defaultStatePath); err == nil || !os.IsNotExist(err) {
+		return defaultStatePath, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {

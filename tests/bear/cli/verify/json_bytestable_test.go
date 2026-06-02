@@ -60,7 +60,6 @@ const frozenVerifyJSON = `{
   ],
   "summary": {
     "pass": 1,
-    "warn": 0,
     "fail": 1,
     "skipped": 1,
     "error": 1
@@ -146,10 +145,9 @@ func TestVerifyJSONHasNoGroupOrRemediationKeys(t *testing.T) {
 
 // TestVerifyJSONSchemaAndLegacySummaryCounters pins schema_version==1
 // and asserts the four legacy summary counters BY NAME (pass/fail/
-// skipped/error). It tolerates the additive summary.warn:0 field — the
-// assertion checks the four counters individually rather than demanding
-// the summary key-set be exactly four, so an additive (never-incremented
-// by verify) warn counter does not falsely trip the contract.
+// skipped/error). It also rejects a zero-valued summary.warn key:
+// verify never emitted warn before diag, so adding "warn":0 would not
+// be byte-stable.
 func TestVerifyJSONSchemaAndLegacySummaryCounters(t *testing.T) {
 	var decoded struct {
 		SchemaVersion int `json:"schema_version"`
@@ -169,5 +167,15 @@ func TestVerifyJSONSchemaAndLegacySummaryCounters(t *testing.T) {
 	if decoded.Summary.Pass != 1 || decoded.Summary.Fail != 1 ||
 		decoded.Summary.Skipped != 1 || decoded.Summary.Error != 1 {
 		t.Errorf("legacy summary counters = %+v, want each == 1", decoded.Summary)
+	}
+
+	var raw struct {
+		Summary map[string]json.RawMessage `json:"summary"`
+	}
+	if err := json.Unmarshal(renderByteStableJSON(t), &raw); err != nil {
+		t.Fatalf("unmarshal raw summary: %v", err)
+	}
+	if _, ok := raw.Summary["warn"]; ok {
+		t.Errorf("verify JSON emitted summary.warn despite zero warn count: %v", raw.Summary)
 	}
 }

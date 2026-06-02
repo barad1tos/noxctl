@@ -153,9 +153,10 @@ func TestCheck_GroupRemediationEmittedWhenSet(t *testing.T) {
 	}
 }
 
-// TestSummary_WarnFieldIsAdditive — the Summary carries a new warn
-// counter; the four legacy counters keep their always-emit shape.
-func TestSummary_WarnFieldIsAdditive(t *testing.T) {
+// TestSummary_WarnFieldIsEmittedWhenNonZero — the Summary carries a
+// new warn counter, but only non-zero warnings should serialize so
+// verify's zero-warn JSON remains byte-stable.
+func TestSummary_WarnFieldIsEmittedWhenNonZero(t *testing.T) {
 	out, err := json.Marshal(diag.Summary{Pass: 1, Warn: 2, Fail: 0, Skipped: 0, Error: 0})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -165,5 +166,18 @@ func TestSummary_WarnFieldIsAdditive(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected %q in summary JSON; got %s", want, got)
 		}
+	}
+}
+
+// TestSummary_WarnZeroOmitsKey pins verify JSON compatibility: verify
+// never emits warn-status checks, so the shared Summary must not add a
+// new "warn":0 key to verify -o json.
+func TestSummary_WarnZeroOmitsKey(t *testing.T) {
+	out, err := json.Marshal(diag.Summary{Pass: 1, Fail: 0, Skipped: 0, Error: 0})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(out), `"warn"`) {
+		t.Errorf("zero warn summary emitted warn key; got %s", out)
 	}
 }

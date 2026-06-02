@@ -199,10 +199,15 @@ func checkBearDBReadable(opts Options) diag.Check {
 // configChecks runs the Config group: file presence then validity
 // (delegated to config.Load).
 func configChecks(opts Options) []diag.Check {
-	return []diag.Check{
-		checkConfigFound(opts),
-		checkConfigValid(opts),
+	found := checkConfigFound(opts)
+	checks := []diag.Check{found}
+	if found.Status == diag.StatusError {
+		return append(checks, diag.Check{
+			Group: groupConfig, Name: nameConfigValid, Status: diag.StatusSkipped,
+			Message: "config file unavailable (see config.found)",
+		})
 	}
+	return append(checks, checkConfigValid(opts))
 }
 
 // checkConfigFound stats the resolved config path. Missing → error

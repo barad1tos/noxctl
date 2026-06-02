@@ -17,6 +17,9 @@ var (
 	doctorStatePath string // --state-path override
 )
 
+const doctorStatePathHelp = "state.json path (precedence: this flag > REGEN_STATE_PATH env > " +
+	"./.noxctl/state.json if present > $HOME/.noxctl/state.json)"
+
 // doctorCmd is the `noxctl doctor` read-only environment preflight
 // subcommand. It mirrors verifyCmd's shim shape: a thin RunE that
 // adapts cobra state into a doctor.Options and delegates to doctor.Run.
@@ -29,8 +32,9 @@ reports five groups of checks:
   System  — macOS, Bear.app, bearcli, whether Bear is running
   Bear DB — the Bear database directory and its read-only readability
   Config  — noxctl.toml presence and validity (delegated to the loader)
-  State   — state.json presence and apply freshness (resolved like the
-            daemon: --state-path > REGEN_STATE_PATH > $HOME/.noxctl/state.json)
+  State   — state.json presence and apply freshness (--state-path >
+            REGEN_STATE_PATH > ./.noxctl/state.json if present >
+            $HOME/.noxctl/state.json)
   Daemon  — launchd service status and daemon log freshness
 
 Doctor is strictly read-only: it never invokes bearcli, only runs
@@ -92,8 +96,7 @@ func init() {
 		"output format: text|json")
 	doctorCmd.Flags().StringVar(&doctorBearDB, "bear-db", "",
 		"Bear DB directory (precedence: this flag > BEAR_DB_DIR env > [meta].bear_db > default)")
-	doctorCmd.Flags().StringVar(&doctorStatePath, "state-path", "",
-		"state.json path (precedence: this flag > REGEN_STATE_PATH env > $HOME/.noxctl/state.json)")
+	doctorCmd.Flags().StringVar(&doctorStatePath, "state-path", "", doctorStatePathHelp)
 	registerEnumCompletion(doctorCmd, "output", []string{"text", "json"})
 	rootCmd.AddCommand(doctorCmd)
 }

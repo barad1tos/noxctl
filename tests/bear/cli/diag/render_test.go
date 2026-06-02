@@ -155,6 +155,26 @@ func TestRenderText_VerdictLineSurfacesWarn(t *testing.T) {
 	}
 }
 
+// TestRenderText_RendersRemediation pins doctor's operator UX: if a
+// check carries a next-step, the default text output must show it. JSON
+// is useful for issues, but the human path should not hide the fix.
+func TestRenderText_RendersRemediation(t *testing.T) {
+	result := &diag.Result{
+		Checks: []diag.Check{{
+			Name:        "config.found",
+			Status:      diag.StatusError,
+			Message:     "config missing",
+			Group:       "Config",
+			Remediation: "create noxctl.toml or pass --config",
+		}},
+		Summary: diag.Summary{Error: 1},
+	}
+	out := renderTextToString(t, "doctor", result)
+	if !strings.Contains(out, "    Fix: create noxctl.toml or pass --config") {
+		t.Errorf("remediation hint missing from text output; got:\n%s", out)
+	}
+}
+
 // TestOverallVerdict_ErrorTrumpsFailTrumpsPass — verify's ERROR/FAIL/
 // PASS precedence is preserved for zero-warn input so verify's existing
 // verdict tests keep passing.
