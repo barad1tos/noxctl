@@ -24,11 +24,14 @@ package doctor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/barad1tos/noxctl/bear/cli/diag"
@@ -88,8 +91,8 @@ type Options struct {
 	OpenFn func(string) (*os.File, error)
 	// LaunchctlPrintFn inspects the launchd service read-only; nil
 	// defaults to a fixed-argv `launchctl print gui/<uid>/<label>` that
-	// discards output and returns only the exec error.
-	LaunchctlPrintFn func(label string) error
+	// returns the command output plus the exec error.
+	LaunchctlPrintFn func(label string) (string, error)
 	// ProcessRunningFn reports whether a named process is running; nil
 	// defaults to a fixed-argv read-only `pgrep -x <name>` probe.
 	ProcessRunningFn func(name string) (bool, error)
@@ -158,7 +161,7 @@ func defaults(ctx context.Context, opts *Options) {
 		opts.OpenFn = os.Open
 	}
 	if opts.LaunchctlPrintFn == nil {
-		opts.LaunchctlPrintFn = func(label string) error { return launchctlPrint(ctx, label) }
+		opts.LaunchctlPrintFn = func(label string) (string, error) { return launchctlPrint(ctx, label) }
 	}
 	if opts.ProcessRunningFn == nil {
 		opts.ProcessRunningFn = func(name string) (bool, error) { return processRunning(ctx, name) }
@@ -169,34 +172,60 @@ func defaults(ctx context.Context, opts *Options) {
 }
 
 // launchctlPrint runs `launchctl print gui/<uid>/<label>` read-only,
-// discarding stdout/stderr and returning only the exec error. FIXED
-// argv: the subcommand is always "print" and the label is the
-// compile-time engine.LaunchdServiceLabel constant — never operator
-// input. uid comes from os.Getuid(), not user input. There is no code
-// path here that selects any service-lifecycle subcommand. ctx cancels
-// a hung probe (exec.CommandContext) so SIGINT is honored.
-func launchctlPrint(ctx context.Context, label string) error {
+// returning stdout/stderr plus the exec error. FIXED argv: the
+// subcommand is always "print" and label comes from compile-time
+// constants — never operator input. uid comes from os.Getuid(), not
+// user input. There is no code path here that selects any
+// service-lifecycle subcommand. ctx cancels a hung probe
+// (exec.CommandContext) so SIGINT is honored.
+func launchctlPrint(ctx context.Context, label string) (string, error) {
 	uid := strconv.Itoa(os.Getuid())
 	target := "gui/" + uid + "/" + label
 	// Fixed argv: subcommand is always "print" (read-only); target is
 	// built from os.Getuid + the compile-time label, never user input.
-	cmd := exec.CommandContext(ctx, "launchctl", "print", target) //nolint:gosec // fixed argv, read-only
-	return cmd.Run()
+	cmd := exec.CommandContext(ctx, "/bin/launchctl", "print", target) //nolint:gosec // fixed argv, read-only
+	output, err := cmd.CombinedOutput()
+	return string(output), err
 }
 
 // processRunning reports whether a process named name is running via a
-// read-only `pgrep -x <name>` probe with fixed argv. pgrep exits 1 when
-// no process matches — that is "not running", not an error. ctx cancels
-// a hung probe (exec.CommandContext) so SIGINT is honored.
+// read-only `pgrep -x <name>` probe with fixed argv. pgrep exits 1 with
+// empty output when no process matches — that is "not running", not an
+// error. If pgrep itself cannot read the process list, doctor falls
+// back to a read-only `ps -axo comm=` exact-basename scan. ctx cancels
+// hung probes (exec.CommandContext) so SIGINT is honored.
 func processRunning(ctx context.Context, name string) (bool, error) {
-	cmd := exec.CommandContext(ctx, "pgrep", "-x", name) //nolint:gosec // fixed argv; name is a compile-time constant
-	err := cmd.Run()
+	cmd := exec.CommandContext(ctx, "/usr/bin/pgrep", "-x", name) //nolint:gosec // fixed argv; name is constant
+	output, err := cmd.CombinedOutput()
 	if err == nil {
 		return true, nil
 	}
 	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && strings.TrimSpace(string(output)) == "" {
 		return false, nil
 	}
-	return false, err
+	processList, listErr := processList(ctx)
+	if listErr != nil {
+		return false, fmt.Errorf("pgrep probe failed: %w; ps fallback failed: %v", err, listErr)
+	}
+	return processListContains(processList, name), nil
+}
+
+func processList(ctx context.Context) (string, error) {
+	cmd := exec.CommandContext(ctx, "/bin/ps", "-axo", "comm=") //nolint:gosec // fixed argv, read-only
+	output, err := cmd.Output()
+	return string(output), err
+}
+
+func processListContains(processList, name string) bool {
+	for line := range strings.SplitSeq(processList, "\n") {
+		commandPath := strings.TrimSpace(line)
+		if commandPath == "" {
+			continue
+		}
+		if filepath.Base(commandPath) == name {
+			return true
+		}
+	}
+	return false
 }

@@ -128,6 +128,7 @@ func TestCobraSmoke(t *testing.T) {
 		{"doctor-help-readonly", []string{"doctor", "--help"}, "read-only", true},
 		{"doctor-help-bear-db", []string{"doctor", "--help"}, "--bear-db", true},
 		{"doctor-help-state-path", []string{"doctor", "--help"}, "--state-path", true},
+		{"doctor-help-log-path", []string{"doctor", "--help"}, "--log-path", true},
 	}
 
 	for _, tc := range cases {

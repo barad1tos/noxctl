@@ -66,7 +66,7 @@ func exitCodeOptions(t *testing.T) doctor.Options {
 			}
 		},
 		// Daemon not loaded → warn; never blocks.
-		LaunchctlPrintFn: func(string) error { return errors.New("could not find service") },
+		LaunchctlPrintFn: func(string) (string, error) { return "", errors.New("could not find service") },
 		ProcessRunningFn: func(string) (bool, error) { return false, nil },
 		GOOS:             "darwin",
 	}

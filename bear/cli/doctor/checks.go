@@ -3,6 +3,7 @@ package doctor
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/barad1tos/noxctl/bear/bearcli"
@@ -119,8 +120,8 @@ func checkSystemBearApp(opts Options) diag.Check {
 }
 
 // checkSystemBearcli stats bearcli.BinaryPath (the exported SSOT path).
-// Stat ONLY — doctor never invokes bearcli. Missing or not-a-regular-
-// file → error (blocking: no CLI, no apply path).
+// Stat ONLY — doctor never invokes bearcli. Missing, not-a-regular-file,
+// or not executable → error (blocking: no CLI, no apply path).
 func checkSystemBearcli(opts Options) diag.Check {
 	info, err := opts.StatFn(bearcli.BinaryPath)
 	if err != nil {
@@ -131,6 +132,11 @@ func checkSystemBearcli(opts Options) diag.Check {
 	if !info.Mode().IsRegular() {
 		return errorCheckWithFix(groupSystem, nameBearcli,
 			fmt.Sprintf("bearcli at %s is not a regular file", bearcli.BinaryPath),
+			"reinstall Bear; bearcli ships inside the app bundle")
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		return errorCheckWithFix(groupSystem, nameBearcli,
+			fmt.Sprintf("bearcli at %s is not executable", bearcli.BinaryPath),
 			"reinstall Bear; bearcli ships inside the app bundle")
 	}
 	return okCheck(groupSystem, nameBearcli, "bearcli present")
@@ -307,17 +313,53 @@ func daemonChecks(opts Options) []diag.Check {
 }
 
 // checkDaemonService inspects the launchd service read-only via
-// LaunchctlPrintFn(engine.LaunchdServiceLabel). A non-nil error means
-// the job is not loaded → warn with a remediation hint. Never errors
+// `launchctl print` output. Loaded but stopped still warns: doctor
+// should report daemon health, not only plist presence. Never errors
 // (the daemon is optional infra). doctor only ever inspects the service
 // — it never loads, starts, or unloads it.
 func checkDaemonService(opts Options) diag.Check {
-	if err := opts.LaunchctlPrintFn(engine.LaunchdServiceLabel); err != nil {
-		return warnCheck(groupDaemon, nameDaemonService,
-			fmt.Sprintf("launchd service %s not loaded", engine.LaunchdServiceLabel),
-			"load the daemon plist with launchctl if you want the background watcher")
+	var loadedNotRunning []string
+	var notLoaded []string
+	for _, label := range daemonLaunchdLabels() {
+		output, err := opts.LaunchctlPrintFn(label)
+		if err != nil {
+			notLoaded = append(notLoaded, label)
+			continue
+		}
+		if launchctlServiceRunning(output) {
+			return okCheck(groupDaemon, nameDaemonService,
+				fmt.Sprintf("daemon service %s loaded and running", label))
+		}
+		loadedNotRunning = append(loadedNotRunning, label)
 	}
-	return okCheck(groupDaemon, nameDaemonService, "daemon service loaded")
+	if len(loadedNotRunning) > 0 {
+		return warnCheck(groupDaemon, nameDaemonService,
+			fmt.Sprintf("launchd service %s loaded but not running", strings.Join(loadedNotRunning, ", ")),
+			"kickstart the daemon with launchctl if you want the background watcher")
+	}
+	return warnCheck(groupDaemon, nameDaemonService,
+		fmt.Sprintf("launchd service not loaded (checked %s)", strings.Join(notLoaded, ", ")),
+		"load the daemon plist with launchctl if you want the background watcher")
+}
+
+func daemonLaunchdLabels() []string {
+	return []string{engine.NoxctlLaunchdServiceLabel, engine.LaunchdServiceLabel}
+}
+
+func launchctlServiceRunning(output string) bool {
+	for line := range strings.SplitSeq(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "state = running" {
+			return true
+		}
+		if pidText, ok := strings.CutPrefix(trimmed, "pid = "); ok {
+			pid := strings.TrimSpace(pidText)
+			if pid != "" && pid != "0" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // checkDaemonLog stats the resolved daemon log path. Absent → warn,

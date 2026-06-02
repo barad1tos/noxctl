@@ -21,9 +21,9 @@ func TestRunInvalidOutputShortCircuitsBeforeChecks(t *testing.T) {
 
 	launchctlCalled := false
 	pgrepCalled := false
-	opts.LaunchctlPrintFn = func(string) error {
+	opts.LaunchctlPrintFn = func(string) (string, error) {
 		launchctlCalled = true
-		return nil
+		return "", nil
 	}
 	opts.ProcessRunningFn = func(string) (bool, error) {
 		pgrepCalled = true

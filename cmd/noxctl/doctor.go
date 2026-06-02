@@ -15,10 +15,14 @@ var (
 	doctorOutput    string
 	doctorBearDB    string // --bear-db override (mirrors daemonCmd)
 	doctorStatePath string // --state-path override
+	doctorLogPath   string // --log-path override
 )
 
 const doctorStatePathHelp = "state.json path (precedence: this flag > REGEN_STATE_PATH env > " +
-	"./.noxctl/state.json if present > $HOME/.noxctl/state.json)"
+	"./.noxctl/state.json)"
+
+const doctorLogPathHelp = "daemon log path (precedence: this flag > REGEN_LOG_PATH env > " +
+	"~/.noxctl/daemon.toml > default)"
 
 // doctorCmd is the `noxctl doctor` read-only environment preflight
 // subcommand. It mirrors verifyCmd's shim shape: a thin RunE that
@@ -33,8 +37,7 @@ reports five groups of checks:
   Bear DB — the Bear database directory and its read-only readability
   Config  — noxctl.toml presence and validity (delegated to the loader)
   State   — state.json presence and apply freshness (--state-path >
-            REGEN_STATE_PATH > ./.noxctl/state.json if present >
-            $HOME/.noxctl/state.json)
+            REGEN_STATE_PATH > ./.noxctl/state.json)
   Daemon  — launchd service status and daemon log freshness
 
 Doctor is strictly read-only: it never invokes bearcli, only runs
@@ -80,15 +83,35 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	logPath, err := resolveDoctorLogPath(doctorLogPath)
+	if err != nil {
+		return err
+	}
 
 	return doctor.Run(cmd.Context(), doctor.Options{
 		ConfigPath: configPath,
 		BearDBDir:  bearDBDir,
 		StatePath:  statePath,
+		LogPath:    logPath,
 		Output:     doctorOutput,
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,
 	})
+}
+
+func resolveDoctorLogPath(cliFlag string) (string, error) {
+	if cliFlag != "" {
+		return cliFlag, nil
+	}
+	path, err := daemonConfigPath()
+	if err != nil {
+		return "", err
+	}
+	dc, err := config.LoadDaemon(path)
+	if err != nil {
+		return "", err
+	}
+	return dc.LogPath, nil
 }
 
 func init() {
@@ -97,6 +120,7 @@ func init() {
 	doctorCmd.Flags().StringVar(&doctorBearDB, "bear-db", "",
 		"Bear DB directory (precedence: this flag > BEAR_DB_DIR env > [meta].bear_db > default)")
 	doctorCmd.Flags().StringVar(&doctorStatePath, "state-path", "", doctorStatePathHelp)
+	doctorCmd.Flags().StringVar(&doctorLogPath, "log-path", "", doctorLogPathHelp)
 	registerEnumCompletion(doctorCmd, "output", []string{"text", "json"})
 	rootCmd.AddCommand(doctorCmd)
 }

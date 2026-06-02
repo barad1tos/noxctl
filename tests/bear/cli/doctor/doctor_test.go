@@ -23,7 +23,7 @@ func TestRunUsableReturnsNil(t *testing.T) {
 	// proves warnings do NOT block: missing state (first run) + not-
 	// loaded daemon + absent log.
 	opts.StatePath = filepath.Join(t.TempDir(), "missing.json")
-	opts.LaunchctlPrintFn = func(string) error { return errors.New("not loaded") }
+	opts.LaunchctlPrintFn = func(string) (string, error) { return "", errors.New("not loaded") }
 	missingLog := filepath.Join(t.TempDir(), "no.log")
 	opts.LogPath = missingLog
 	happyStat := opts.StatFn

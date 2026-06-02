@@ -27,9 +27,10 @@ import (
 	"github.com/barad1tos/noxctl/bear/engine"
 )
 
-// statAll is a StatFn seam that reports every path as a present regular
-// file, so checks that only need "exists" pass.
-func statAll(string) (os.FileInfo, error) { return fakeInfo{mode: 0o644}, nil }
+// statAll is a StatFn seam that reports every path as a present,
+// executable regular file, so checks that need "exists" or
+// "executable" pass.
+func statAll(string) (os.FileInfo, error) { return fakeInfo{mode: 0o755}, nil }
 
 // statDir reports every path as a present directory.
 func statDir(string) (os.FileInfo, error) { return fakeInfo{mode: fs.ModeDir | 0o755}, nil }
@@ -58,19 +59,29 @@ func happyOptions(t *testing.T) doctor.Options {
 	cfg := writeValidConfig(t)
 	dbDir := t.TempDir()
 	return doctor.Options{
-		ConfigPath:       cfg,
-		BearDBDir:        dbDir,
-		StatePath:        filepath.Join(t.TempDir(), "state.json"),
-		LogPath:          writeFreshLog(t),
-		Output:           "text",
-		Stdout:           new(bytes.Buffer),
-		Stderr:           new(bytes.Buffer),
-		StatFn:           statHappy(dbDir),
-		OpenFn:           openOK(t),
-		LaunchctlPrintFn: func(string) error { return nil },
+		ConfigPath: cfg,
+		BearDBDir:  dbDir,
+		StatePath:  filepath.Join(t.TempDir(), "state.json"),
+		LogPath:    writeFreshLog(t),
+		Output:     "text",
+		Stdout:     new(bytes.Buffer),
+		Stderr:     new(bytes.Buffer),
+		StatFn:     statHappy(dbDir),
+		OpenFn:     openOK(t),
+		LaunchctlPrintFn: func(label string) (string, error) {
+			return launchctlRunningOutput(label), nil
+		},
 		ProcessRunningFn: func(string) (bool, error) { return false, nil },
 		GOOS:             "darwin",
 	}
+}
+
+func launchctlRunningOutput(label string) string {
+	return "label = " + label + "\nstate = running\npid = 123\n"
+}
+
+func launchctlStoppedOutput(label string) string {
+	return "label = " + label + "\nstate = waiting\n"
 }
 
 // statHappy reports the Bear DB dir as a directory and every other path
@@ -96,6 +107,21 @@ func TestCheckSystemBearcliMissingIsError(t *testing.T) {
 	got := findCheck(t, opts, "system.bearcli")
 	if got.Status != diag.StatusError {
 		t.Errorf("system.bearcli with missing binary = %q, want error", got.Status)
+	}
+}
+
+func TestCheckSystemBearcliNonExecutableIsError(t *testing.T) {
+	opts := happyOptions(t)
+	happyStat := opts.StatFn
+	opts.StatFn = func(path string) (os.FileInfo, error) {
+		if path == bearcli.BinaryPath {
+			return fakeInfo{mode: 0o644}, nil
+		}
+		return happyStat(path)
+	}
+	got := findCheck(t, opts, "system.bearcli")
+	if got.Status != diag.StatusError {
+		t.Errorf("system.bearcli with non-executable binary = %q, want error", got.Status)
 	}
 }
 
@@ -179,7 +205,7 @@ func TestCheckConfigInvalidIsError(t *testing.T) {
 
 func TestCheckDaemonServiceNotLoadedWarns(t *testing.T) {
 	opts := happyOptions(t)
-	opts.LaunchctlPrintFn = func(string) error { return errors.New("could not find service") }
+	opts.LaunchctlPrintFn = func(string) (string, error) { return "", errors.New("could not find service") }
 	got := findCheck(t, opts, "daemon.service")
 	if got.Status != diag.StatusWarn {
 		t.Errorf("daemon.service not loaded = %q, want warn", got.Status)
@@ -189,20 +215,59 @@ func TestCheckDaemonServiceNotLoadedWarns(t *testing.T) {
 	}
 }
 
-// TestDaemonServiceSeamReceivesLabel pins the SSOT wiring: the launchctl
-// seam is called with engine.LaunchdServiceLabel, not a re-typed
-// literal.
-func TestDaemonServiceSeamReceivesLabel(t *testing.T) {
+func TestCheckDaemonServiceLoadedButStoppedWarns(t *testing.T) {
 	opts := happyOptions(t)
-	var gotLabel string
-	opts.LaunchctlPrintFn = func(label string) error {
-		gotLabel = label
-		return nil
+	opts.LaunchctlPrintFn = func(label string) (string, error) {
+		return launchctlStoppedOutput(label), nil
 	}
-	_ = findCheck(t, opts, "daemon.service")
-	if gotLabel != engine.LaunchdServiceLabel {
-		t.Errorf("launchctl seam got label %q, want engine.LaunchdServiceLabel %q",
-			gotLabel, engine.LaunchdServiceLabel)
+	got := findCheck(t, opts, "daemon.service")
+	if got.Status != diag.StatusWarn {
+		t.Errorf("daemon.service loaded but stopped = %q, want warn", got.Status)
+	}
+	if !strings.Contains(got.Message, "not running") {
+		t.Errorf("daemon.service stopped message should mention not running: %q", got.Message)
+	}
+}
+
+func TestDaemonServicePrefersNoxctlLabel(t *testing.T) {
+	opts := happyOptions(t)
+	var gotLabels []string
+	opts.LaunchctlPrintFn = func(label string) (string, error) {
+		gotLabels = append(gotLabels, label)
+		if label != engine.NoxctlLaunchdServiceLabel {
+			return "", errors.New("unexpected fallback")
+		}
+		return launchctlRunningOutput(label), nil
+	}
+	got := findCheck(t, opts, "daemon.service")
+	if got.Status != diag.StatusPass {
+		t.Errorf("daemon.service with current noxctl label = %q, want pass", got.Status)
+	}
+	if len(gotLabels) != 1 || gotLabels[0] != engine.NoxctlLaunchdServiceLabel {
+		t.Errorf("launchctl labels = %v, want only %q", gotLabels, engine.NoxctlLaunchdServiceLabel)
+	}
+}
+
+func TestDaemonServiceFallsBackToLegacyLabel(t *testing.T) {
+	opts := happyOptions(t)
+	var gotLabels []string
+	opts.LaunchctlPrintFn = func(label string) (string, error) {
+		gotLabels = append(gotLabels, label)
+		if label == engine.NoxctlLaunchdServiceLabel {
+			return "", errors.New("current label not loaded")
+		}
+		if label == engine.LaunchdServiceLabel {
+			return launchctlRunningOutput(label), nil
+		}
+		return "", errors.New("unexpected label")
+	}
+	got := findCheck(t, opts, "daemon.service")
+	if got.Status != diag.StatusPass {
+		t.Errorf("daemon.service with legacy fallback = %q, want pass", got.Status)
+	}
+	wantLabels := []string{engine.NoxctlLaunchdServiceLabel, engine.LaunchdServiceLabel}
+	if strings.Join(gotLabels, ",") != strings.Join(wantLabels, ",") {
+		t.Errorf("launchctl labels = %v, want %v", gotLabels, wantLabels)
 	}
 }
 
