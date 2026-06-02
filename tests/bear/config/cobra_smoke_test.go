@@ -237,9 +237,10 @@ func TestCobraDoctorReportsStaleStateFromExplicitStatePath(t *testing.T) {
 		"--log-path", logPath,
 		"--output", "json",
 	})
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	if runErr := cmd.Run(); runErr == nil {
 		t.Log("doctor exited 0; state freshness contract is still asserted below")
 	}
@@ -251,22 +252,22 @@ func TestCobraDoctorReportsStaleStateFromExplicitStatePath(t *testing.T) {
 			Message string `json:"message"`
 		} `json:"checks"`
 	}
-	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
-		t.Fatalf("decode doctor JSON: %v\nfull: %s", err, out.String())
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode doctor JSON: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 	}
 	for _, check := range result.Checks {
 		if check.Name != "state.freshness" {
 			continue
 		}
 		if check.Status != "warn" {
-			t.Fatalf("state.freshness status = %q, want warn\nfull: %s", check.Status, out.String())
+			t.Fatalf("state.freshness status = %q, want warn\nstdout: %s\nstderr: %s", check.Status, stdout.String(), stderr.String())
 		}
 		if !strings.Contains(check.Message, "last apply was") {
 			t.Fatalf("state.freshness message = %q, want stale-apply warning", check.Message)
 		}
 		return
 	}
-	t.Fatalf("doctor JSON missing state.freshness check\nfull: %s", out.String())
+	t.Fatalf("doctor JSON missing state.freshness check\nstdout: %s\nstderr: %s", stdout.String(), stderr.String())
 }
 
 // TestCobraInitWritesTemplate asserts `noxctl init <path>` writes a
