@@ -28,6 +28,8 @@ const (
 // Bear itself is present. Stat-only — doctor never launches it.
 const bearAppPath = "/Applications/Bear.app"
 
+const bearcliRemediation = "reinstall Bear; bearcli ships inside the app bundle"
+
 // Check names — the stable dotted IDs each check reports under. Centralized
 // so the JSON/text contract has one source of truth and the same identifier
 // is never spelled twice. Tests assert these literal values independently.
@@ -127,17 +129,17 @@ func checkSystemBearcli(opts Options) diag.Check {
 	if err != nil {
 		return errorCheckWithFix(groupSystem, nameBearcli,
 			fmt.Sprintf("bearcli not found at %s: %v", bearcli.BinaryPath, err),
-			"reinstall Bear; bearcli ships inside the app bundle")
+			bearcliRemediation)
 	}
 	if !info.Mode().IsRegular() {
 		return errorCheckWithFix(groupSystem, nameBearcli,
 			fmt.Sprintf("bearcli at %s is not a regular file", bearcli.BinaryPath),
-			"reinstall Bear; bearcli ships inside the app bundle")
+			bearcliRemediation)
 	}
 	if info.Mode().Perm()&0o111 == 0 {
 		return errorCheckWithFix(groupSystem, nameBearcli,
 			fmt.Sprintf("bearcli at %s is not executable", bearcli.BinaryPath),
-			"reinstall Bear; bearcli ships inside the app bundle")
+			bearcliRemediation)
 	}
 	return okCheck(groupSystem, nameBearcli, "bearcli present")
 }
@@ -192,6 +194,17 @@ func checkBearDBDir(opts Options) diag.Check {
 // writes. Open failure → error (blocking).
 func checkBearDBReadable(opts Options) diag.Check {
 	dbPath := filepath.Join(opts.BearDBDir, bearDatabaseFile)
+	info, statErr := opts.StatFn(dbPath)
+	if statErr != nil {
+		return errorCheckWithFix(groupBearDB, nameDBReadable,
+			fmt.Sprintf("cannot stat %s: %v", dbPath, statErr),
+			"check filesystem permissions on the Bear DB directory")
+	}
+	if !info.Mode().IsRegular() {
+		return errorCheckWithFix(groupBearDB, nameDBReadable,
+			fmt.Sprintf("%s is not a regular file", dbPath),
+			"point --bear-db at the Bear database directory")
+	}
 	file, err := opts.OpenFn(dbPath)
 	if err != nil {
 		return errorCheckWithFix(groupBearDB, nameDBReadable,
@@ -366,6 +379,11 @@ func launchctlServiceRunning(output string) bool {
 // stale (mtime older than StaleThreshold) → warn, fresh → pass.
 // Presence/mtime ONLY — no log content scan. Never errors.
 func checkDaemonLog(opts Options) diag.Check {
+	if opts.LogPathError != nil {
+		return warnCheck(groupDaemon, nameDaemonLog,
+			fmt.Sprintf("could not resolve daemon log path: %v", opts.LogPathError),
+			"fix ~/.noxctl/daemon.toml or pass --log-path")
+	}
 	path := opts.LogPath
 	if path == "" {
 		resolved, err := engine.DefaultDaemonLogPath()

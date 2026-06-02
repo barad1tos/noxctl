@@ -145,6 +145,7 @@ noxctl init ~/.config/noxctl/noxctl.toml   # writes [meta] + 3 worked examples
 
 ```bash
 noxctl validate ~/.config/noxctl/noxctl.toml          # schema check, no Bear I/O
+noxctl doctor --config ~/.config/noxctl/noxctl.toml   # environment preflight, no Bear writes
 noxctl plan --config ~/.config/noxctl/noxctl.toml     # preview the diff
 noxctl apply --config ~/.config/noxctl/noxctl.toml    # write it to Bear
 ```
@@ -220,6 +221,7 @@ Tidy the inferred fields (`index_title`, bucket names, `hub_h2_prefix`) before y
 ```
 noxctl validate [<config>]   strict TOML schema + dispatch checks (no Bear I/O)
 noxctl plan                  Terraform-style diff vs the live vault
+noxctl doctor                read-only environment / config / daemon preflight
 noxctl apply                 write the diff back to the vault (one-shot)
 noxctl daemon                long-running FSEvents-driven watcher
 noxctl audit                 read-only lint sweep across every managed tag

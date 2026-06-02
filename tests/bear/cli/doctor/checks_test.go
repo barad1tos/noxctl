@@ -30,13 +30,13 @@ import (
 // statAll is a StatFn seam that reports every path as a present,
 // executable regular file, so checks that need "exists" or
 // "executable" pass.
-func statAll(string) (os.FileInfo, error) { return fakeInfo{mode: 0o755}, nil }
+func statAll(_ string) (os.FileInfo, error) { return fakeInfo{mode: 0o755}, nil }
 
 // statDir reports every path as a present directory.
-func statDir(string) (os.FileInfo, error) { return fakeInfo{mode: fs.ModeDir | 0o755}, nil }
+func statDir(_ string) (os.FileInfo, error) { return fakeInfo{mode: fs.ModeDir | 0o755}, nil }
 
 // statMissing reports every path as absent.
-func statMissing(string) (os.FileInfo, error) { return nil, fs.ErrNotExist }
+func statMissing(_ string) (os.FileInfo, error) { return nil, fs.ErrNotExist }
 
 // openOK is an OpenFn seam that returns a real (closable) temp file so
 // the readability check's immediate Close succeeds without a live DB.
@@ -48,7 +48,7 @@ func openOK(t *testing.T) func(string) (*os.File, error) {
 }
 
 // openFail is an OpenFn seam that always fails (DB unreadable).
-func openFail(string) (*os.File, error) { return nil, fs.ErrPermission }
+func openFail(_ string) (*os.File, error) { return nil, fs.ErrPermission }
 
 // happyOptions returns Options whose every seam yields the "ready"
 // answer: present Bear.app + bearcli, readable DB, valid config,
@@ -149,6 +149,22 @@ func TestCheckBearDBReadableOpenFailureIsError(t *testing.T) {
 	got := findCheck(t, opts, "bear.db-readable")
 	if got.Status != diag.StatusError {
 		t.Errorf("bear.db-readable with open failure = %q, want error", got.Status)
+	}
+}
+
+func TestCheckBearDBReadableNonRegularDatabaseIsError(t *testing.T) {
+	opts := happyOptions(t)
+	dbPath := filepath.Join(opts.BearDBDir, "database.sqlite")
+	happyStat := opts.StatFn
+	opts.StatFn = func(path string) (os.FileInfo, error) {
+		if path == dbPath {
+			return fakeInfo{mode: fs.ModeDir | 0o755}, nil
+		}
+		return happyStat(path)
+	}
+	got := findCheck(t, opts, "bear.db-readable")
+	if got.Status != diag.StatusError {
+		t.Errorf("bear.db-readable with non-regular database = %q, want error", got.Status)
 	}
 }
 
@@ -292,6 +308,19 @@ func TestCheckDaemonLogAbsentWarns(t *testing.T) {
 	got := findCheck(t, opts, "daemon.log")
 	if got.Status != diag.StatusWarn {
 		t.Errorf("daemon.log absent = %q, want warn", got.Status)
+	}
+}
+
+func TestCheckDaemonLogResolutionErrorWarns(t *testing.T) {
+	opts := happyOptions(t)
+	opts.LogPath = ""
+	opts.LogPathError = errors.New("config: parse daemon.toml: bad syntax")
+	got := findCheck(t, opts, "daemon.log")
+	if got.Status != diag.StatusWarn {
+		t.Errorf("daemon.log with path resolution error = %q, want warn", got.Status)
+	}
+	if !strings.Contains(got.Message, "bad syntax") {
+		t.Errorf("daemon.log should include path resolution error: %q", got.Message)
 	}
 }
 

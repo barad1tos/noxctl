@@ -16,6 +16,7 @@ import (
 func TestResolveStatePathPrecedence(t *testing.T) {
 	t.Run("flag wins over env", resolveStatePathFlagWins)
 	t.Run("env wins over default", resolveStatePathEnvWins)
+	t.Run("env path expands", resolveStatePathEnvExpands)
 	t.Run("project-local state wins over home default", resolveStatePathProjectLocalWins)
 	t.Run("project-local state is used even when absent", resolveStatePathProjectLocalAbsent)
 }
@@ -41,6 +42,21 @@ func resolveStatePathEnvWins(t *testing.T) {
 	}
 	if got != "/from/env/state.json" {
 		t.Errorf("got %q, want the env value", got)
+	}
+}
+
+func resolveStatePathEnvExpands(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(config.EnvStatePath, "~/.noxctl/state.json")
+	got, err := doctor.ResolveStatePath("")
+	if err != nil {
+		t.Fatalf("ResolveStatePath: %v", err)
+	}
+	want := filepath.Join(home, ".noxctl", "state.json")
+	if got != want {
+		t.Errorf("got %q, want expanded env path %q", got, want)
 	}
 }
 

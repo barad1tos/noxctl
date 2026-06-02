@@ -1,6 +1,7 @@
 # noxctl daemon configuration
 # Copy to ~/.noxctl/daemon.toml and edit. Restart daemon after changes:
-# launchctl kickstart -k gui/$(id -u)/com.bear.regen-watchd
+# launchctl kickstart -k gui/$(id -u)/com.barad1tos.noxctl
+# Existing legacy installs may still use com.bear.regen-watchd.
 #
 # Defaults shown explicitly. Env-vars override these values (see
 # `noxctl daemon-config show` for current effective resolution).

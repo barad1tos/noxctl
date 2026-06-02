@@ -10,40 +10,61 @@ import (
 )
 
 func TestResolveDoctorLogPathPrecedence(t *testing.T) {
-	t.Run("flag wins", func(t *testing.T) {
-		t.Setenv(config.EnvLogPath, "/from/env.log")
-		got, err := resolveDoctorLogPath("/from/flag.log")
-		if err != nil {
-			t.Fatalf("resolveDoctorLogPath: %v", err)
-		}
-		if got != "/from/flag.log" {
-			t.Errorf("got %q, want flag value", got)
-		}
-	})
+	t.Run("flag wins", resolveDoctorLogPathFlagWins)
+	t.Run("env wins over daemon config", resolveDoctorLogPathEnvWins)
+	t.Run("env wins over invalid daemon config", resolveDoctorLogPathEnvWinsOverInvalidConfig)
+	t.Run("daemon config wins over default", resolveDoctorLogPathDaemonConfigWins)
+}
 
-	t.Run("env wins over daemon config", func(t *testing.T) {
-		writeDaemonLogConfig(t, "/from/file.log")
-		t.Setenv(config.EnvLogPath, "/from/env.log")
-		got, err := resolveDoctorLogPath("")
-		if err != nil {
-			t.Fatalf("resolveDoctorLogPath: %v", err)
-		}
-		if got != "/from/env.log" {
-			t.Errorf("got %q, want env value", got)
-		}
-	})
+func resolveDoctorLogPathFlagWins(t *testing.T) {
+	t.Helper()
+	t.Setenv(config.EnvLogPath, "/from/env.log")
+	got, err := resolveDoctorLogPath("/from/flag.log")
+	if err != nil {
+		t.Fatalf("resolveDoctorLogPath: %v", err)
+	}
+	if got != "/from/flag.log" {
+		t.Errorf("got %q, want flag value", got)
+	}
+}
 
-	t.Run("daemon config wins over default", func(t *testing.T) {
-		writeDaemonLogConfig(t, "/from/file.log")
-		t.Setenv(config.EnvLogPath, "")
-		got, err := resolveDoctorLogPath("")
-		if err != nil {
-			t.Fatalf("resolveDoctorLogPath: %v", err)
-		}
-		if got != "/from/file.log" {
-			t.Errorf("got %q, want daemon config value", got)
-		}
-	})
+func resolveDoctorLogPathEnvWins(t *testing.T) {
+	t.Helper()
+	writeDaemonLogConfig(t, "/from/file.log")
+	t.Setenv(config.EnvLogPath, "/from/env.log")
+	got, err := resolveDoctorLogPath("")
+	if err != nil {
+		t.Fatalf("resolveDoctorLogPath: %v", err)
+	}
+	if got != "/from/env.log" {
+		t.Errorf("got %q, want env value", got)
+	}
+}
+
+func resolveDoctorLogPathEnvWinsOverInvalidConfig(t *testing.T) {
+	t.Helper()
+	writeInvalidDaemonConfig(t)
+	t.Setenv(config.EnvLogPath, "/from/env.log")
+	got, err := resolveDoctorLogPath("")
+	if err != nil {
+		t.Fatalf("resolveDoctorLogPath: %v", err)
+	}
+	if got != "/from/env.log" {
+		t.Errorf("got %q, want env value", got)
+	}
+}
+
+func resolveDoctorLogPathDaemonConfigWins(t *testing.T) {
+	t.Helper()
+	writeDaemonLogConfig(t, "/from/file.log")
+	t.Setenv(config.EnvLogPath, "")
+	got, err := resolveDoctorLogPath("")
+	if err != nil {
+		t.Fatalf("resolveDoctorLogPath: %v", err)
+	}
+	if got != "/from/file.log" {
+		t.Errorf("got %q, want daemon config value", got)
+	}
 }
 
 func writeDaemonLogConfig(t *testing.T, logPath string) {
@@ -57,5 +78,18 @@ func writeDaemonLogConfig(t *testing.T, logPath string) {
 	body := "[daemon.paths]\nlog = " + strconv.Quote(logPath) + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write daemon config: %v", err)
+	}
+}
+
+func writeInvalidDaemonConfig(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := filepath.Join(home, ".noxctl", "daemon.toml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir daemon config dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("[daemon.paths\n"), 0o600); err != nil {
+		t.Fatalf("write invalid daemon config: %v", err)
 	}
 }

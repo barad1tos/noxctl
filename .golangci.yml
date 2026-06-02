@@ -165,6 +165,13 @@ linters:
       - path: '_test\.go$'
         linters:
           - dupl
+ # Test files exempt from complexity gates: scenario tests often read
+ # clearest as one complete flow with setup, action, and assertions.
+ # Production code stays bound to gocognit/gocyclo ≤15.
+      - path: '_test\.go$'
+        linters:
+          - gocognit
+          - gocyclo
 
 formatters:
   enable:

@@ -108,11 +108,15 @@ func TestValidateOutput_RejectsOther(t *testing.T) {
 	}
 }
 
-// TestSchemaVersionIsOne — the exported schema constant stays 1; a bump
-// is an opt-in breaking change for scripted consumers.
-func TestSchemaVersionIsOne(t *testing.T) {
-	if diag.SchemaVersion != 1 {
-		t.Errorf("diag.SchemaVersion = %d, want 1", diag.SchemaVersion)
+// TestResultSchemaVersionJSONIsOne — the JSON schema version stays 1;
+// a bump is an opt-in breaking change for scripted consumers.
+func TestResultSchemaVersionJSONIsOne(t *testing.T) {
+	out, err := json.Marshal(diag.Result{SchemaVersion: diag.SchemaVersion})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(out), `"schema_version":1`) {
+		t.Errorf("schema version JSON = %s, want schema_version 1", out)
 	}
 }
 

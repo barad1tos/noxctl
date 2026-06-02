@@ -396,11 +396,11 @@ func envOverlayString(dc *DaemonConfig, envName, sourceKey string, dst *string) 
 	dc.Sources[sourceKey] = SourceEnv
 }
 
-// expandPath performs ~/ -> $HOME/ rewriting then $VAR substitution.
+// ExpandPath performs ~/ -> $HOME/ rewriting then $VAR substitution.
 // Two-step so a path like "~/$LOG_DIR/file" round-trips: leading "~/"
 // expands first, then any embedded vars expand via os.ExpandEnv.
 // Mirrors the legacy daemon's envOr behavior.
-func expandPath(p string) string {
+func ExpandPath(p string) string {
 	if p == "" {
 		return p
 	}
@@ -408,4 +408,8 @@ func expandPath(p string) string {
 		p = "$HOME" + p[1:] // "~/foo" -> "$HOME/foo"
 	}
 	return os.ExpandEnv(p)
+}
+
+func expandPath(p string) string {
+	return ExpandPath(p)
 }

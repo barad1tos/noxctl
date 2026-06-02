@@ -153,6 +153,46 @@ func TestCobraSmoke(t *testing.T) {
 	}
 }
 
+func TestCobraDoctorInvalidDaemonConfigStillReports(t *testing.T) {
+	bin := buildBinary(t)
+	root := repoRoot(t)
+	validFixture := filepath.Join(root, "tests", "bear", "config", "testdata", "valid-minimal.toml")
+	home := t.TempDir()
+	daemonConfigPath := filepath.Join(home, ".noxctl", "daemon.toml")
+	if err := os.MkdirAll(filepath.Dir(daemonConfigPath), 0o755); err != nil {
+		t.Fatalf("mkdir daemon config dir: %v", err)
+	}
+	if err := os.WriteFile(daemonConfigPath, []byte("[daemon.paths\n"), 0o600); err != nil {
+		t.Fatalf("write invalid daemon config: %v", err)
+	}
+	dbDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dbDir, "database.sqlite"), []byte("SQLite format 3\x00"), 0o600); err != nil {
+		t.Fatalf("write database fixture: %v", err)
+	}
+
+	cmd := newCmd(bin, []string{
+		"doctor",
+		"--config", validFixture,
+		"--bear-db", dbDir,
+		"--state-path", filepath.Join(t.TempDir(), "state.json"),
+		"--output", "json",
+	})
+	cmd.Env = append(cmd.Env, "HOME="+home, "REGEN_LOG_PATH=")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if runErr := cmd.Run(); runErr == nil {
+		t.Log("doctor exited 0; output contract is still asserted below")
+	}
+
+	if !strings.Contains(out.String(), `"name": "daemon.log"`) {
+		t.Errorf("doctor output missing daemon.log check\nfull: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "config: parse") {
+		t.Errorf("doctor output missing daemon config parse error\nfull: %s", out.String())
+	}
+}
+
 // TestCobraInitWritesTemplate asserts `noxctl init <path>` writes a
 // valid TOML starter that subsequently passes `noxctl validate`
 // without any Bear-side I/O. Pins both the round-trip (init →

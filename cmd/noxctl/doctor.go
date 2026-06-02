@@ -41,8 +41,9 @@ reports five groups of checks:
   Daemon  — launchd service status and daemon log freshness
 
 Doctor is strictly read-only: it never invokes bearcli, only runs
-'launchctl print' (never loads or starts the service), opens the Bear
-database read-only, and parses config/state without writing.
+read-only process probes and 'launchctl print' (never loads or starts
+the service), opens the Bear database read-only, and parses
+config/state without writing.
 
 Exit codes: 0 = ready (warnings allowed), 1 = not ready (Bear.app or
 bearcli missing, Bear DB unreadable, or config invalid). Warnings —
@@ -83,25 +84,26 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	logPath, err := resolveDoctorLogPath(doctorLogPath)
-	if err != nil {
-		return err
-	}
+	logPath, logPathErr := resolveDoctorLogPath(doctorLogPath)
 
 	return doctor.Run(cmd.Context(), doctor.Options{
-		ConfigPath: configPath,
-		BearDBDir:  bearDBDir,
-		StatePath:  statePath,
-		LogPath:    logPath,
-		Output:     doctorOutput,
-		Stdout:     os.Stdout,
-		Stderr:     os.Stderr,
+		ConfigPath:   configPath,
+		BearDBDir:    bearDBDir,
+		StatePath:    statePath,
+		LogPath:      logPath,
+		LogPathError: logPathErr,
+		Output:       doctorOutput,
+		Stdout:       os.Stdout,
+		Stderr:       os.Stderr,
 	})
 }
 
 func resolveDoctorLogPath(cliFlag string) (string, error) {
 	if cliFlag != "" {
-		return cliFlag, nil
+		return config.ExpandPath(cliFlag), nil
+	}
+	if env := os.Getenv(config.EnvLogPath); env != "" {
+		return config.ExpandPath(env), nil
 	}
 	path, err := daemonConfigPath()
 	if err != nil {

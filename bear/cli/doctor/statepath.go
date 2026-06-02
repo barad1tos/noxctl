@@ -14,10 +14,10 @@ import (
 // unrelated daemon/home state.
 func ResolveStatePath(cliFlag string) (string, error) {
 	if cliFlag != "" {
-		return cliFlag, nil
+		return config.ExpandPath(cliFlag), nil
 	}
 	if env := os.Getenv(config.EnvStatePath); env != "" {
-		return env, nil
+		return config.ExpandPath(env), nil
 	}
 	return defaultStatePath, nil
 }

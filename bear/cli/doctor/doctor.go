@@ -77,6 +77,10 @@ type Options struct {
 	// LogPath is the daemon log location; empty defaults to
 	// ~/.cache/regen-watchd.log (the same path verify resolves).
 	LogPath string
+	// LogPathError is a non-fatal daemon-config/log-path resolution
+	// problem. doctor reports it as daemon.log warn instead of aborting
+	// before the diagnostic report can render.
+	LogPathError error
 	// Output picks text|json; diag.ValidateOutput enforces it.
 	Output string
 	// Stdout / Stderr are the IO sinks (nil defaults to the process
@@ -200,9 +204,11 @@ func processRunning(ctx context.Context, name string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && strings.TrimSpace(string(output)) == "" {
-		return false, nil
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		isPgrepNoMatch := exitErr.ExitCode() == 1 && strings.TrimSpace(string(output)) == ""
+		if isPgrepNoMatch {
+			return false, nil
+		}
 	}
 	processList, listErr := processList(ctx)
 	if listErr != nil {
