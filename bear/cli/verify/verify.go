@@ -211,7 +211,7 @@ func acquireVerifyLock(ctx context.Context, opts Options) (func(), *Check) {
 	if opts.ApplyOpts.LockPath == "" {
 		return func() {}, nil
 	}
-	release, err := engine.AcquireApply(ctx, opts.ApplyOpts.LockPath, false, opts.Stderr)
+	release, err := engine.AcquireVerify(ctx, opts.ApplyOpts.LockPath, opts.Stderr)
 	if err != nil {
 		return func() {}, &Check{
 			Name:    "verify-lock",

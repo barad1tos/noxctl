@@ -68,10 +68,10 @@ func AcquireApply(ctx context.Context, lockPath string, noWait bool, stderr io.W
 	if f, touchErr := os.Create(sentinelPath); touchErr == nil {
 		_ = f.Close()
 	}
-	fd, openErr := unix.Open(lockPath, lockOpenFlags, 0o600)
+	fd, openErr := openLockFile(lockPath, "AcquireApply")
 	if openErr != nil {
 		_ = os.Remove(sentinelPath)
-		return nil, fmt.Errorf("AcquireApply open %s: %w", lockPath, openErr)
+		return nil, openErr
 	}
 	if noWait {
 		if flockErr := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); flockErr != nil {
@@ -79,19 +79,10 @@ func AcquireApply(ctx context.Context, lockPath string, noWait bool, stderr io.W
 			_ = os.Remove(sentinelPath)
 			return nil, fmt.Errorf("AcquireApply flock: %w", flockErr)
 		}
-	} else if flockErr := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); flockErr != nil {
-		if !isLockHeld(flockErr) {
-			_ = unix.Close(fd)
-			_ = os.Remove(sentinelPath)
-			return nil, fmt.Errorf("AcquireApply flock: %w", flockErr)
-		}
-		// Single-line stderr advisory before the blocking flock call.
-		_, _ = fmt.Fprintf(stderr, "noxctl: waiting for lock at %s\n", lockPath)
-		if flockErr = unix.Flock(fd, unix.LOCK_EX); flockErr != nil {
-			_ = unix.Close(fd)
-			_ = os.Remove(sentinelPath)
-			return nil, fmt.Errorf("AcquireApply flock: %w", flockErr)
-		}
+	} else if flockErr := acquireBlockingFlock(fd, lockPath, "AcquireApply", stderr); flockErr != nil {
+		_ = unix.Close(fd)
+		_ = os.Remove(sentinelPath)
+		return nil, flockErr
 	}
 	writeLockPID(fd)
 	return func() {
@@ -101,8 +92,59 @@ func AcquireApply(ctx context.Context, lockPath string, noWait bool, stderr io.W
 	}, nil
 }
 
+// AcquireVerify is the read-only verifier's blocking lock acquire.
+// It serializes with daemon/apply cycles but deliberately does NOT
+// touch the apply-pending sentinel: verify will not apply after the
+// daemon yields, so advertising apply intent could drop a real daemon
+// event when polling is disabled.
+func AcquireVerify(ctx context.Context, lockPath string, stderr io.Writer) (release func(), err error) {
+	_ = ctx
+	if stderr == nil {
+		stderr = os.Stderr
+	}
+	fd, openErr := openLockFile(lockPath, "AcquireVerify")
+	if openErr != nil {
+		return nil, openErr
+	}
+	if flockErr := acquireBlockingFlock(fd, lockPath, "AcquireVerify", stderr); flockErr != nil {
+		_ = unix.Close(fd)
+		return nil, flockErr
+	}
+	writeLockPID(fd)
+	return func() {
+		_ = unix.Flock(fd, unix.LOCK_UN)
+		_ = unix.Close(fd)
+	}, nil
+}
+
 func isLockHeld(err error) bool {
 	return errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN)
+}
+
+func openLockFile(lockPath, operation string) (int, error) {
+	if mkdirErr := os.MkdirAll(filepath.Dir(lockPath), 0o700); mkdirErr != nil {
+		return -1, fmt.Errorf("%s mkdir: %w", operation, mkdirErr)
+	}
+	fd, openErr := unix.Open(lockPath, lockOpenFlags, 0o600)
+	if openErr != nil {
+		return -1, fmt.Errorf("%s open %s: %w", operation, lockPath, openErr)
+	}
+	return fd, nil
+}
+
+func acquireBlockingFlock(fd int, lockPath, operation string, stderr io.Writer) error {
+	if flockErr := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); flockErr != nil {
+		if !isLockHeld(flockErr) {
+			return fmt.Errorf("%s flock: %w", operation, flockErr)
+		}
+		if stderr != nil {
+			_, _ = fmt.Fprintf(stderr, "noxctl: waiting for lock at %s\n", lockPath)
+		}
+		if flockErr = unix.Flock(fd, unix.LOCK_EX); flockErr != nil {
+			return fmt.Errorf("%s flock: %w", operation, flockErr)
+		}
+	}
+	return nil
 }
 
 // AcquireDaemon is the daemon-side blocking lock acquire. No sentinel
@@ -110,16 +152,13 @@ func isLockHeld(err error) bool {
 // closes only.
 func AcquireDaemon(ctx context.Context, lockPath string) (release func(), err error) {
 	_ = ctx
-	if mkdirErr := os.MkdirAll(filepath.Dir(lockPath), 0o700); mkdirErr != nil {
-		return nil, fmt.Errorf("AcquireDaemon mkdir: %w", mkdirErr)
-	}
-	fd, openErr := unix.Open(lockPath, lockOpenFlags, 0o600)
+	fd, openErr := openLockFile(lockPath, "AcquireDaemon")
 	if openErr != nil {
-		return nil, fmt.Errorf("AcquireDaemon open %s: %w", lockPath, openErr)
+		return nil, openErr
 	}
-	if flockErr := unix.Flock(fd, unix.LOCK_EX); flockErr != nil {
+	if flockErr := acquireBlockingFlock(fd, lockPath, "AcquireDaemon", nil); flockErr != nil {
 		_ = unix.Close(fd)
-		return nil, fmt.Errorf("AcquireDaemon flock: %w", flockErr)
+		return nil, flockErr
 	}
 	writeLockPID(fd)
 	return func() {
