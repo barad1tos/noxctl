@@ -73,6 +73,10 @@ ERROR (a check could not run — bearcli unreachable, log absent, etc.).`,
 func runVerify(cmd *cobra.Command, _ []string) error {
 	// Output validation happens inside `verify.Run → render`; we
 	// don't duplicate the check at the cmd layer (single owner).
+	verifyLockPath, lockPathErr := resolveDaemonLockPath("verify")
+	if lockPathErr != nil {
+		return lockPathErr
+	}
 	opts := verify.Options{
 		ConfigPath: configPath,
 		WithApply:  verifyWithApply,
@@ -81,12 +85,16 @@ func runVerify(cmd *cobra.Command, _ []string) error {
 		Output:     verifyOutput,
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,
+		ApplyOpts: engine.ApplyOpts{
+			LockPath: verifyLockPath,
+		},
 	}
 	if verifyWithApply {
 		applyTemplate, err := buildVerifyApplyTemplate()
 		if err != nil {
 			return err
 		}
+		applyTemplate.LockPath = verifyLockPath
 		opts.ApplyOpts = applyTemplate
 	}
 	runErr := verify.Run(cmd.Context(), opts)
@@ -108,9 +116,10 @@ func runVerify(cmd *cobra.Command, _ []string) error {
 }
 
 // buildVerifyApplyTemplate primes `engine.ApplyOpts` with the
-// catalog-derived features + pin registry + project-local state/lock
-// paths that `noxctl apply` uses. Returns the template (Domains and
-// Stderr are filled in by verify at call time).
+// catalog-derived features, pin registry, and project-local state path.
+// runVerify overwrites LockPath with the daemon lock path before this
+// template reaches verify.Run. Returns the template (Domains and Stderr
+// are filled in by verify at call time).
 //
 // Errors only when the catalog itself can't be loaded — pin load is
 // best-effort (nil-safe registry per bear/pins.go), matching

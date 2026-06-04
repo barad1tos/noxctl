@@ -97,6 +97,18 @@ func daemonConfigPath() (string, error) {
 	return filepath.Join(home, ".noxctl", "daemon.toml"), nil
 }
 
+func resolveDaemonLockPath(commandName string) (string, error) {
+	dcPath, pathErr := daemonConfigPath()
+	if pathErr != nil {
+		return "", pathErr
+	}
+	dc, loadErr := config.LoadDaemon(dcPath)
+	if loadErr != nil {
+		return "", fmt.Errorf("%s: load daemon config for lock path: %w", commandName, loadErr)
+	}
+	return dc.LockPath, nil
+}
+
 // writeDaemonConfigShow renders the dump. Kept under gocognit by
 // extracting the [daemon] and [daemon.paths] sections into focused
 // helpers — adding new fields touches one of those, not the parent.
