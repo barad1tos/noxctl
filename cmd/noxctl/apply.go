@@ -41,7 +41,7 @@ var (
 var applyCmd = &cobra.Command{
 	Use:   "apply",
 	Short: "Apply noxctl.toml to Bear (one-shot regen)",
-	Long: `Apply runs the full regen cycle once — equivalent to regen-watchd --once.
+	Long: `Apply runs the full regen cycle once.
 
 Loads noxctl.toml, runs pre-passes (foreign-tag escape, auto-tag,
 cross-domain moves, time-promotion, duplicate registry — toggleable via
