@@ -1,6 +1,10 @@
-package doctor
+package doctor_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/barad1tos/noxctl/bear/cli/doctor"
+)
 
 func TestProcessListContainsExactProcessName(t *testing.T) {
 	processList := `/Applications/Bear.app/Contents/MacOS/Bear
@@ -8,13 +12,13 @@ func TestProcessListContainsExactProcessName(t *testing.T) {
 /usr/bin/grep Bear
 `
 
-	if !processListContains(processList, "Bear") {
+	if !doctor.ProcessListContains(processList, "Bear") {
 		t.Fatal("process list with Bear executable did not match Bear")
 	}
-	if processListContains("/Applications/Bear.app/Contents/MacOS/Bear Helper\n", "Bear") {
+	if doctor.ProcessListContains("/Applications/Bear.app/Contents/MacOS/Bear Helper\n", "Bear") {
 		t.Fatal("process list matched Bear Helper as Bear")
 	}
-	if processListContains("/usr/bin/grep Bear\n", "Bear") {
+	if doctor.ProcessListContains("/usr/bin/grep Bear\n", "Bear") {
 		t.Fatal("process list matched argv text instead of executable basename")
 	}
 }

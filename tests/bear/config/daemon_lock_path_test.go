@@ -1,12 +1,14 @@
-package main
+package config_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/barad1tos/noxctl/bear/config"
 )
 
-func TestResolveDaemonLockPath_UsesDaemonConfig(t *testing.T) {
+func TestResolveDaemonLockPathUsesDaemonConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	configDir := filepath.Join(home, ".noxctl")
@@ -18,20 +20,12 @@ func TestResolveDaemonLockPath_UsesDaemonConfig(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	got, err := resolveDaemonLockPath("verify")
+	got, err := config.ResolveDaemonLockPath("verify", filepath.Join(configDir, "daemon.toml"))
 	if err != nil {
-		t.Fatalf("resolveDaemonLockPath: %v", err)
+		t.Fatalf("ResolveDaemonLockPath: %v", err)
 	}
 	want := filepath.Join(home, "custom.lock")
 	if got != want {
 		t.Fatalf("lock path = %q, want %q", got, want)
-	}
-}
-
-func TestApplyOptionsFor_ThreadsResolvedLockPath(t *testing.T) {
-	lockPath := filepath.Join(t.TempDir(), ".lock")
-	got := applyOptionsFor(nil, nil, "", lockPath, 0)
-	if got.LockPath != lockPath {
-		t.Fatalf("LockPath = %q, want %q", got.LockPath, lockPath)
 	}
 }

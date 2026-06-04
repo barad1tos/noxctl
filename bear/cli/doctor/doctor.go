@@ -214,7 +214,7 @@ func processRunning(ctx context.Context, name string) (bool, error) {
 	if listErr != nil {
 		return false, fmt.Errorf("pgrep probe failed: %w; ps fallback failed: %v", err, listErr)
 	}
-	return processListContains(processList, name), nil
+	return ProcessListContains(processList, name), nil
 }
 
 func processList(ctx context.Context) (string, error) {
@@ -223,7 +223,9 @@ func processList(ctx context.Context) (string, error) {
 	return string(output), err
 }
 
-func processListContains(processList, name string) bool {
+// ProcessListContains reports whether a newline-separated process list
+// contains an executable whose basename exactly matches name.
+func ProcessListContains(processList, name string) bool {
 	for line := range strings.SplitSeq(processList, "\n") {
 		commandPath := strings.TrimSpace(line)
 		if commandPath == "" {
