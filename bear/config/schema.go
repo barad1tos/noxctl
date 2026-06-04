@@ -1,6 +1,6 @@
 // Package config decodes noxctl.toml into typed Catalog/Stanza
 // structs and dispatches each stanza into a *domain.Domain via the
-// closed 6-blueprint catalog.
+// closed 5-blueprint catalog.
 //
 // Architectural constraints:
 //
@@ -16,7 +16,7 @@
 // BurntSushi metadata.Undecoded distinguishes "field omitted" from
 // "field set to zero value" only when the field is *T (with the
 // `toml:"…"` tag). For optional fields we MUST distinguish — otherwise
-// per-blueprint validation can't tell "user typed unknown_bucket = """
+// per-blueprint validation can't tell "user typed unknown_bucket = \"\""
 // from "user omitted unknown_bucket altogether".
 package config
 
@@ -61,8 +61,7 @@ type Promotion struct {
 
 // Features is the optional [features] toggle table. All toggles are
 // pointer types so the loader can distinguish "omitted" from "set to
-// false" — 's apply path will need that distinction when
-// merging defaults vs explicit user overrides.
+// false" when merging defaults vs explicit user overrides.
 type Features struct {
 	AutoTagDefault    *bool `toml:"auto_tag_default"`
 	CrossDomainMoves  *bool `toml:"cross_domain_moves"`
