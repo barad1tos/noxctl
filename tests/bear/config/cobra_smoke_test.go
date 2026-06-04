@@ -178,16 +178,8 @@ func TestCobraDoctorInvalidDaemonConfigStillReports(t *testing.T) {
 	validFixture := filepath.Join(root, "tests", "bear", "config", "testdata", "valid-minimal.toml")
 	home := t.TempDir()
 	daemonConfigPath := filepath.Join(home, ".noxctl", "daemon.toml")
-	if err := os.MkdirAll(filepath.Dir(daemonConfigPath), 0o755); err != nil {
-		t.Fatalf("mkdir daemon config dir: %v", err)
-	}
-	if err := os.WriteFile(daemonConfigPath, []byte("[daemon.paths\n"), 0o600); err != nil {
-		t.Fatalf("write invalid daemon config: %v", err)
-	}
-	dbDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dbDir, "database.sqlite"), []byte("SQLite format 3\x00"), 0o600); err != nil {
-		t.Fatalf("write database fixture: %v", err)
-	}
+	writeInvalidDaemonConfigFile(t, daemonConfigPath)
+	dbDir := writeBearDatabaseFixture(t)
 
 	cmd := newCmd(bin, []string{
 		"doctor",
@@ -212,14 +204,87 @@ func TestCobraDoctorInvalidDaemonConfigStillReports(t *testing.T) {
 	}
 }
 
+func TestCobraDoctorUsesExplicitLogPathWhenDaemonConfigIsInvalid(t *testing.T) {
+	bin := buildBinary(t)
+	root := repoRoot(t)
+	validFixture := filepath.Join(root, "tests", "bear", "config", "testdata", "valid-minimal.toml")
+	home := t.TempDir()
+	daemonConfigPath := filepath.Join(home, ".noxctl", "daemon.toml")
+	writeInvalidDaemonConfigFile(t, daemonConfigPath)
+	dbDir := writeBearDatabaseFixture(t)
+	logPath := filepath.Join(t.TempDir(), "daemon.log")
+	if err := os.WriteFile(logPath, []byte("daemon started\n"), 0o600); err != nil {
+		t.Fatalf("write daemon log fixture: %v", err)
+	}
+
+	cmd := newCmd(bin, []string{
+		"doctor",
+		"--config", validFixture,
+		"--bear-db", dbDir,
+		"--state-path", filepath.Join(t.TempDir(), "state.json"),
+		"--log-path", logPath,
+		"--output", "json",
+	})
+	cmd.Env = append(cmd.Env, "HOME="+home, "REGEN_LOG_PATH=")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if runErr := cmd.Run(); runErr == nil {
+		t.Log("doctor exited 0; output contract is still asserted below")
+	}
+
+	if strings.Contains(out.String(), "config: parse") {
+		t.Fatalf("doctor read daemon config despite explicit --log-path\nfull: %s", out.String())
+	}
+	if !strings.Contains(out.String(), `"name": "daemon.log"`) {
+		t.Fatalf("doctor output missing daemon.log check\nfull: %s", out.String())
+	}
+}
+
+func TestCobraApplyAndVerifyReportInvalidDaemonConfigForLockPath(t *testing.T) {
+	bin := buildBinary(t)
+	root := repoRoot(t)
+	validFixture := filepath.Join(root, "tests", "bear", "config", "testdata", "valid-minimal.toml")
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "apply",
+			args: []string{"apply", "--config", validFixture, "--auto-approve"},
+			want: "apply: load daemon config for lock path",
+		},
+		{
+			name: "verify",
+			args: []string{"verify", "--config", validFixture},
+			want: "verify: load daemon config for lock path",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			daemonConfigPath := filepath.Join(home, ".noxctl", "daemon.toml")
+			writeInvalidDaemonConfigFile(t, daemonConfigPath)
+			cmd := newCmd(bin, tc.args)
+			cmd.Env = append(cmd.Env, "HOME="+home)
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("%s succeeded with invalid daemon config\noutput: %s", tc.name, out)
+			}
+			if !strings.Contains(string(out), tc.want) {
+				t.Fatalf("%s output missing %q\nfull: %s", tc.name, tc.want, out)
+			}
+		})
+	}
+}
+
 func TestCobraDoctorReportsStaleStateFromExplicitStatePath(t *testing.T) {
 	bin := buildBinary(t)
 	root := repoRoot(t)
 	validFixture := filepath.Join(root, "tests", "bear", "config", "testdata", "valid-minimal.toml")
-	dbDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dbDir, "database.sqlite"), []byte("SQLite format 3\x00"), 0o600); err != nil {
-		t.Fatalf("write database fixture: %v", err)
-	}
+	dbDir := writeBearDatabaseFixture(t)
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	oldApply := time.Now().UTC().Add(-30 * 24 * time.Hour).Format(time.RFC3339Nano)
 	stateBody := []byte(`{"version":"1","last_apply":"` + oldApply + `"}`)
@@ -378,6 +443,15 @@ func TestCobraValidatePerformance(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
 		t.Errorf("validate took %v on small fixture (budget 500ms; full corpus budget 1s)", elapsed)
 	}
+}
+
+func writeBearDatabaseFixture(t *testing.T) string {
+	t.Helper()
+	dbDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dbDir, "database.sqlite"), []byte("SQLite format 3\x00"), 0o600); err != nil {
+		t.Fatalf("write database fixture: %v", err)
+	}
+	return dbDir
 }
 
 // buildBinary compiles cmd/noxctl into a temp directory and returns

@@ -223,8 +223,8 @@ func processList(ctx context.Context) (string, error) {
 	return string(output), err
 }
 
-// ProcessListContains reports whether a newline-separated process list
-// contains an executable whose basename exactly matches name.
+// ProcessListContains reports whether ps -axo comm= style output contains a
+// process whose executable basename exactly matches name.
 func ProcessListContains(processList, name string) bool {
 	for line := range strings.SplitSeq(processList, "\n") {
 		commandPath := strings.TrimSpace(line)

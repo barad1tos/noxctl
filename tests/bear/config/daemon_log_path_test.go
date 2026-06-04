@@ -4,19 +4,22 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/config"
 )
 
-func TestResolveDoctorLogPathPrecedence(t *testing.T) {
-	t.Run("flag wins", resolveDoctorLogPathFlagWins)
-	t.Run("env wins over daemon config", resolveDoctorLogPathEnvWins)
-	t.Run("env wins over invalid daemon config", resolveDoctorLogPathEnvWinsOverInvalidConfig)
-	t.Run("daemon config wins over default", resolveDoctorLogPathDaemonConfigWins)
+func TestResolveDaemonLogPathPrecedence(t *testing.T) {
+	t.Run("flag wins", resolveDaemonLogPathFlagWins)
+	t.Run("env wins over daemon config", resolveDaemonLogPathEnvWins)
+	t.Run("env wins over invalid daemon config", resolveDaemonLogPathEnvWinsOverInvalidConfig)
+	t.Run("daemon config wins over default", resolveDaemonLogPathDaemonConfigWins)
+	t.Run("missing daemon config path returns error", resolveDaemonLogPathMissingConfigPathErrors)
+	t.Run("invalid daemon config returns error", resolveDaemonLogPathInvalidConfigErrors)
 }
 
-func resolveDoctorLogPathFlagWins(t *testing.T) {
+func resolveDaemonLogPathFlagWins(t *testing.T) {
 	t.Helper()
 	t.Setenv(config.EnvLogPath, "/from/env.log")
 	got, err := config.ResolveDaemonLogPath("/from/flag.log", daemonConfigPathForTest(t))
@@ -28,7 +31,7 @@ func resolveDoctorLogPathFlagWins(t *testing.T) {
 	}
 }
 
-func resolveDoctorLogPathEnvWins(t *testing.T) {
+func resolveDaemonLogPathEnvWins(t *testing.T) {
 	t.Helper()
 	path := writeDaemonLogConfig(t, "/from/file.log")
 	t.Setenv(config.EnvLogPath, "/from/env.log")
@@ -41,7 +44,7 @@ func resolveDoctorLogPathEnvWins(t *testing.T) {
 	}
 }
 
-func resolveDoctorLogPathEnvWinsOverInvalidConfig(t *testing.T) {
+func resolveDaemonLogPathEnvWinsOverInvalidConfig(t *testing.T) {
 	t.Helper()
 	path := writeInvalidDaemonConfig(t)
 	t.Setenv(config.EnvLogPath, "/from/env.log")
@@ -54,7 +57,7 @@ func resolveDoctorLogPathEnvWinsOverInvalidConfig(t *testing.T) {
 	}
 }
 
-func resolveDoctorLogPathDaemonConfigWins(t *testing.T) {
+func resolveDaemonLogPathDaemonConfigWins(t *testing.T) {
 	t.Helper()
 	path := writeDaemonLogConfig(t, "/from/file.log")
 	t.Setenv(config.EnvLogPath, "")
@@ -64,6 +67,31 @@ func resolveDoctorLogPathDaemonConfigWins(t *testing.T) {
 	}
 	if got != "/from/file.log" {
 		t.Errorf("got %q, want daemon config value", got)
+	}
+}
+
+func resolveDaemonLogPathMissingConfigPathErrors(t *testing.T) {
+	t.Helper()
+	t.Setenv(config.EnvLogPath, "")
+	_, err := config.ResolveDaemonLogPath("", "")
+	if err == nil {
+		t.Fatal("ResolveDaemonLogPath returned nil error for an empty daemon config path")
+	}
+	if !strings.Contains(err.Error(), "daemon config path required") {
+		t.Fatalf("error = %q, want missing daemon config path context", err.Error())
+	}
+}
+
+func resolveDaemonLogPathInvalidConfigErrors(t *testing.T) {
+	t.Helper()
+	path := writeInvalidDaemonConfig(t)
+	t.Setenv(config.EnvLogPath, "")
+	_, err := config.ResolveDaemonLogPath("", path)
+	if err == nil {
+		t.Fatal("ResolveDaemonLogPath returned nil error for invalid daemon config")
+	}
+	if !strings.Contains(err.Error(), "daemon.toml") {
+		t.Fatalf("error = %q, want daemon.toml path context", err.Error())
 	}
 }
 
@@ -90,11 +118,16 @@ func writeDaemonLogConfig(t *testing.T, logPath string) string {
 func writeInvalidDaemonConfig(t *testing.T) string {
 	t.Helper()
 	path := daemonConfigPathForTest(t)
+	writeInvalidDaemonConfigFile(t, path)
+	return path
+}
+
+func writeInvalidDaemonConfigFile(t *testing.T, path string) {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir daemon config dir: %v", err)
 	}
 	if err := os.WriteFile(path, []byte("[daemon.paths\n"), 0o600); err != nil {
 		t.Fatalf("write invalid daemon config: %v", err)
 	}
-	return path
 }

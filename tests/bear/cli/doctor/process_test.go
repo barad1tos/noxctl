@@ -21,4 +21,7 @@ func TestProcessListContainsExactProcessName(t *testing.T) {
 	if doctor.ProcessListContains("/usr/bin/grep Bear\n", "Bear") {
 		t.Fatal("process list matched argv text instead of executable basename")
 	}
+	if doctor.ProcessListContains("\n   \n", "Bear") {
+		t.Fatal("blank process list rows matched Bear")
+	}
 }

@@ -179,6 +179,9 @@ func ResolveDaemonLogPath(cliFlag, daemonConfigPath string) (string, error) {
 	if env := os.Getenv(EnvLogPath); env != "" {
 		return ExpandPath(env), nil
 	}
+	if daemonConfigPath == "" {
+		return "", errors.New("daemon config path required")
+	}
 	dc, err := LoadDaemon(daemonConfigPath)
 	if err != nil {
 		return "", err
@@ -188,10 +191,13 @@ func ResolveDaemonLogPath(cliFlag, daemonConfigPath string) (string, error) {
 
 // ResolveDaemonLockPath resolves the daemon lock path for commands that
 // coordinate with the long-running daemon.
-func ResolveDaemonLockPath(commandName, daemonConfigPath string) (string, error) {
+func ResolveDaemonLockPath(daemonConfigPath string) (string, error) {
+	if daemonConfigPath == "" {
+		return "", errors.New("daemon config path required")
+	}
 	dc, err := LoadDaemon(daemonConfigPath)
 	if err != nil {
-		return "", fmt.Errorf("%s: load daemon config for lock path: %w", commandName, err)
+		return "", err
 	}
 	return dc.LockPath, nil
 }

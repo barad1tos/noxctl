@@ -8,7 +8,7 @@ import (
 	"github.com/barad1tos/noxctl/bear/cliutil"
 )
 
-func TestRunWithSignalContextMapsDirectContextCancel(t *testing.T) {
+func TestRunWithSignalContext_MapsDirectContextCancel(t *testing.T) {
 	err := cliutil.RunWithSignalContext(context.Background(), cliutil.ErrInterrupted, func(_ context.Context) error {
 		return context.Canceled
 	})
