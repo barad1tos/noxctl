@@ -99,21 +99,14 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 }
 
 func resolveDoctorLogPath(cliFlag string) (string, error) {
-	if cliFlag != "" {
-		return config.ExpandPath(cliFlag), nil
-	}
-	if env := os.Getenv(config.EnvLogPath); env != "" {
-		return config.ExpandPath(env), nil
+	if cliFlag != "" || os.Getenv(config.EnvLogPath) != "" {
+		return config.ResolveDaemonLogPath(cliFlag, "")
 	}
 	path, err := daemonConfigPath()
 	if err != nil {
 		return "", err
 	}
-	dc, err := config.LoadDaemon(path)
-	if err != nil {
-		return "", err
-	}
-	return dc.LogPath, nil
+	return config.ResolveDaemonLogPath("", path)
 }
 
 func init() {

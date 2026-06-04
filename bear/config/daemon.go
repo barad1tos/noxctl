@@ -170,6 +170,38 @@ func LoadDaemon(path string) (DaemonConfig, error) {
 	return dc, nil
 }
 
+// ResolveDaemonLogPath resolves the daemon log path used by read-only
+// diagnostics. Precedence: CLI flag, REGEN_LOG_PATH, daemon config.
+func ResolveDaemonLogPath(cliFlag, daemonConfigPath string) (string, error) {
+	if cliFlag != "" {
+		return ExpandPath(cliFlag), nil
+	}
+	if env := os.Getenv(EnvLogPath); env != "" {
+		return ExpandPath(env), nil
+	}
+	if daemonConfigPath == "" {
+		return "", errors.New("daemon config path required")
+	}
+	dc, err := LoadDaemon(daemonConfigPath)
+	if err != nil {
+		return "", err
+	}
+	return dc.LogPath, nil
+}
+
+// ResolveDaemonLockPath resolves the daemon lock path for commands that
+// coordinate with the long-running daemon.
+func ResolveDaemonLockPath(daemonConfigPath string) (string, error) {
+	if daemonConfigPath == "" {
+		return "", errors.New("daemon config path required")
+	}
+	dc, err := LoadDaemon(daemonConfigPath)
+	if err != nil {
+		return "", err
+	}
+	return dc.LockPath, nil
+}
+
 // applyFileOverlay applies non-nil daemonStanza fields onto dc and
 // flips Sources to SourceFile for each overridden field. Duration
 // strings are validated here so a bad value in the file produces a

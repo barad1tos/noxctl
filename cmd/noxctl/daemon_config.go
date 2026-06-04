@@ -102,11 +102,11 @@ func resolveDaemonLockPath(commandName string) (string, error) {
 	if pathErr != nil {
 		return "", pathErr
 	}
-	dc, loadErr := config.LoadDaemon(dcPath)
+	lockPath, loadErr := config.ResolveDaemonLockPath(dcPath)
 	if loadErr != nil {
 		return "", fmt.Errorf("%s: load daemon config for lock path: %w", commandName, loadErr)
 	}
-	return dc.LockPath, nil
+	return lockPath, nil
 }
 
 // writeDaemonConfigShow renders the dump. Kept under gocognit by
