@@ -7,8 +7,8 @@ Bear-rendered screenshots referenced from the main README's
 
 | File         | Source state                                                                                                                | Status                                   |
 |--------------|-----------------------------------------------------------------------------------------------------------------------------|------------------------------------------|
-| `before.png` | Bear filtered to `#nox-demo/books`, five demo atoms visible, no master                                                       | pending — capture per instructions below |
-| `after.png`  | Same filter after `noxctl apply --config examples/demo-vault/noxctl.toml`, six notes visible (5 atoms + 1 `✱ Books` master) | pending — capture per instructions below |
+| `before.png` | Bear filtered to `#nox-demo/books`, five demo atoms visible, no master                                                       | captured - tracked README asset          |
+| `after.png`  | Same filter after `noxctl apply --config examples/demo-vault/noxctl.toml`, six notes visible (5 atoms + 1 `✱ Books` master) | captured - tracked README asset          |
 
 Per-blueprint visuals are NOT screenshots: the five masters all render as a
 list, so master screenshots barely tell them apart. The README's "Choosing a
