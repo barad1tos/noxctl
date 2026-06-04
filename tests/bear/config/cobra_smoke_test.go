@@ -98,9 +98,11 @@ func TestCobraSmoke(t *testing.T) {
 		// via --help. Real behavior is exercised by the engine-level tests
 		// at tests/bear/engine/* (no live bearcli in CI).
 		{"apply-help-no-wait", []string{"apply", "--help"}, "--no-wait", true},
+		{"apply-help-lock-path", []string{"apply", "--help"}, "~/.noxctl/.lock", true},
 		{"apply-help-auto-approve", []string{"apply", "--help"}, "--auto-approve", true},
 		{"apply-help-bear-db", []string{"apply", "--help"}, "--bear-db", true},
 		{"daemon-help-bear-db", []string{"daemon", "--help"}, "--bear-db", true},
+		{"daemon-help-lock-path", []string{"daemon", "--help"}, "~/.noxctl/.lock", true},
 		// --sweep drives concurrency per iteration, so combining it with an
 		// explicit --concurrency would silently drop the operator's value. The
 		// boundary fails fast with a clear message before any Bear I/O.

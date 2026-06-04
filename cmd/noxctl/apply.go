@@ -49,8 +49,9 @@ cross-domain moves, time-promotion, duplicate registry — toggleable via
 per-domain progress to ./.noxctl/state.json incrementally so partial-
 success state is recoverable.
 
-Concurrency: serializes through ./.noxctl/.lock via flock. By default
-blocks forever waiting for the lock; --no-wait fails fast if held.
+Concurrency: serializes through the daemon lock path (REGEN_LOCK_PATH
+or [daemon.paths].lock; default ~/.noxctl/.lock). By default blocks
+forever waiting for the lock; --no-wait fails fast if held.
 SIGINT mid-apply persists state.json with InProgress marker and exits
 130; rerunning resumes idempotently.
 
@@ -77,14 +78,18 @@ func runApply(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("--concurrency cannot be combined with --sweep "+
 			"(--sweep drives concurrency per iteration; got --concurrency=%d)", applyConcurrency)
 	}
+	applyLockPath, lockPathErr := resolveDaemonLockPath("apply")
+	if lockPathErr != nil {
+		return lockPathErr
+	}
 
 	runErr := runWithSignalContext(cmd, func(ctx context.Context) error {
 		return cli.RunApplySweep(ctx, sweep, func(concurrency int) cli.ApplyOptions {
 			if len(sweep) > 0 {
 				_, _ = fmt.Fprintf(os.Stdout, "noxctl apply --bench: concurrency=%d\n", concurrency)
-				return applyOptionsFor(domains, cat, target, concurrency)
+				return applyOptionsFor(domains, cat, target, applyLockPath, concurrency)
 			}
-			return applyOptionsFor(domains, cat, target, applyConcurrency)
+			return applyOptionsFor(domains, cat, target, applyLockPath, applyConcurrency)
 		})
 	})
 	switch {
@@ -98,11 +103,18 @@ func runApply(cmd *cobra.Command, _ []string) error {
 
 // applyOptionsFor builds the cli.ApplyOptions for one run at the given
 // concurrency. --sweep implies --bench so each swept run captures metrics.
-func applyOptionsFor(domains []*domain.Domain, cat *config.Catalog, target string, concurrency int) cli.ApplyOptions {
+func applyOptionsFor(
+	domains []*domain.Domain,
+	cat *config.Catalog,
+	target string,
+	lockPath string,
+	concurrency int,
+) cli.ApplyOptions {
 	return cli.ApplyOptions{
 		Domains:     domains,
 		Catalog:     cat,
 		PinTarget:   target,
+		LockPath:    lockPath,
 		NoWait:      applyNoWait,
 		Quiet:       quiet,
 		Stdout:      os.Stdout,
@@ -114,7 +126,7 @@ func applyOptionsFor(domains []*domain.Domain, cat *config.Catalog, target strin
 
 func init() {
 	applyCmd.Flags().BoolVar(&applyNoWait, "no-wait", false,
-		"fail fast if ./.noxctl/.lock is held by another process (default: block forever)")
+		"fail fast if the daemon lock path is held by another process (default: block forever)")
 	applyCmd.Flags().BoolVar(&applyAutoApprove, "auto-approve", false,
 		"reserved for future destructive verbs; accepted as a no-op in v1")
 	applyCmd.Flags().StringVar(&applyBearDBFlag, "bear-db", "",

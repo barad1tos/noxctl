@@ -35,10 +35,12 @@ var daemonCmd = &cobra.Command{
 	Long: `Daemon runs the long-running watcher that triggers a regen cycle whenever
 Bear's SQLite database changes. Uses fsnotify's kqueue backend on macOS.
 
-Per-cycle flock at ./.noxctl/.lock serializes with manual ` + "`noxctl apply`" + `
-invocations; if a noxctl apply touches ./.noxctl/.apply-pending the daemon
-yields its current cycle and lets apply proceed. Self-write epsilon (2s)
-prevents the daemon from looping on its own bearcli writes.
+Per-cycle flock uses the daemon lock path (REGEN_LOCK_PATH or
+[daemon.paths].lock; default ~/.noxctl/.lock) and serializes with manual
+` + "`noxctl apply`" + ` / ` + "`noxctl verify`" + ` invocations. If a noxctl apply or verify touches
+the sibling .apply-pending sentinel, the daemon yields its current cycle.
+Self-write epsilon (2s) prevents the daemon from looping on its own bearcli
+writes.
 
 Graceful shutdown on SIGINT/SIGTERM: drains the in-flight regen cycle,
 releases the flock, exits 0.

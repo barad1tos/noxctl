@@ -52,10 +52,12 @@ type Options struct {
 	// uses when `WithApply` is true. The caller fills Pins,
 	// StatePath, LockPath, Features (typically via the catalog→Features
 	// bridge in `bear/cliutil`) — verify overrides Domains and
-	// Stderr at call time. Required when WithApply is true; ignored
-	// otherwise. Without these the underlying `engine.Apply` errors
-	// at flock-acquire with "AcquireApply open : no such file or
-	// directory" before the idempotency check can even begin.
+	// Stderr at call time. LockPath is also used by read-only
+	// plan-parity so verify serializes with daemon cycles. The full
+	// template is required when WithApply is true; otherwise only
+	// LockPath is used. Without these the underlying `engine.Apply`
+	// errors at flock-acquire with "AcquireApply open : no such file
+	// or directory" before the idempotency check can even begin.
 	ApplyOpts engine.ApplyOpts
 	// LogPath overrides the daemon log location. Empty defaults to
 	// `~/.cache/regen-watchd.log`.
@@ -178,11 +180,19 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	opts.ApplyOpts.Features = cliutil.FeaturesFromCatalog(cat)
 
+	releaseVerifyLock, lockCheck := acquireVerifyLock(sigCtx, opts)
+	if lockCheck != nil {
+		result.Checks = append(result.Checks, *lockCheck)
+		result.CompletedAt = time.Now().UTC()
+		return finalize(sigCtx, opts, &result)
+	}
+
 	result.Checks = append(
 		result.Checks,
 		checkPlanParity(sigCtx, opts, domains),
 		checkDaemonLog(opts),
 	)
+	releaseVerifyLock()
 	if opts.WithApply {
 		result.Checks = append(result.Checks, checkApplyIdempotency(sigCtx, opts, domains))
 	} else {
@@ -195,6 +205,21 @@ func Run(ctx context.Context, opts Options) error {
 
 	result.CompletedAt = time.Now().UTC()
 	return finalize(sigCtx, opts, &result)
+}
+
+func acquireVerifyLock(ctx context.Context, opts Options) (func(), *Check) {
+	if opts.ApplyOpts.LockPath == "" {
+		return func() {}, nil
+	}
+	release, err := engine.AcquireVerify(ctx, opts.ApplyOpts.LockPath, opts.Stderr)
+	if err != nil {
+		return func() {}, &Check{
+			Name:    "verify-lock",
+			Status:  StatusError,
+			Message: fmt.Sprintf("acquire %s: %v", opts.ApplyOpts.LockPath, err),
+		}
+	}
+	return release, nil
 }
 
 // defaultIOAndPool fills nil Stdout/Stderr with the process streams

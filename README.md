@@ -25,6 +25,7 @@ Declarative macOS CLI for Bear notes structure management — *Terraform for Bea
 
 - [What noxctl does to your vault](#what-noxctl-does-to-your-vault)
 - [Quick start](#quick-start)
+- [Safety preflight & verification](#safety-preflight--verification)
 - [One-shot vs daemon mode](#one-shot-vs-daemon-mode)
 - [User-level trade-offs](#user-level-trade-offs)
 - [Choosing a blueprint](#choosing-a-blueprint)
@@ -148,7 +149,12 @@ noxctl validate ~/.config/noxctl/noxctl.toml          # schema check, no Bear I/
 noxctl doctor --config ~/.config/noxctl/noxctl.toml   # environment preflight, no Bear writes
 noxctl plan --config ~/.config/noxctl/noxctl.toml     # preview the diff
 noxctl apply --config ~/.config/noxctl/noxctl.toml    # write it to Bear
+noxctl plan --config ~/.config/noxctl/noxctl.toml     # rerun after apply; should show no diff
 ```
+
+Once you use daemon mode, add `noxctl verify --config ~/.config/noxctl/noxctl.toml` as the operator gate that
+checks both zero drift and a clean daemon log. On a fresh one-shot setup where the daemon has never run, `verify`
+will report the missing daemon log instead of silently pretending the daemon path was checked.
 
 > **Before your first `apply`:** it mutates your local Bear database through Bear's bundled `bearcli` and has no built-in undo button — back up via **File → Backup Database…** first (details in *Safety, backup & undo* below).
 
@@ -161,7 +167,7 @@ Optional: run `noxctl daemon --config ~/.config/noxctl/noxctl.toml` when you wan
 There is no built-in undo button — noxctl rewrites notes through Bear's bundled `bearcli`, which mutates the local Bear database. Recovery routes through Bear itself: trashed notes stay in Bear's trash until you manually empty it; an atom whose canonical tag-line you don't like can be edited in Bear like any other note (the next `apply` will reconcile, but a destructive rewrite can be reverted manually). For a hub or master you no longer want, `noxctl destroy <tag>` moves the auto-generated notes to Bear's trash and strips the canonical line from atoms in place — body content is preserved.
 
 **Q: How do I back up before the first apply?**
-Bear ships a built-in backup in **File → Backup Database…** — recommended before the first `noxctl apply` on a corpus you care about. The exported `.bearbackup` archive is a self-contained snapshot you can restore from. noxctl writes no note data outside Bear except its own state files (`~/.cache/regen-watchd.log` for daemon logs and `.noxctl/state.json` for per-domain content hashes); those are safe to delete and noxctl will rebuild them on the next run.
+Bear ships a built-in backup in **File → Backup Database…** — recommended before the first `noxctl apply` on a corpus you care about. The exported `.bearbackup` archive is a self-contained snapshot you can restore from. noxctl writes no note data outside Bear. Runtime files are limited to the daemon log (`~/.cache/regen-watchd.log`), per-domain hash state (`.noxctl/state.json` for one-shot apply; daemon defaults to `~/.noxctl/state.json`), and lock/sentinel files beside the daemon lock (`~/.noxctl/.lock` and `.apply-pending` by default). They are safe to delete only after stopping any running `noxctl daemon`, `apply`, or `verify`; noxctl will rebuild them on the next run.
 
 **Q: Where do destroyed notes go?**
 `noxctl destroy <tag>` calls `bearcli` to trash the auto-generated master and any hubs under the tag. Trashed notes stay in Bear's trash (recoverable via the Bear UI) until you empty it manually. Atom notes are NOT trashed by `destroy` — only their canonical tag-line (the top-of-body `#tag | …` line) is stripped; the human-authored body below stays intact in place.
@@ -221,12 +227,12 @@ Tidy the inferred fields (`index_title`, bucket names, `hub_h2_prefix`) before y
 ```
 noxctl validate [<config>]   strict TOML schema + dispatch checks (no Bear I/O)
 noxctl plan                  Terraform-style diff vs the live vault
-noxctl doctor                read-only environment / config / daemon preflight
+noxctl doctor                read-only environment / config / state / daemon preflight
 noxctl apply                 write the diff back to the vault (one-shot)
 noxctl daemon                long-running FSEvents-driven watcher
 noxctl audit                 read-only lint sweep across every managed tag
 noxctl lint [--apply]        report or auto-fix structural defects
-noxctl verify                hard gate: catalog ↔ vault alignment check
+noxctl verify                hard gate: plan parity + daemon-log scan
 noxctl daemon-config         inspect resolved daemon configuration
 noxctl destroy <tag>         trash generated masters/hubs and strip managed lines from atoms
 noxctl import <bear-tag>     bootstrap a noxctl.toml stanza from Bear
@@ -237,6 +243,68 @@ noxctl version               print version + build metadata
 `apply` is the one-shot reconciliation; the daemon runs the same engine on a debounce-2s FSEvents signal plus an `mtime` poll fallback for cases where Bear defers a SQLite WAL commit past the file-system event window. `audit` and `lint` operate on note structure (broken-H1 titles, malformed canonical tag-lines, orphan families, duplicate titles) without touching the hub/master layout `apply` owns.
 
 </details>
+
+## Safety preflight & verification
+
+noxctl now has two diagnostic commands. They are deliberately separate because they answer different questions.
+
+`noxctl doctor` answers: **"Is this Mac ready to run noxctl safely?"** Run it before the first `plan`, before
+the first `apply`, after changing daemon settings, or whenever a bug report would otherwise start with "it does
+not work on my machine".
+
+Doctor is strictly read-only. It does not mutate notes, does not invoke `bearcli`, and does not start or install a
+daemon. It inspects the local environment and reports grouped checks:
+
+- **System** — macOS, `/Applications/Bear.app`, bundled `bearcli`, and whether Bear is currently running.
+- **Bear DB** — the Bear database directory and whether `database.sqlite` can be opened read-only.
+- **Config** — `noxctl.toml` presence and schema validity.
+- **State** — `state.json` presence and whether the last apply is recent enough to trust.
+- **Daemon** — whether a supported launchd service is loaded/running and whether the daemon log is fresh.
+
+Warnings do not fail doctor. A running Bear app, missing optional daemon, first-run state, or stale state is useful
+operator context, not necessarily a blocker. Hard failures are the things that make safe operation impossible:
+Bear/Bear CLI missing, unreadable Bear database, or invalid config.
+
+```bash
+noxctl doctor --config ~/.config/noxctl/noxctl.toml
+noxctl doctor --config ~/.config/noxctl/noxctl.toml --output json
+```
+
+Use JSON when filing an issue or comparing environments. The JSON output keeps the same check names as the text
+output and includes `status`, `message`, `group`, and optional remediation text.
+
+If your daemon uses non-default paths, pass the same overrides to doctor: `--bear-db` for the Bear database
+directory, `--state-path` for `state.json`, and `--log-path` for the daemon log. That keeps the preflight pointed
+at the same files the daemon or operator workflow actually uses.
+
+`noxctl verify` answers: **"Does the live vault still match the catalog and daemon path?"** It is the
+operator-side gate after daemon-backed runs, after restarting the daemon, or before treating a change as shipped.
+For a first one-shot run where the daemon has never written a log, rerun `noxctl plan` after `apply` as the
+zero-drift check instead.
+
+By default, verify is read-only with respect to Bear notes. It touches Bear through read-only `bearcli` calls,
+uses the daemon lock path for local coordination, and runs three checks:
+
+1. **plan-parity** — `noxctl plan` against the configured vault must report zero drift across every domain.
+2. **daemon-log** — the daemon log since the latest `regen-watchd starting` marker must contain no
+   `LOOP detected`, `EMERGENCY DISABLE`, or `ERROR:` lines.
+3. **apply-idempotency** — skipped unless you explicitly pass `--with-apply`.
+
+```bash
+noxctl verify --config ~/.config/noxctl/noxctl.toml
+noxctl verify --config ~/.config/noxctl/noxctl.toml --output json
+```
+
+Use `--log-path` when your daemon writes outside the default `~/.cache/regen-watchd.log`.
+
+`verify --with-apply` is intentionally opt-in because it writes to Bear: it runs apply twice and requires the
+second pass to be a strict no-op. Use it only when you want a destructive end-to-end idempotency gate.
+
+Exit-code shape:
+
+- `doctor`: `0` means ready enough to continue (warnings allowed), `1` means the environment is not ready.
+- `verify`: `0` means PASS, `2` means the gate made a verdict and failed, `1` means verify could not make a
+  verdict because a runtime dependency failed.
 
 ## One-shot vs daemon mode
 
@@ -312,6 +380,7 @@ noxctl is useful when Bear is still the place you want to write, but manual stru
 |----------|----------------|----------------|
 | Generated index/hub notes | Some generated structure is now tool-owned | Edit your content freely, but do not hand-tune generated masters/hubs and expect those edits to survive regeneration |
 | Reviewable `plan` output before writes | You need to understand the plan before applying it | Safer than silent automation, but still requires attention |
+| Readiness and verification gates | A few extra commands before the first write | `doctor` catches local setup issues before mutation; `verify` confirms the vault and daemon are clean afterward |
 | Consistent structure across many tags | A config file becomes part of your note system | Your organization rules live in `noxctl.toml`, not only in your head |
 | Optional live reconciliation | A long-running process may be running on your Mac | Great for stable configs, but start manually before installing a LaunchAgent |
 | Obsidian-like organization depth inside Bear | macOS + Bear + terminal are required | This is for Bear power users on macOS, not a cross-platform no-code workflow |
@@ -445,9 +514,11 @@ flowchart LR
     B --> C["noxctl.toml:<br/>operator-owned catalog"]
     C -->|noxctl validate| D{schema OK?}
     D -->|no| C
-    D -->|yes| E["noxctl plan:<br/>diff vs live vault"]
+    D -->|yes| H["noxctl doctor:<br/>environment preflight"]
+    H --> E["noxctl plan:<br/>diff vs live vault"]
     E -->|noxctl apply| F[("Bear database<br/>via bearcli")]
     F -->|re-pass until unchanged<br/>3 passes max| E
+    F -->|noxctl verify| V["operator gate:<br/>zero drift + clean daemon log"]
     C -.->|noxctl daemon| G["FSEvents watcher:<br/>continuous reconcile"]
     G -.-> F
 ```
@@ -455,8 +526,15 @@ flowchart LR
 1. **Import** (optional) — `noxctl import <tag>` scans the notes under an existing Bear tag, infers a likely blueprint, and prints a paste-ready `[[domain]]` stanza. Non-destructive: it writes nothing.
 2. **Declare** — you own `noxctl.toml`. Each managed tag is one `[[domain]]` block naming its blueprint and fields.
 3. **Validate** — `noxctl validate` runs the loader and every `Domain.Validate()` rule with zero Bear I/O. Typos surface as `noxctl.toml:LINE:COL: unknown field`.
-4. **Plan / apply** — `plan` diffs the catalog against the live vault; `apply` writes it back through `bearcli`, re-running until every hub and master reports `unchanged` (the idempotency contract above: ≤ 3 passes).
-5. **Daemon** (optional) — `noxctl daemon` runs the same engine continuously, reconciling on every external edit. This is the step that makes noxctl closer to a **Kubernetes operator** than to one-shot Terraform: declarative desired state *plus* a reconciliation loop.
+4. **Doctor** — `noxctl doctor` checks the local macOS/Bear/config/state/daemon environment before mutation. It is read-only and warnings are allowed.
+5. **Plan / apply** — `plan` diffs the catalog against the live vault; `apply` writes it back through `bearcli`.
+   Apply re-runs until every hub and master reports `unchanged` (the idempotency contract above: ≤ 3 passes).
+6. **Verify** — after daemon-backed runs, `noxctl verify` confirms the catalog and live vault still agree, and
+   that the daemon log is clean since the latest startup marker. For first-run one-shot usage, rerun `plan`
+   instead. `verify` is read-only with respect to Bear notes unless you opt into `--with-apply`.
+7. **Daemon** (optional) — `noxctl daemon` runs the same engine continuously, reconciling on every external edit.
+   This is the step that makes noxctl closer to a **Kubernetes operator** than to one-shot Terraform: declarative
+   desired state *plus* a reconciliation loop.
 
 ### Inside the daemon loop
 

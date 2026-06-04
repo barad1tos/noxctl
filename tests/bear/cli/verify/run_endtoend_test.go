@@ -15,10 +15,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/barad1tos/noxctl/bear/cli/verify"
+	"github.com/barad1tos/noxctl/bear/engine"
 )
 
 // runVerify drives verify.Run with the supplied options + ctx and
@@ -81,6 +86,142 @@ func TestRun_OperatorRunsClean_ApplyIdempotencySkipped(t *testing.T) {
 	}
 	if !strings.Contains(idem, "opt-in via --with-apply") {
 		t.Errorf("operator must see how to enable the check; got: %q", idem)
+	}
+}
+
+// TestRun_ReadOnlyVerifyWaitsForDaemonLock — even without
+// --with-apply, plan-parity fans out many bearcli reads. It must
+// serialize with the daemon's cycle lock so ship-gate does not race a
+// live regen cycle and misreport a transient bearcli abort as a
+// verify runtime error.
+func TestRun_ReadOnlyVerifyWaitsForDaemonLock(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, ".lock")
+	daemonRelease, err := engine.AcquireDaemon(t.Context(), lockPath)
+	if err != nil {
+		t.Fatalf("AcquireDaemon: %v", err)
+	}
+	releaseDaemon := daemonRelease
+	defer func() {
+		if releaseDaemon != nil {
+			releaseDaemon()
+		}
+	}()
+
+	released := func() {
+		releaseDaemon = nil
+		daemonRelease()
+	}
+
+	logPath := writeDaemonLog(t, []string{
+		"2026/05/18 10:00:00 regen-watchd starting",
+	})
+	catalog := writeMinimalCatalog(t)
+	var outBuf bytes.Buffer
+	errBuf := newNotifyingBuffer("waiting for lock")
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- verify.Run(ctxWithBenignBackend(t), verify.Options{
+			ConfigPath: catalog,
+			LogPath:    logPath,
+			Output:     "text",
+			Stdout:     &outBuf,
+			Stderr:     errBuf,
+			ApplyOpts: engine.ApplyOpts{
+				LockPath: lockPath,
+			},
+		})
+	}()
+
+	select {
+	case <-errBuf.seen():
+	case <-time.After(2 * time.Second):
+		released()
+		t.Fatalf("verify did not report lock wait; stderr:\n%s", errBuf.String())
+	}
+	sentinel := filepath.Join(dir, engine.SentinelName)
+	if _, statErr := os.Stat(sentinel); !errors.Is(statErr, os.ErrNotExist) {
+		released()
+		t.Fatalf("read-only verify wrote apply-pending sentinel while waiting: %v", statErr)
+	}
+	released()
+	err = <-runDone
+	if err != nil && !errors.Is(err, verify.ErrVerifyFailed) {
+		t.Fatalf("verify.Run: %v\nstdout:\n%s\nstderr:\n%s", err, outBuf.String(), errBuf.String())
+	}
+	if !strings.Contains(errBuf.String(), "waiting for lock") {
+		t.Errorf("expected lock wait advisory on stderr; got:\n%s", errBuf.String())
+	}
+	if _, statErr := os.Stat(sentinel); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("verify left apply-pending sentinel behind: %v", statErr)
+	}
+}
+
+type notifyingBuffer struct {
+	mu      sync.Mutex
+	buf     bytes.Buffer
+	needle  string
+	notify  chan struct{}
+	noticed bool
+}
+
+func newNotifyingBuffer(needle string) *notifyingBuffer {
+	return &notifyingBuffer{
+		needle: needle,
+		notify: make(chan struct{}),
+	}
+}
+
+func (b *notifyingBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n, err := b.buf.Write(p)
+	if !b.noticed && strings.Contains(b.buf.String(), b.needle) {
+		b.noticed = true
+		close(b.notify)
+	}
+	return n, err
+}
+
+func (b *notifyingBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func (b *notifyingBuffer) seen() <-chan struct{} {
+	return b.notify
+}
+
+func TestRun_ReadOnlyVerifyLockErrorIsRuntimeError(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, ".lock")
+	if err := os.Symlink(filepath.Join(dir, "target"), lockPath); err != nil {
+		t.Skipf("symlink unsupported on this filesystem: %v", err)
+	}
+	logPath := writeDaemonLog(t, []string{
+		"2026/05/18 10:00:00 regen-watchd starting",
+	})
+	catalog := writeMinimalCatalog(t)
+	var outBuf bytes.Buffer
+	err := verify.Run(ctxWithBenignBackend(t), verify.Options{
+		ConfigPath: catalog,
+		LogPath:    logPath,
+		Output:     "text",
+		Stdout:     &outBuf,
+		ApplyOpts: engine.ApplyOpts{
+			LockPath: lockPath,
+		},
+	})
+	if !errors.Is(err, verify.ErrVerifyRuntimeError) {
+		t.Fatalf("err = %v, want ErrVerifyRuntimeError\nstdout:\n%s", err, outBuf.String())
+	}
+	if !strings.Contains(outBuf.String(), "verify-lock") {
+		t.Fatalf("expected verify-lock check in output; got:\n%s", outBuf.String())
+	}
+	sentinel := filepath.Join(dir, engine.SentinelName)
+	if _, statErr := os.Stat(sentinel); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("verify left apply-pending sentinel behind: %v", statErr)
 	}
 }
 

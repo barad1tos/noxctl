@@ -12,7 +12,8 @@
 - [ ] `go vet ./...` clean
 - [ ] `golangci-lint run` clean (no new findings)
 - [ ] `go test ./... -count=1 -race` passes
-- [ ] `noxctl apply --once` reaches `unchanged` within ≤3 passes (idempotency contract; describe manual verification if applicable)
+- [ ] `noxctl verify --config examples/personal.toml` passes, or the PR explains why the vault-bound gate was not run
+- [ ] Destructive idempotency gate documented when applicable: `noxctl verify --config examples/personal.toml --with-apply` passes, or vault writes were explicitly skipped
 
 ## Related Issues
 

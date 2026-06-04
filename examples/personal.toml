@@ -198,7 +198,7 @@
   index_title = "✱ Робота"
   blueprint = "grouped-vertical"
   unknown_bucket = "інше"
-  buckets = ["questions", "tasks"]
+  buckets = ["questions", "reports", "tasks"]
 
 [[domain]]
   tag = "health"
