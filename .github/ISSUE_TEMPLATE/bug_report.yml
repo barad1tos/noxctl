@@ -58,7 +58,7 @@ body:
         `noxctl.toml` stanza if applicable.
       placeholder: |
         1. `noxctl validate ./noxctl.toml` → exit 0
-        2. `noxctl apply --once` → expected `unchanged`, observed …
+        2. `noxctl apply` → expected `unchanged`, observed …
     validations:
       required: true
 
