@@ -24,9 +24,9 @@ var bucketRejectREs = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)^bear:`),
 }
 
-// supportedLocales locks v1 to Ukrainian. Future locales must add
-// both their key here AND ship a `bear/locales/<key>.toml` catalog.
-// Empty locale is allowed — caller treats as "use default".
+// supportedLocales is the v1 locale allowlist. Every key here must
+// have a matching embedded `bear/domain/locales/<key>.toml` catalog.
+// Empty locale is allowed — caller treats it as "use default".
 var supportedLocales = map[string]struct{}{
 	"en": {},
 	"uk": {},
