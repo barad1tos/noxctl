@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -277,6 +278,46 @@ func TestCobraApplyAndVerifyReportInvalidDaemonConfigForLockPath(t *testing.T) {
 				t.Fatalf("%s output missing %q\nfull: %s", tc.name, tc.want, out)
 			}
 		})
+	}
+}
+
+func TestCobraVerifyUsesDaemonConfigLockPath(t *testing.T) {
+	bin := buildBinary(t)
+	root := repoRoot(t)
+	validFixture := filepath.Join(root, "tests", "bear", "config", "testdata", "valid-minimal.toml")
+	home := t.TempDir()
+	daemonConfigPath := filepath.Join(home, ".noxctl", "daemon.toml")
+	lockPath := filepath.Join(home, ".noxctl", "verify.lock")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		t.Fatalf("mkdir daemon config dir: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(home, "target.lock"), lockPath); err != nil {
+		t.Fatalf("seed symlink lock path: %v", err)
+	}
+	body := "[daemon.paths]\nlock = " + strconv.Quote(lockPath) + "\n"
+	if err := os.WriteFile(daemonConfigPath, []byte(body), 0o600); err != nil {
+		t.Fatalf("write daemon config: %v", err)
+	}
+
+	cmd := newCmd(bin, []string{
+		"verify",
+		"--config", validFixture,
+		"--output", "json",
+	})
+	cmd.Env = append(cmd.Env, "HOME="+home)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if runErr := cmd.Run(); runErr == nil {
+		t.Fatal("verify succeeded with symlinked daemon lock path")
+	}
+
+	if !strings.Contains(stdout.String(), `"name": "verify-lock"`) {
+		t.Fatalf("verify JSON missing verify-lock check\nstdout: %s\nstderr: %s", stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), lockPath) {
+		t.Fatalf("verify-lock output missing daemon lock path %q\nstdout: %s", lockPath, stdout.String())
 	}
 }
 
