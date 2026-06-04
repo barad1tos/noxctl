@@ -13,8 +13,8 @@
 
 [meta]
   version = "1"
-  # locale picks the Ukrainian-language master/hub copy. Default "uk"
-  # is the only locale shipped today; pass "" or omit to fall back.
+  # locale picks the master/hub copy language. Supported today: "en"
+  # and "uk". Empty or omitted locale keeps the built-in default.
   locale = "uk"
 
 # flat-list: one master note, every atom under the tag becomes a
