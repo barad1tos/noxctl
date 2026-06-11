@@ -97,7 +97,7 @@ A book by Yuval Noah Harari about human history.
 **What noxctl adds on top of the hand-run method:**
 
 - **No manual upkeep** — masters and hubs are regenerated, not hand-edited. Add an atom and the next pass picks it up; you never forget to update a hub.
-- **Consistency at scale** — twenty-plus tags stay in lockstep under one render contract. `noxctl apply` is idempotent by construction (`unchanged` in ≤ 3 passes), where hand-maintenance drifts as the vault grows.
+- **Consistency at scale** — twenty-plus tags stay in lockstep under one render contract. Repeated `noxctl apply` / daemon cycles are expected to settle to `unchanged` in a few passes, where hand-maintenance drifts as the vault grows.
 - **Drift reconciliation** — rename a note, move an atom between buckets, or delete one, and the structure self-heals on the next cycle instead of rotting silently.
 - **Bidirectional links for free** — every atom gets its canonical tag-line stamped automatically, so master→atom and atom→master both resolve without manual back-linking.
 
@@ -115,11 +115,26 @@ In one line: if you live in Bear on a Mac and your vault is big enough that hand
 
 noxctl has two entry paths that share the same install and the same `validate → plan → apply` tail. Your track is decided at Step 2.
 
+**Before you start.**
+
+- You need macOS with [Bear](https://bear.app/) installed. noxctl talks to Bear through Bear's bundled `bearcli`.
+- You need Go 1.26 or newer:
+  ```bash
+  go version
+  ```
+- Make sure the directory `go install` writes to is on your `PATH`. If `GOBIN` is empty, Go uses `$(go env GOPATH)/bin`.
+  ```bash
+  go env GOPATH GOBIN
+  ```
+
 **Step 1 — Install (both paths).**
 
 ```bash
 go install github.com/barad1tos/noxctl/cmd/noxctl@latest
+noxctl version
 ```
+
+If `go install` succeeds but `noxctl version` says `command not found`, add `$GOBIN` (or `$(go env GOPATH)/bin`) to your shell `PATH` and retry.
 
 **Step 2 — Build your catalog.** Every catalog needs one `[meta]` header plus one `[[domain]]` block per managed tag. `noxctl init` always writes the `[meta]` header, so it is the starting point for both tracks.
 
@@ -127,6 +142,8 @@ go install github.com/barad1tos/noxctl/cmd/noxctl@latest
 mkdir -p ~/.config/noxctl
 noxctl init ~/.config/noxctl/noxctl.toml   # writes [meta] + 3 worked examples
 ```
+
+noxctl does not auto-discover `~/.config/noxctl/noxctl.toml`. Either keep passing `--config ~/.config/noxctl/noxctl.toml` to Bear-touching commands, or put `noxctl.toml` in your current directory and rely on the CLI default `./noxctl.toml`.
 
 **Track A — starting from scratch.** Open the file and **replace** the three example `[[domain]]` blocks with your own tags. Each block names a `tag`, an `index_title`, and a `blueprint` (see [Choosing a blueprint](#choosing-a-blueprint)). The smallest useful catalog is one domain — [`examples/minimal.toml`](examples/minimal.toml) is a tested 1-domain starter.
 
@@ -142,6 +159,8 @@ noxctl init ~/.config/noxctl/noxctl.toml   # writes [meta] + 3 worked examples
 
 `import` is read-only and emits no `[meta]` of its own — that is why `init` seeds the header first. Deleting the examples in step 1 also avoids a duplicate-tag error if you import a tag `init` shipped as a sample. The collapsible section below explains how the inference picks a blueprint.
 
+`import`, `plan`, and `apply` all need access to Bear through `bearcli`. If any Bear-related command fails on a fresh install, run `doctor` first and use its exact failing check in your issue report.
+
 **Step 3 — Converge (both paths).**
 
 ```bash
@@ -149,8 +168,10 @@ noxctl validate ~/.config/noxctl/noxctl.toml          # schema check, no Bear I/
 noxctl doctor --config ~/.config/noxctl/noxctl.toml   # environment preflight, no Bear writes
 noxctl plan --config ~/.config/noxctl/noxctl.toml     # preview the diff
 noxctl apply --config ~/.config/noxctl/noxctl.toml    # write it to Bear
-noxctl plan --config ~/.config/noxctl/noxctl.toml     # rerun after apply; should show no diff
+noxctl plan --config ~/.config/noxctl/noxctl.toml     # rerun after apply; repeat apply/plan if drift remains
 ```
+
+`apply` performs one reconciliation pass. Some structures need a follow-up pass after Bear has materialized newly created masters or hubs; a healthy catalog should settle to a clean `plan` within a few passes. Treat persistent drift as a bug.
 
 Once you use daemon mode, add `noxctl verify --config ~/.config/noxctl/noxctl.toml` as the operator gate that
 checks both zero drift and a clean daemon log. On a fresh one-shot setup where the daemon has never run, `verify`
@@ -502,7 +523,7 @@ See `examples/minimal.toml` for a tested starter and `examples/personal.toml` fo
 
 ### The idempotency contract
 
-Every change to the engine must keep `noxctl apply` reaching `unchanged` for every hub and master after at most three passes. Order-stabilization passes count toward that three — anything that needs more is a bug. The integration suite under `tests/bear/engine/` pins this contract.
+Every change to the engine must keep repeated `noxctl apply` passes reaching `unchanged` for every hub and master after at most three passes. One `apply` command performs one reconciliation pass; order-stabilization passes count toward the three-pass budget. Anything that needs more is a bug. The integration suite under `tests/bear/engine/` pins this contract.
 
 ### The journey of a tag
 
@@ -517,7 +538,7 @@ flowchart LR
     D -->|yes| H["noxctl doctor:<br/>environment preflight"]
     H --> E["noxctl plan:<br/>diff vs live vault"]
     E -->|noxctl apply| F[("Bear database<br/>via bearcli")]
-    F -->|re-pass until unchanged<br/>3 passes max| E
+    F -->|rerun plan/apply until unchanged<br/>3 passes max| E
     F -->|noxctl verify| V["operator gate:<br/>zero drift + clean daemon log"]
     C -.->|noxctl daemon| G["FSEvents watcher:<br/>continuous reconcile"]
     G -.-> F
@@ -527,8 +548,8 @@ flowchart LR
 2. **Declare** — you own `noxctl.toml`. Each managed tag is one `[[domain]]` block naming its blueprint and fields.
 3. **Validate** — `noxctl validate` runs the loader and every `Domain.Validate()` rule with zero Bear I/O. Typos surface as `noxctl.toml:LINE:COL: unknown field`.
 4. **Doctor** — `noxctl doctor` checks the local macOS/Bear/config/state/daemon environment before mutation. It is read-only and warnings are allowed.
-5. **Plan / apply** — `plan` diffs the catalog against the live vault; `apply` writes it back through `bearcli`.
-   Apply re-runs until every hub and master reports `unchanged` (the idempotency contract above: ≤ 3 passes).
+5. **Plan / apply** — `plan` diffs the catalog against the live vault; `apply` writes one reconciliation pass back through `bearcli`.
+   Re-run `plan` and `apply` until every hub and master reports `unchanged` (the idempotency contract above: ≤ 3 passes).
 6. **Verify** — after daemon-backed runs, `noxctl verify` confirms the catalog and live vault still agree, and
    that the daemon log is clean since the latest startup marker. For first-run one-shot usage, rerun `plan`
    instead. `verify` is read-only with respect to Bear notes unless you opt into `--with-apply`.
@@ -559,7 +580,7 @@ flowchart TD
 - **mtime poll fallback** — Bear sometimes commits its SQLite WAL after the FSEvent window closes. A periodic `mtime` stat catches those and routes them through the same debounce path, so no edit is silently missed.
 - **autotag fast-pass** — a lightweight tick running only the four tag-hygiene passes (foreign-tag escape, daily-default, domain-bootstrap, placeholder-refresh), never the full per-domain regen.
 
-Every path converges on the same `cycleOnce`, and every `cycleOnce` honors the same `unchanged`-in-≤3-passes contract that `apply` does.
+Every daemon trigger converges on the same `cycleOnce`, and successive cycles honor the same `unchanged`-in-≤3-passes contract as repeated one-shot `apply` runs.
 
 </details>
 
