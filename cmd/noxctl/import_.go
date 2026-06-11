@@ -25,13 +25,17 @@ var importCmd = &cobra.Command{
 	Long: `import scans every Bear note carrying the supplied tag,
 computes 7 structural metrics (bucket cardinality, sub-tag coverage,
 author-body signal, etc.), and runs them through an ordered decision
-tree that covers all five blueprints:
+tree that covers the blueprints a single-tag scan can infer:
 
-  flat-list             no bucket signal detected
-  grouped-vertical      few atoms per bucket — inline sections
+  flat-list               no bucket signal detected
+  grouped-vertical        few atoms per bucket — inline sections
   hub-routed-with-subtag  many atoms per sub-tag bucket — Tier-2 hubs
-  hub-routed            2-level tag with strong author/source signal
-  umbrella              tag has populated child tag-families
+  hub-routed              2-level tag with strong author/source signal
+
+Single-tag import does not auto-generate umbrella domains. Umbrellas depend
+on multiple managed child domains, so configure them manually from the
+vault-wide structure. When a top-level bucketed tag may really be an
+umbrella, the emitted comments call that out.
 
 The output includes a "# recommend:" comment with the chosen
 blueprint, confidence grade, deciding metric, and rationale. When
