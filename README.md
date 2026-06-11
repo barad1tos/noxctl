@@ -19,6 +19,20 @@ Declarative macOS CLI for Bear notes structure management — *Terraform for Bea
 
 > **Pre-release note:** noxctl is in active development and is looking for feedback before the first stable release. It mutates Bear notes when you run `apply`, so read the safety notes and make a Bear backup before trying it on notes you care about.
 
+## Is this for you?
+
+noxctl is for Bear power users who want a tool-owned structural layer: generated master notes, hub notes, grouped indexes, and canonical tag-lines that keep those structures in sync.
+
+It is probably **not** for you if you do not want any external automation changing your Bear vault. Even though noxctl writes through Bear's bundled `bearcli` rather than patching SQLite directly, it still mutates notes when you run `apply` or the daemon.
+
+Boundaries by design:
+
+- Your human-authored note body stays yours.
+- noxctl owns generated masters, hubs, and the canonical line at the top of managed atoms.
+- `daemon` mode is optional and does not install itself as a background service.
+- `doctor` and `plan` exist so you can inspect readiness and review diffs before writes.
+- Start with one low-risk tag and a Bear backup before managing a real corpus.
+
 **Standing on two shoulders.** The *what* is inspired by [Forever ✱ Notes](https://www.myforevernotes.com/) — a framework for organizing a knowledge vault around clickable master/hub notes (including the `✱` master marker noxctl stamps on generated index titles). The *how* comes from Terraform — declarative desired-state config plus `plan`/`apply` idempotent convergence. noxctl is Forever Notes-style structure, maintained the Terraform way.
 
 ## Contents
