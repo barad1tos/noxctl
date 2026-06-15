@@ -169,7 +169,7 @@ jobs:
           go tool covdata textfmt -i=coverage-e2e -o=coverage-e2e.out
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v5
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v5
         with:
           files: coverage.out,coverage-e2e.out
           fail_ci_if_error: false
@@ -180,7 +180,7 @@ jobs:
         # Same action as coverage; `report-type: test_results` switches
         # mode to consume JUnit XML produced by gotestsum.
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v5
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v5
         with:
           files: test-results/junit.xml
           report-type: test_results
