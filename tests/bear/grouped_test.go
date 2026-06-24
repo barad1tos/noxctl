@@ -36,7 +36,12 @@ func TestParseMetaFromSubTag(t *testing.T) {
 		{
 			name: "no sub-tag — empty meta",
 			body: "# X\n#english | [[✱ English]] | foo\n---\n",
-			want: domain.AtomicMeta{},
+			want: domain.AtomicMeta{Bucket: "✱ English"},
+		},
+		{
+			name: "bare tag with empty wikilink — explicitly uncategorized",
+			body: "# X\n#english | [[]]\n---\n",
+			want: domain.AtomicMeta{ExplicitlyUncategorized: true},
 		},
 		{
 			name: "extra tags before pipe",

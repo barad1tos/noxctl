@@ -33,7 +33,10 @@ func DefaultParseMetaCanonical(d *domain.Domain, body string) domain.AtomicMeta 
 			continue
 		}
 		target := domain.ExtractWikilinkTarget(parts[1])
-		if target == "" || target == d.IndexTitle {
+		if target == "" {
+			return domain.AtomicMeta{ExplicitlyUncategorized: true}
+		}
+		if target == d.IndexTitle {
 			continue
 		}
 		var meta domain.AtomicMeta
@@ -199,6 +202,9 @@ func ParseMetaFlatTable(d *domain.Domain, body string) domain.AtomicMeta {
 			continue
 		}
 		bucket := strings.TrimSpace(parts[2])
+		if bucket == "[[]]" {
+			return domain.AtomicMeta{ExplicitlyUncategorized: true}
+		}
 		if bucket == "" {
 			continue
 		}

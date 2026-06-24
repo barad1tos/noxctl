@@ -43,8 +43,9 @@ type Note = note.Note
 // AtomicMeta is the structured form of an atomic note's canonical header line.
 // Semantics of `bucket` and `section` differ per domain; see ParseMeta callback.
 type AtomicMeta struct {
-	Bucket  string
-	Section string
+	Bucket                  string
+	Section                 string
+	ExplicitlyUncategorized bool
 }
 
 // AtomicParts holds the destructured form of an atomic note's content during

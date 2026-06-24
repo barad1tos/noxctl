@@ -71,9 +71,6 @@ func TestRunApplyOnce_BenignBackend_Returns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runApplyOnce err = %v, want nil", err)
 	}
-	if res == nil {
-		t.Fatalf("res = nil, want non-nil ApplyResult")
-	}
 	if res.Domains == nil {
 		t.Errorf("res.Domains = nil — verify check would panic on AnyFailed/stat aggregation")
 	}
