@@ -34,7 +34,7 @@ func TestParseMetaFromSubTag(t *testing.T) {
 			want: domain.AtomicMeta{Bucket: "rules"},
 		},
 		{
-			name: "no sub-tag — empty meta",
+			name: "bare tag with real bucket — detected by secondary pass",
 			body: "# X\n#english | [[✱ English]] | foo\n---\n",
 			want: domain.AtomicMeta{Bucket: "✱ English"},
 		},

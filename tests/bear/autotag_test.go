@@ -101,18 +101,33 @@ func TestRenderCanonicalForBootstrap_NoteWithBody_PutsBodyBelowSeparator(t *test
 // "1 cycle" contract: fast-pass writes form X, regen cycle sees X,
 // equalIgnoringNewNoteLink trips, no second write happens. The cycle's
 // canonical render of X must equal X up to new-note URL drift.
+//
+// For flat-list domains like quicknote/daily, `RenderCanonicalForBootstrap`
+// uses `d.backlinkFor("")` which resolves to `[[✱ Daily]]` via
+// `MasterBacklink`. The regen cycle's `RenderAtomicCanonical` uses the
+// same `d.backlinkFor("")` call, so the output is byte-equivalent and
+// `equalIgnoringNewNoteLink` returns true.
+//
+// For hub-routed domains, `d.backlinkFor("")` returns `"[[]]"` (empty
+// wikilink) because there is no custom BacklinkFor callback. The `[[]]`
+// signals `ExplicitlyUncategorized: true` to `groupAtomics`, which
+// skips the note — the regen cycle never re-renders it. Idempotency
+// is preserved because the bootstrap output is left untouched.
 func TestRenderCanonicalForBootstrap_IdempotentWithRegenCycle(t *testing.T) {
 	fixedNow := time.Date(2026, 5, 15, 22, 30, 0, 0, time.Local)
 	domain.SetNowForNewNoteLinkForTest(t, func() time.Time { return fixedNow })
 
 	in := "# 15 May 2026 at 22:30\nuser typed body\n"
-	bootstrap := testutil.Domain(t, "quicknote/daily").RenderCanonicalForBootstrap(in)
+	d := testutil.Domain(t, "quicknote/daily")
+	bootstrap := d.RenderCanonicalForBootstrap(in)
 
 	// Now simulate the regen cycle running on the same content —
 	// RenderAtomicCanonicalForTest is the in-memory mirror of
-	// upsertAtomicBacklink's canonicalization path.
-	canonical := domain.RenderAtomicCanonicalForTest(t, testutil.Domain(t, "quicknote/daily"), "Note Title",
-		testutil.Domain(t, "quicknote/daily").UnknownBucket, bootstrap)
+	// upsertAtomicBacklink's canonicalization path. Both use bucket "": for
+	// flat-list domains, MasterBacklink returns [[✱ Daily]], matching the
+	// bootstrap output; for hub-routed domains, backlinkFor("") returns [[]].
+	canonical := domain.RenderAtomicCanonicalForTest(t, d, "Note Title",
+		"", bootstrap)
 
 	if !domain.EqualIgnoringNewNoteLink(bootstrap, canonical) {
 		t.Errorf("bootstrap output is not idempotent under cycle re-render\n  bootstrap:\n%s\n  cycle:\n%s",
