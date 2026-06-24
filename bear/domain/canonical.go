@@ -247,7 +247,7 @@ func (d *Domain) RenderCanonicalForBootstrap(existingContent string) string {
 	hoistPreambleToBody(&parts)
 	contentBody := strings.Trim(strings.Join(parts.BodyLines, "\n"), "\n ")
 	return d.renderAtomicCanonical(
-		parts.H1Line, parts.ExtraTags, d.UnknownBucket,
-		d.backlinkFor(d.UnknownBucket), d.sectionFor(d.UnknownBucket, parts), contentBody,
+		parts.H1Line, parts.ExtraTags, "",
+		"[[]]", d.sectionFor("", parts), contentBody,
 	)
 }

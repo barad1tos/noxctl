@@ -120,6 +120,27 @@ func TestRenderCanonicalForBootstrap_IdempotentWithRegenCycle(t *testing.T) {
 	}
 }
 
+// TestRenderCanonicalForBootstrap_EmptyWikilink asserts that
+// RenderCanonicalForBootstrap emits "[[]]" (empty wikilink) as the
+// backlink in the canonical tag-line, not a domain-specific UnknownBucket
+// label like "[[Невідомі]]". This is the Wave-2 decoupling of the
+// bootstrap path from d.UnknownBucket for canonical line rendering.
+func TestRenderCanonicalForBootstrap_EmptyWikilink(t *testing.T) {
+	d := testutil.Domain(t, "library/poetry")
+	out := d.RenderCanonicalForBootstrap("")
+
+	if !strings.Contains(out, "#library/poetry | [[]]") {
+		t.Errorf("missing [[]] backlink in canonical tag-line\n  full output:\n%s", out)
+	}
+	if strings.Contains(out, "Невідомі") {
+		t.Errorf("output must not contain Невідомі (UnknownBucket leaked)\n  full output:\n%s", out)
+	}
+	// H1 must be stamped (fresh note gets datetime H1).
+	if !strings.HasPrefix(out, "# ") {
+		t.Errorf("missing stamped H1\n  full output:\n%s", out)
+	}
+}
+
 // TestApplyForeignTagEscape_CanonicalizesDestination proves the
 // foreign-tag escape path also produces canonical form for the
 // destination domain in one bearcli call. A note tagged with both
