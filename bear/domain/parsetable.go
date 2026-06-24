@@ -100,6 +100,9 @@ func ParseMetaFromSubTag(d *Domain, body string) AtomicMeta {
 // primary loop misses. Hub-routed-with-subtag domains see these when
 // the user explicitly empties the bucket — `[[]]` returns
 // ExplicitlyUncategorized, a real wikilink returns its target as Bucket.
+// IndexTitle backlinks (master self-references) are skipped to avoid
+// promoting the master title to a bucket on 1-level grouped-vertical
+// domains where BacklinkFor=MasterBacklink.
 func parseBareTagCanonical(d *Domain, body string) AtomicMeta {
 	for line := range strings.SplitSeq(HeaderZone(body), "\n") {
 		line = strings.TrimSpace(line)
@@ -111,6 +114,9 @@ func parseBareTagCanonical(d *Domain, body string) AtomicMeta {
 			continue
 		}
 		target := ExtractWikilinkTarget(parts[1])
+		if target == d.IndexTitle {
+			continue
+		}
 		if target == "" {
 			return AtomicMeta{ExplicitlyUncategorized: true}
 		}

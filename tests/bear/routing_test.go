@@ -105,3 +105,47 @@ func TestGroupAtomics_ExplicitlyUncategorized_Dropped(t *testing.T) {
 		t.Errorf("real-bucket note should be in %q bucket", "Поезії")
 	}
 }
+
+// TestOverrideForNote_Uncategorized_SkipsMasterOverride verifies that
+// overrideForNote returns ("", false) when a note is explicitly
+// uncategorized (ExplicitlyUncategorized: true) even if the master
+// table places it in a bucket. This is the "leave in master as-is"
+// policy — the master override does not fight a user's deliberate
+// empty-bucket choice, eliminating bidirectional ping-pong.
+func TestOverrideForNote_Uncategorized_SkipsMasterOverride(t *testing.T) {
+	uncatBody := "# Uncategorized\n#test | [[]]\n---\n\nbody\n"
+	masterBody := "# ✱ Index\n#test\n---\n\n## OldBucket (1)\n- [[Uncategorized]]\n"
+
+	rec := &parseMetaRecorder{
+		matches: map[string]domain.AtomicMeta{
+			uncatBody: {ExplicitlyUncategorized: true},
+		},
+	}
+
+	d := &domain.Domain{
+		Tag:           "test",
+		CanonicalTag:  "#test",
+		IndexTitle:    "✱ Index",
+		UnknownBucket: "Невідомі",
+		ParseMeta:     rec.makeParseMeta(),
+		ParseMasterTable: func(_ *domain.Domain, _ string) map[string]string {
+			// Simulate master table parsing: the uncategorized note
+			// appears under "OldBucket" in the master.
+			return map[string]string{"Uncategorized": "OldBucket"}
+		},
+	}
+
+	notes := []domain.Note{
+		{ID: "master-1", Title: "✱ Index", Content: masterBody},
+		{ID: "uncat-1", Title: "Uncategorized", Content: uncatBody},
+	}
+
+	result := d.RouteAtomics(notes, nil)
+
+	// MasterClaims must be 0 — the uncategorized note's override was
+	// skipped because ExplicitlyUncategorized guards overrideForNote.
+	if result.MasterClaims != 0 {
+		t.Errorf("MasterClaims = %d, want 0 — uncategorized note should not trigger master override",
+			result.MasterClaims)
+	}
+}
