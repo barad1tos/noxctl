@@ -32,9 +32,6 @@ func TestApply_NoStateFileLoadsCleanly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	if result == nil {
-		t.Fatal("nil result")
-	}
 	if result.Interrupted {
 		t.Errorf("expected Interrupted=false on successful no-domain Apply")
 	}

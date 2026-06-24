@@ -41,9 +41,6 @@ func TestLoadCatalog_LoadsRomanReference(t *testing.T) {
 // returns a non-nil domain pointer for a stable, central tag.
 func TestDomain_FindsKnownTag(t *testing.T) {
 	d := testutil.Domain(t, "library/poetry")
-	if d == nil {
-		t.Fatal("Domain returned nil for library/poetry")
-	}
 	if d.Tag != "library/poetry" {
 		t.Errorf("Domain.Tag = %q, want library/poetry", d.Tag)
 	}

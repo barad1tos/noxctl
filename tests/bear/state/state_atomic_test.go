@@ -24,9 +24,6 @@ func TestState_LoadMissingReturnsFreshV1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load missing: %v", err)
 	}
-	if got == nil {
-		t.Fatal("Load missing: nil State")
-	}
 	if got.Version != "1" {
 		t.Errorf("Version = %q, want \"1\"", got.Version)
 	}

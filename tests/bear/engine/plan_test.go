@@ -201,9 +201,6 @@ func TestPlanZeroDomainsCleanShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	if res == nil {
-		t.Fatal("Plan returned nil result")
-	}
 	if len(res.Domains) != 0 {
 		t.Errorf("Domains len = %d, want 0", len(res.Domains))
 	}
@@ -224,9 +221,6 @@ func TestPlanContextCancelledMarksInterrupted(t *testing.T) {
 	res, err := engine.Plan(ctx, engine.PlanOpts{Domains: nil})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
-	}
-	if res == nil {
-		t.Fatal("Plan returned nil result")
 	}
 	// Zero-domain + canceled ctx: loop never executes; Interrupted stays false.
 	// The cancellation gate fires only when there ARE domains to walk; the

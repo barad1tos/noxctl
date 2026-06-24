@@ -536,9 +536,6 @@ func TestRun_ApplyMode_OrphanFamilyTagEmitted_AndIdempotent(t *testing.T) {
 		}
 	}
 	fake1.mu.Unlock()
-	if tagCall == nil {
-		t.Fatalf("expected one recorded tags call; got none")
-	}
 	wantArgs := []string{"tags", "add", "note-stray", "orphans"}
 	if len(tagCall.Args) != len(wantArgs) {
 		t.Fatalf("tags call args length = %d, want %d (%v)", len(tagCall.Args), len(wantArgs), tagCall.Args)

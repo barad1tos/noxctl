@@ -92,6 +92,36 @@ func ParseMetaFromSubTag(d *Domain, body string) AtomicMeta {
 		}
 		return meta
 	}
+	return parseBareTagCanonical(d, body)
+}
+
+// parseBareTagCanonical is the secondary pass of ParseMetaFromSubTag:
+// detects bare `#<tag> ` canonical lines (no `/sub` segment) that the
+// primary loop misses. Hub-routed-with-subtag domains see these when
+// the user explicitly empties the bucket — `[[]]` returns
+// ExplicitlyUncategorized, a real wikilink returns its target as Bucket.
+// IndexTitle backlinks (master self-references) are skipped to avoid
+// promoting the master title to a bucket on 1-level grouped-vertical
+// domains where BacklinkFor=MasterBacklink.
+func parseBareTagCanonical(d *Domain, body string) AtomicMeta {
+	for line := range strings.SplitSeq(HeaderZone(body), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, d.CanonicalTag+" ") {
+			continue
+		}
+		parts := DropTrailingNewNoteURLSegment(strings.Split(line, " | "))
+		if len(parts) < 2 {
+			continue
+		}
+		target := ExtractWikilinkTarget(parts[1])
+		if target == d.IndexTitle {
+			continue
+		}
+		if target == "" {
+			return AtomicMeta{ExplicitlyUncategorized: true}
+		}
+		return AtomicMeta{Bucket: target}
+	}
 	return AtomicMeta{}
 }
 

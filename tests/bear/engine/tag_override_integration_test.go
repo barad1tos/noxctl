@@ -56,6 +56,10 @@ import (
 // and intentionally NOT in the whitelist — gatherWhitelistedSubTags
 // accepts the unknown-bucket value via its `sub != d.UnknownBucket`
 // branch.
+// Note: after Phase 16, notes with `ExplicitlyUncategorized: true`
+// (`[[]]` in canonical) are dropped from groups — UnknownBucket
+// fallback now only applies to genuinely broken notes that lack a
+// canonical header.
 var workDomainBuckets = []string{
 	"tasks", "development", "english", "health",
 	"humor", "leisure", "instagram", "travel",
@@ -273,6 +277,10 @@ const (
 // case in this file stages the atom in the "інше" state and exercises
 // some drag/master/tag interaction from there, so a parameterized
 // bucket would invite scope creep without a real caller.
+// Note: after Phase 16, notes with `ExplicitlyUncategorized: true`
+// (`[[]]` in canonical) are dropped from groups — UnknownBucket
+// fallback now only applies to genuinely broken notes that lack a
+// canonical header.
 //
 //cyrillic:permit
 func canonicalAtomBody() string {
@@ -631,6 +639,10 @@ func buildClaudeDomainForIntegration() *domain.Domain {
 // canonical-header detection nor BucketFromSubTag yields a bucket — only
 // the hub override (which lists the atom under a Tier-2 hub) or the tag
 // override (drag-add sub-tag) can re-route it.
+// Note: after Phase 16, notes with `ExplicitlyUncategorized: true`
+// (`[[]]` in canonical) are dropped from groups — UnknownBucket
+// fallback now only applies to genuinely broken notes that lack a
+// canonical header.
 //
 //cyrillic:permit
 func claudeAtomBody() string {

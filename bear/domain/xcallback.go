@@ -67,7 +67,7 @@ func NewNoteURLFromDomain(d *Domain) NewNoteURL {
 	return NewNoteURL{
 		Tag:           leaf.newNoteRawTag(),
 		CanonicalTag:  leaf.CanonicalTag,
-		Backlink:      leaf.backlinkFor(leaf.UnknownBucket),
+		Backlink:      "[[]]",
 		PlaceholderH1: leaf.EffectiveQuickPlaceholderH1(),
 		Label:         T("new-note.label"),
 		Form:          FormBootstrap,

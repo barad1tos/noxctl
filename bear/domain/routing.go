@@ -121,23 +121,23 @@ func (d *Domain) IsManagedHubNote(n Note) bool {
 // in an atom body) as bucket names.
 // 3. Legacy fallback: first non-section ## H2 in body — guarded by
 // LegacyAuthorFallback (poetry only; aphorisms quote H2s would misread).
-func (d *Domain) DetectAuthor(body string) string {
-	if meta := d.ParseMeta(d, body); meta.Bucket != "" {
-		return meta.Bucket
+func (d *Domain) DetectAuthor(body string) AtomicMeta {
+	if meta := d.ParseMeta(d, body); meta.Bucket != "" || meta.ExplicitlyUncategorized {
+		return meta
 	}
 	if d.CanonicalTagFor == nil {
 		if author := d.FirstWikilinkAuthor(HeaderZone(body)); author != "" {
-			return author
+			return AtomicMeta{Bucket: author}
 		}
 	}
 	if !d.LegacyAuthorFallback {
-		return ""
+		return AtomicMeta{}
 	}
 	heading := firstNonSectionH2(body)
 	if _, isOwnAlias := d.OwnAliases[heading]; isOwnAlias {
-		return d.OwnGroup
+		return AtomicMeta{Bucket: d.OwnGroup}
 	}
-	return heading
+	return AtomicMeta{Bucket: heading}
 }
 
 // groupAtomics partitions atomic notes by bucket key. Hub notes and the master
@@ -160,9 +160,13 @@ func (d *Domain) groupAtomics(notes []Note, overrides map[string]string) map[str
 		}
 		bucket, hasOverride := overrides[note.ID]
 		if !hasOverride {
-			bucket = d.DetectAuthor(note.Content)
+			meta := d.DetectAuthor(note.Content)
+			bucket = meta.Bucket
 			if bucket == "" {
 				bucket = BucketFromSubTag(d, note.Tags)
+			}
+			if bucket == "" && meta.ExplicitlyUncategorized {
+				continue
 			}
 			if bucket == "" {
 				bucket = d.UnknownBucket
@@ -206,7 +210,11 @@ func (d *Domain) overrideForNote(
 	if !inMaster {
 		return "", false
 	}
-	canonicalBucket := d.DetectAuthor(note.Content)
+	meta := d.DetectAuthor(note.Content)
+	canonicalBucket := meta.Bucket
+	if meta.ExplicitlyUncategorized {
+		return "", false
+	}
 	if canonicalBucket == "" {
 		canonicalBucket = d.UnknownBucket
 	}
@@ -339,8 +347,9 @@ func (d *Domain) collectHubOverrides(
 		if !ok {
 			continue
 		}
-		canonicalBucket := d.DetectAuthor(atom.Content)
-		if canonicalBucket == "" {
+		meta := d.DetectAuthor(atom.Content)
+		canonicalBucket := meta.Bucket
+		if canonicalBucket == "" && !meta.ExplicitlyUncategorized {
 			canonicalBucket = d.UnknownBucket
 		}
 		if canonicalBucket == hubBucket {
@@ -470,8 +479,9 @@ func (d *Domain) computeTagOverrides(notes []Note) (overrides map[string]string,
 		if len(whitelistedSubTags) == 0 {
 			continue
 		}
-		canonicalBucket := ParseMetaFromSubTag(d, note.Content).Bucket
-		if canonicalBucket == "" {
+		meta := ParseMetaFromSubTag(d, note.Content)
+		canonicalBucket := meta.Bucket
+		if canonicalBucket == "" && !meta.ExplicitlyUncategorized {
 			canonicalBucket = d.UnknownBucket
 		}
 		bucket, conflict := decideOverride(canonicalBucket, whitelistedSubTags)

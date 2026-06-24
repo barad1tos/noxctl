@@ -227,11 +227,16 @@ func RenderAtomicCanonicalForTest(t interface{ Helper() }, d *Domain, noteTitle,
 // escape flow). Reuses parseAtomicContent + renderAtomicCanonical so the
 // output is byte-equivalent to what upsertAtomicBacklink would produce
 // on the next regen pass — letting the subsequent cycle no-op via
-// equalIgnoringNewNoteLink. Bucket selection uses the domain's
-// UnknownBucket since fresh or just-escaped atoms carry no
-// canonical-header section yet — domains with per-bucket routing
-// (poetry, articles, …) re-bucket on the next full regen via ParseMeta
-// + cross-domain moves.
+// equalIgnoringNewNoteLink. Bucket is "" (empty) since fresh or just-
+// escaped atoms carry no bucket assignment yet. The backlink is resolved
+// via d.backlinkFor(""), which returns "[[]]" for hub-routed domains
+// (no custom BacklinkFor) or the domain's IndexTitle for domains with
+// MasterBacklink (flat-list, grouped-vertical blueprints).
+//
+// For grouped-vertical domains (SectionFor != nil), the empty-bucket
+// indicator "[[]]" is placed in the third pipe-segment (section slot)
+// so the canonical line reads `#tag | [[IndexTitle]] | [[]]` rather
+// than the flat `#tag | [[]]` form that hub-routed domains use.
 //
 // Body lines that parseAtomicContent captured as preamble (free-form
 // content that the user typed before any canonical tag-line existed)
@@ -246,8 +251,16 @@ func (d *Domain) RenderCanonicalForBootstrap(existingContent string) string {
 	}
 	hoistPreambleToBody(&parts)
 	contentBody := strings.Trim(strings.Join(parts.BodyLines, "\n"), "\n ")
+	bl := d.backlinkFor("")
+	sec := d.sectionFor("", parts)
+	// For grouped-vertical domains (SectionFor != nil like BucketAsSection),
+	// the empty-bucket indicator goes in the third pipe-segment (section slot)
+	// instead of the backlink slot, which carries the IndexTitle via MasterBacklink.
+	if sec == "" && d.SectionFor != nil {
+		sec = "[[]]"
+	}
 	return d.renderAtomicCanonical(
-		parts.H1Line, parts.ExtraTags, d.UnknownBucket,
-		d.backlinkFor(d.UnknownBucket), d.sectionFor(d.UnknownBucket, parts), contentBody,
+		parts.H1Line, parts.ExtraTags, "",
+		bl, sec, contentBody,
 	)
 }

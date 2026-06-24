@@ -237,6 +237,31 @@ func TestEqualIgnoringNewNoteLinkStrict_FallsBackToBodyCompareWhenURLsMatch(t *t
 	}
 }
 
+// TestNewNoteURLFromDomain_BacklinkIsEmptyWikilink asserts that the
+// Backlink field in a bootstrapped NewNoteURL is the literal "[[]]"
+// (empty wikilink) rather than a domain-specific UnknownBucket backlink
+// like "[[✱ Daily]]" or "[[Невідомі]]". This is the seed-point behavior
+// change from Wave 2 of the empty-bucket-as-stable-state plan.
+func TestNewNoteURLFromDomain_BacklinkIsEmptyWikilink(t *testing.T) {
+	d := testutil.Domain(t, "library/poetry")
+	u := domain.NewNoteURLFromDomain(d)
+	if u.Backlink != "[[]]" {
+		t.Errorf("Backlink = %q, want [[]]", u.Backlink)
+	}
+	if u.Form != domain.FormBootstrap {
+		t.Errorf("Form = %v, want FormBootstrap", u.Form)
+	}
+	// Round-trip: verify the emitted canonical body carries "[[]]" as backlink.
+	emitted := u.Emit()
+	parsed, ok := domain.ParseNewNoteURLSegment(strings.TrimPrefix(emitted, " | "))
+	if !ok {
+		t.Fatalf("ParseNewNoteURLSegment failed for emitted output: %q", emitted)
+	}
+	if parsed.Backlink != "[[]]" {
+		t.Errorf("parsed Backlink = %q, want [[]]", parsed.Backlink)
+	}
+}
+
 // TestEqualIgnoringNewNoteLink_AcceptsURLDriftWithBodyMatch confirms the
 // non-strict atom-path predicate tolerates URL drift — body bytes are all
 // that matter.

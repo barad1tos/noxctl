@@ -64,8 +64,8 @@ func lastOverwriteBody(t *testing.T, fake *fakeAutoTagBackend) string {
 // TestApplyDomainBootstrap_LeafDomain_HubRouted — note tagged
 // `#library/lyrics` with user-typed preamble routes to the hub-routed
 // `library/lyrics` leaf, hoisting preamble below the `---` separator
-// and stamping `#library/lyrics | [[Невідомі]]` as the canonical tag-
-// line (UnknownBucket per `RenderCanonicalForBootstrap`).
+// and stamping `#library/lyrics | [[]]` as the canonical tag-
+// line (empty bucket per `RenderCanonicalForBootstrap`).
 func TestApplyDomainBootstrap_LeafDomain_HubRouted(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
@@ -92,7 +92,7 @@ func TestApplyDomainBootstrap_LeafDomain_HubRouted(t *testing.T) {
 			t.Errorf("overwrite count = %d, want 1", got)
 		}
 		body := lastOverwriteBody(t, fake)
-		if !strings.Contains(body, "#library/lyrics | [[Невідомі]]") {
+		if !strings.Contains(body, "#library/lyrics | [[]]") {
 			t.Errorf("canonical tag-line missing in body; got:\n%s", body)
 		}
 		if !strings.Contains(body, "\n---\n") {
@@ -103,8 +103,8 @@ func TestApplyDomainBootstrap_LeafDomain_HubRouted(t *testing.T) {
 
 // TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat — note
 // tagged `#library/aphorisms` routes to the grouped-vertical (2-level) aphorisms leaf,
-// producing `#library/aphorisms | [[✱ Афоризми]] | Невідомі` per
-// post-i18n-split UnknownBucket="Невідомі" (NOT the Books bucket).
+// producing `#library/aphorisms | [[✱ Афоризми]] | [[]]` per
+// empty bucket (NOT the Books bucket).
 func TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
@@ -128,7 +128,7 @@ func TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat(t *testing.T) {
 			t.Errorf("rewritten count = %d, want 1", n)
 		}
 		body := lastOverwriteBody(t, fake)
-		want := "#library/aphorisms | [[✱ Афоризми]] | Невідомі"
+		want := "#library/aphorisms | [[✱ Афоризми]] | [[]]"
 		if !strings.Contains(body, want) {
 			t.Errorf("canonical tag-line missing; want substring %q\nbody:\n%s", want, body)
 		}
@@ -414,7 +414,7 @@ func TestApplyDomainBootstrap_SubTagBucketNoOp(t *testing.T) {
 // already carries a canonical tag-line for the leaf (even with a
 // non-`UnknownBucket` value placed by a previous per-domain regen),
 // bootstrap pass MUST skip — otherwise `RenderCanonicalForBootstrap`
-// resets the bucket to `UnknownBucket` and ping-pongs with the
+// resets the bucket to `""` (empty) and ping-pongs with the
 // per-domain `processAtomic` path that re-buckets back to the real
 // category on the next tick. This is the loop that hit Roman's vault
 // on 2026-05-17 (19,040 rewrites across a ~50 min window).
@@ -433,7 +433,7 @@ func TestApplyDomainBootstrap_AlreadyBucketedNoOp(t *testing.T) {
 
 		// Hand-crafted body that simulates per-domain regen output: real
 		// bucket `[[Дайте-танк]]` (atomic-canonical form), NOT
-		// the bootstrap form's `[[Невідомі]]` UnknownBucket.
+		// the bootstrap form's `[[]]` (empty bucket).
 		bucketed := "# Я\n" +
 			"#library/lyrics | [[Дайте-танк]] | [Нова нотатка](bear://x-callback-url/create?text=stub)\n" +
 			"---\n\n" +

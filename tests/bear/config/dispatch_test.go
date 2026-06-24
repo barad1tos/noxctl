@@ -100,9 +100,6 @@ func assertDispatchBuildsCleanly(t *testing.T, stanza config.Stanza, resolver fu
 	if err != nil {
 		t.Fatalf("Dispatch(%s): unexpected error: %v", stanza.Blueprint, err)
 	}
-	if d == nil {
-		t.Fatalf("Dispatch(%s): nil Domain", stanza.Blueprint)
-	}
 	if d.Tag != stanza.Tag {
 		t.Errorf("Domain.Tag = %q, want %q", d.Tag, stanza.Tag)
 	}
