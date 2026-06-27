@@ -24,10 +24,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -177,18 +177,31 @@ func writeLockPID(fd int) {
 	_, _ = unix.Write(fd, []byte(strconv.Itoa(os.Getpid())+"\n"))
 }
 
-// IsApplyPending checks for `<dir(lockPath)>/.apply-pending` without
-// opening the lock file. Returns false on any error other than
-// fs.ErrNotExist so a stat hiccup never wedges the daemon — better to
-// over-run a cycle than over-yield.
+// applyPendingTTL bounds how long a .apply-pending sentinel is trusted.
+// A real apply holds it for exactly one run: touch -> blocking flock (waits
+// at most one daemon cycle, capped by the burst max) -> one regen pass.
+// A sentinel older than this is orphaned — an apply killed (SIGKILL,
+// `go install` race, crash) before AcquireApply's release ran. The window
+// is generous (well above one flock-wait plus one regen pass) so a
+// legitimately slow apply is never starved of priority.
+const applyPendingTTL = 10 * time.Minute
+
+// IsApplyPending checks for `<dir(lockPath)>/.apply-pending`. A fresh
+// sentinel means an external apply requested priority -> returns true. A
+// sentinel older than applyPendingTTL is orphaned (an apply died before
+// cleanup) -> best-effort removed and reported false so a killed apply can
+// never wedge the daemon. Returns false on a missing sentinel or any stat
+// error so a stat hiccup never over-yields — better to over-run a cycle
+// than to over-yield.
 func IsApplyPending(lockPath string) bool {
 	sentinel := filepath.Join(filepath.Dir(lockPath), SentinelName)
-	_, err := os.Stat(sentinel)
-	if err == nil {
-		return true
-	}
-	if !errors.Is(err, fs.ErrNotExist) {
+	info, err := os.Stat(sentinel)
+	if err != nil {
 		return false
 	}
-	return false
+	if time.Since(info.ModTime()) > applyPendingTTL {
+		_ = os.Remove(sentinel)
+		return false
+	}
+	return true
 }

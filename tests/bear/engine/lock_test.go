@@ -107,6 +107,27 @@ func TestIsApplyPending_Transitions(t *testing.T) {
 	}
 }
 
+func TestIsApplyPending_StaleSelfHeals(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, ".lock")
+	sentinel := filepath.Join(dir, engine.SentinelName)
+	if err := os.WriteFile(sentinel, nil, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	// Backdate the sentinel well beyond the trust window: simulates an
+	// apply killed before AcquireApply's release removed it.
+	old := time.Now().Add(-1 * time.Hour)
+	if err := os.Chtimes(sentinel, old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+	if engine.IsApplyPending(lockPath) {
+		t.Errorf("expected false for a stale (orphaned) sentinel")
+	}
+	if _, statErr := os.Stat(sentinel); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("stale sentinel should be auto-removed; still present: %v", statErr)
+	}
+}
+
 func TestAcquireApply_SymlinkRejected(t *testing.T) {
 	dir := t.TempDir()
 	lockPath := filepath.Join(dir, ".lock")
