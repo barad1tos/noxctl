@@ -321,3 +321,15 @@ func TestDefaultRenderHub3Tier_SeedsBucketInNewNoteLink(t *testing.T) {
 		t.Errorf("hub new-note Backlink = %q, want [[паліндром]]", urls[0].Backlink)
 	}
 }
+
+func TestHubFlatSubTag_SeedsSubTagBucket(t *testing.T) {
+	d := testutil.Domain(t, "claude") // hub-routed-with-subtag
+	body := render.HubFlatSubTag(d, "sessions", nil, nil)
+	urls := domain.FindAllNewNoteURLsInBody(body)
+	if len(urls) == 0 {
+		t.Fatalf("no new-note URL in sub-tag hub body:\n%s", body)
+	}
+	if urls[0].CanonicalTag != "#claude/sessions" {
+		t.Errorf("CanonicalTag = %q, want #claude/sessions", urls[0].CanonicalTag)
+	}
+}

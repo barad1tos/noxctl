@@ -89,7 +89,7 @@ func HubFlatSubTag(d *domain.Domain, bucket string, notes []domain.Note, existin
 	var body strings.Builder
 	_, _ = fmt.Fprintf(&body, "# %s\n", hubTitle)
 	_, _ = fmt.Fprintf(&body, "%s | [[%s]]%s\n---\n",
-		canonicalTag, d.IndexTitle, domain.NewNoteURLFromDomain(d).Emit())
+		canonicalTag, d.IndexTitle, domain.NewNoteURLForBucket(d, bucket).Emit())
 	for _, note := range sorted {
 		_, _ = fmt.Fprintf(&body, "- %s\n", domain.AtomicWikilink(d, note))
 	}
