@@ -189,56 +189,56 @@
 [[domain]]
   tag = "english"
   index_title = "✱ English"
-  blueprint = "grouped-vertical"
+  blueprint = "hub-routed-with-subtag"
   unknown_bucket = "інше"
   buckets = ["homework", "rules", "vocabulary", "adverbs", "prepositions"]
 
 [[domain]]
   tag = "work"
   index_title = "✱ Робота"
-  blueprint = "grouped-vertical"
+  blueprint = "hub-routed-with-subtag"
   unknown_bucket = "інше"
   buckets = ["questions", "reports", "tasks"]
 
 [[domain]]
   tag = "health"
   index_title = "✱ Здоров'я"
-  blueprint = "grouped-vertical"
+  blueprint = "hub-routed-with-subtag"
   unknown_bucket = "інше"
   buckets = ["meals", "medicine", "psyche", "food", "training"]
 
 [[domain]]
   tag = "leisure"
   index_title = "✱ Дозвілля"
-  blueprint = "grouped-vertical"
+  blueprint = "hub-routed-with-subtag"
   unknown_bucket = "інше"
   buckets = ["cafe", "books", "gifts"]
 
 [[domain]]
   tag = "humor"
   index_title = "✱ Гумор"
-  blueprint = "grouped-vertical"
+  blueprint = "hub-routed-with-subtag"
   unknown_bucket = "інше"
   buckets = ["articles", "it", "typologies"]
 
 [[domain]]
   tag = "instagram"
   index_title = "✱ Instagram"
-  blueprint = "grouped-vertical"
+  blueprint = "hub-routed-with-subtag"
   unknown_bucket = "інше"
   buckets = ["templates", "posts"]
 
 [[domain]]
   tag = "travel"
   index_title = "✱ Подорожі"
-  blueprint = "grouped-vertical"
+  blueprint = "hub-routed-with-subtag"
   unknown_bucket = "інше"
   buckets = ["ukraine"]
 
 [[domain]]
   tag = "development"
   index_title = "✱ Development"
-  blueprint = "grouped-vertical"
+  blueprint = "hub-routed-with-subtag"
   unknown_bucket = "інше"
   buckets = ["ayu-jetbrains", "genreupdater"]
 
