@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/render"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
@@ -284,5 +285,39 @@ func TestEqualIgnoringNewNoteLinkStrict_RejectsURLDriftWithBodyMatch(t *testing.
 	bootstrap := driftBodyWithBacklink(t, "[[✱ Daily]]")
 	if domain.EqualIgnoringNewNoteLinkStrictForTest(simple, bootstrap) {
 		t.Error("strict predicate accepted form mismatch (simple vs bootstrap) — structural compare not engaged")
+	}
+}
+
+func TestNewNoteURLForBucket_SeedsBucketBacklink(t *testing.T) {
+	d := testutil.Domain(t, "library/lyrics") // plain hub-routed
+	u := domain.NewNoteURLForBucket(d, "паліндром")
+	parsed, ok := domain.ParseNewNoteURLSegment(strings.TrimPrefix(u.Emit(), " | "))
+	if !ok {
+		t.Fatalf("emitted segment did not parse: %q", u.Emit())
+	}
+	if parsed.Backlink != "[[паліндром]]" {
+		t.Errorf("Backlink = %q, want [[паліндром]]", parsed.Backlink)
+	}
+	if parsed.CanonicalTag != "#library/lyrics" {
+		t.Errorf("CanonicalTag = %q, want #library/lyrics", parsed.CanonicalTag)
+	}
+}
+
+func TestNewNoteURLFromDomain_StaysUncategorized(t *testing.T) {
+	d := testutil.Domain(t, "library/lyrics")
+	if got := domain.NewNoteURLFromDomain(d).Backlink; got != "[[]]" {
+		t.Errorf("master/default Backlink = %q, want [[]]", got)
+	}
+}
+
+func TestDefaultRenderHub3Tier_SeedsBucketInNewNoteLink(t *testing.T) {
+	d := testutil.Domain(t, "library/lyrics")
+	body := render.DefaultRenderHub3Tier(d, "паліндром", nil, nil)
+	urls := domain.FindAllNewNoteURLsInBody(body)
+	if len(urls) == 0 {
+		t.Fatalf("no new-note URL found in rendered hub body:\n%s", body)
+	}
+	if urls[0].Backlink != "[[паліндром]]" {
+		t.Errorf("hub new-note Backlink = %q, want [[паліндром]]", urls[0].Backlink)
 	}
 }
