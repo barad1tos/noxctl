@@ -85,9 +85,8 @@ func NewNoteURLFromDomain(d *Domain) NewNoteURL {
 // atom-trailing links keep NewNoteURLFromDomain's `[[]]`.
 func NewNoteURLForBucket(d *Domain, bucket string) NewNoteURL {
 	u := NewNoteURLFromDomain(d)
-	leaf := d.ResolveURLDomain()
-	u.CanonicalTag = leaf.ResolveCanonicalTag(bucket)
-	u.Backlink = leaf.backlinkFor(bucket)
+	u.CanonicalTag = d.ResolveCanonicalTag(bucket)
+	u.Backlink = d.backlinkFor(bucket)
 	return u
 }
 
