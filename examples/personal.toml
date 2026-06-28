@@ -52,9 +52,12 @@
 [[domain]]
   tag = "library/aphorisms"
   index_title = "✱ Афоризми"
-  blueprint = "grouped-vertical"
+  blueprint = "hub-routed"
   unknown_bucket = "Невідомі"
-  buckets = ["Книги", "Кіно", "Ігри"]
+  hub_h2_prefix = "Автори"
+
+  [[domain.master_section]]
+    title = "Категорії"
 
 [[domain]]
   tag = "library/articles"
@@ -91,9 +94,12 @@
 [[domain]]
   tag = "library/prose"
   index_title = "✱ Проза"
-  blueprint = "grouped-vertical"
+  blueprint = "hub-routed"
   unknown_bucket = "Мої"
-  buckets = ["Мої", "Чужі"]
+  hub_h2_prefix = "Записи"
+
+  [[domain.master_section]]
+    title = "Категорії"
 
 [[domain]]
   tag = "library/quotes"
@@ -168,16 +174,22 @@
 [[domain]]
   tag = "it/vendors"
   index_title = "✱ IT Vendors"
-  blueprint = "grouped-vertical"
+  blueprint = "hub-routed"
   unknown_bucket = "інше"
-  buckets = ["apple", "aws", "mikrotik", "windows"]
+  hub_h2_prefix = "Нотатки"
+
+  [[domain.master_section]]
+    title = "Категорії"
 
 [[domain]]
   tag = "it/technologies"
   index_title = "✱ IT Технології"
-  blueprint = "grouped-vertical"
+  blueprint = "hub-routed"
   unknown_bucket = "articles"
-  buckets = ["kubernetes", "linux", "python", "articles"]
+  hub_h2_prefix = "Нотатки"
+
+  [[domain.master_section]]
+    title = "Категорії"
 
 [[domain]]
   tag = "claude"

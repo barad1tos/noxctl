@@ -101,14 +101,20 @@ func TestApplyDomainBootstrap_LeafDomain_HubRouted(t *testing.T) {
 	})
 }
 
-// TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat — note
-// tagged `#library/aphorisms` routes to the grouped-vertical (2-level) aphorisms leaf,
-// producing `#library/aphorisms | [[✱ Афоризми]] | [[]]` per
-// empty bucket (NOT the Books bucket).
+// TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat — a note in a
+// grouped-vertical (2-level) domain bootstraps to
+// `#<tag> | [[<IndexTitle>]] | [[]]` (empty-bucket marker in the 3rd
+// segment, NOT a real bucket). Uses a synthetic domain: the reference
+// catalog no longer ships a grouped-vertical domain, but the blueprint
+// remains supported by the engine.
 func TestApplyDomainBootstrap_LeafDomain_GroupedVerticalFlat(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resetPoolForApply(t)
-		domains := []*domain.Domain{testutil.Domain(t, "library/aphorisms")}
+		gv := render.NewGroupedVerticalFlatDomain(
+			"library/aphorisms", "✱ Афоризми", "Невідомі",
+			[]string{"Книги", "Кіно", "Ігри"},
+		)
+		domains := []*domain.Domain{gv}
 		domainsByTag := domain.DomainsByTag(domains)
 
 		payload := listPayload(t, []map[string]any{{
