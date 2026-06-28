@@ -75,6 +75,21 @@ func NewNoteURLFromDomain(d *Domain) NewNoteURL {
 	}
 }
 
+// NewNoteURLForBucket is NewNoteURLFromDomain seeded with a concrete
+// bucket instead of the empty `[[]]` placeholder. The embedded canonical
+// body therefore matches what an atom in that bucket would carry, so a
+// note created from a per-bucket hub header auto-routes to that bucket on
+// the next regen. CanonicalTag and Backlink are resolved through the
+// domain's own canonical methods, so each blueprint's shape comes out
+// correct (plain hub-routed: `#tag | [[bucket]]`). Master headers and
+// atom-trailing links keep NewNoteURLFromDomain's `[[]]`.
+func NewNoteURLForBucket(d *Domain, bucket string) NewNoteURL {
+	u := NewNoteURLFromDomain(d)
+	u.CanonicalTag = d.ResolveCanonicalTag(bucket)
+	u.Backlink = d.backlinkFor(bucket)
+	return u
+}
+
 // Emit produces the trailing pipe-separated tag-line segment, including
 // the leading " | " separator.
 func (u NewNoteURL) Emit() string {

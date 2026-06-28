@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/barad1tos/noxctl/bear/domain"
+	"github.com/barad1tos/noxctl/bear/render"
 	"github.com/barad1tos/noxctl/tests/bear/testutil"
 )
 
@@ -284,5 +285,89 @@ func TestEqualIgnoringNewNoteLinkStrict_RejectsURLDriftWithBodyMatch(t *testing.
 	bootstrap := driftBodyWithBacklink(t, "[[✱ Daily]]")
 	if domain.EqualIgnoringNewNoteLinkStrictForTest(simple, bootstrap) {
 		t.Error("strict predicate accepted form mismatch (simple vs bootstrap) — structural compare not engaged")
+	}
+}
+
+func TestNewNoteURLForBucket_SeedsBucketBacklink(t *testing.T) {
+	d := testutil.Domain(t, "library/lyrics") // plain hub-routed
+	u := domain.NewNoteURLForBucket(d, "паліндром")
+	parsed, ok := domain.ParseNewNoteURLSegment(strings.TrimPrefix(u.Emit(), " | "))
+	if !ok {
+		t.Fatalf("emitted segment did not parse: %q", u.Emit())
+	}
+	if parsed.Backlink != "[[паліндром]]" {
+		t.Errorf("Backlink = %q, want [[паліндром]]", parsed.Backlink)
+	}
+	if parsed.CanonicalTag != "#library/lyrics" {
+		t.Errorf("CanonicalTag = %q, want #library/lyrics", parsed.CanonicalTag)
+	}
+}
+
+func TestNewNoteURLFromDomain_StaysUncategorized(t *testing.T) {
+	d := testutil.Domain(t, "library/lyrics")
+	if got := domain.NewNoteURLFromDomain(d).Backlink; got != "[[]]" {
+		t.Errorf("master/default Backlink = %q, want [[]]", got)
+	}
+}
+
+func TestDefaultRenderHub3Tier_SeedsBucketInNewNoteLink(t *testing.T) {
+	d := testutil.Domain(t, "library/lyrics")
+	body := render.DefaultRenderHub3Tier(d, "паліндром", nil, nil)
+	urls := domain.FindAllNewNoteURLsInBody(body)
+	if len(urls) == 0 {
+		t.Fatalf("no new-note URL found in rendered hub body:\n%s", body)
+	}
+	if urls[0].Backlink != "[[паліндром]]" {
+		t.Errorf("hub new-note Backlink = %q, want [[паліндром]]", urls[0].Backlink)
+	}
+	if urls[0].CanonicalTag != "#library/lyrics" {
+		t.Errorf("hub new-note CanonicalTag = %q, want #library/lyrics", urls[0].CanonicalTag)
+	}
+	for i := 1; i < len(urls); i++ {
+		if urls[i].Backlink != "[[]]" {
+			t.Errorf("non-hub new-note[%d] Backlink = %q, want [[]]", i, urls[i].Backlink)
+		}
+	}
+}
+
+func TestHubFlatSubTag_SeedsSubTagBucket(t *testing.T) {
+	d := testutil.Domain(t, "claude") // hub-routed-with-subtag
+	body := render.HubFlatSubTag(d, "sessions", nil, nil)
+	urls := domain.FindAllNewNoteURLsInBody(body)
+	if len(urls) != 1 {
+		t.Fatalf("want exactly 1 new-note URL in sub-tag hub body, got %d:\n%s", len(urls), body)
+	}
+	if urls[0].CanonicalTag != "#claude/sessions" {
+		t.Errorf("CanonicalTag = %q, want #claude/sessions", urls[0].CanonicalTag)
+	}
+	if urls[0].Backlink != "[[claude · sessions]]" {
+		t.Errorf("Backlink = %q, want [[claude · sessions]]", urls[0].Backlink)
+	}
+}
+
+func TestDefaultRenderHub3Tier_SeedsOwnGroupHub(t *testing.T) {
+	d := testutil.Domain(t, "library/poetry") // hub-routed with own_group
+	body := render.DefaultRenderHub3Tier(d, "Моя поезія", nil, nil)
+	urls := domain.FindAllNewNoteURLsInBody(body)
+	if len(urls) == 0 {
+		t.Fatalf("no new-note URL in own-group hub body:\n%s", body)
+	}
+	if urls[0].Backlink != "[[Моя поезія]]" {
+		t.Errorf("own-group hub Backlink = %q, want [[Моя поезія]]", urls[0].Backlink)
+	}
+	// The seeded canonical round-trips back to the OwnGroup bucket.
+	atom := "# x\n" + urls[0].CanonicalTag + " | " + urls[0].Backlink + "\n---\n"
+	if meta := render.DefaultParseMetaCanonical(d, atom); meta.Bucket != "Моя поезія" {
+		t.Errorf("parsed bucket = %q, want Моя поезія", meta.Bucket)
+	}
+}
+
+func TestHubBacklinkSubTag_EmptyBucketFallsBackToMaster(t *testing.T) {
+	d := testutil.Domain(t, "claude") // hub-routed-with-subtag, IndexTitle "✱ Claude"
+	if got := render.HubBacklinkSubTag(d, ""); got != "[[✱ Claude]]" {
+		t.Errorf("empty-bucket backlink = %q, want [[✱ Claude]] (master fallback)", got)
+	}
+	if got := render.HubBacklinkSubTag(d, "sessions"); got != "[[claude · sessions]]" {
+		t.Errorf("backlink = %q, want [[claude · sessions]]", got)
 	}
 }

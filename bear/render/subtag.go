@@ -62,6 +62,9 @@ func IsHubNoteSubTag(d *domain.Domain, n domain.Note) bool {
 // not at the master. Pairs with the hub-side bidirectional flow: a bullet
 // inside a hub claims its atomic for that hub's bucket.
 func HubBacklinkSubTag(d *domain.Domain, bucket string) string {
+	if bucket == "" {
+		return "[[" + d.IndexTitle + "]]"
+	}
 	return "[[" + d.Tag + HubTitleSeparator + bucket + "]]"
 }
 
@@ -89,7 +92,7 @@ func HubFlatSubTag(d *domain.Domain, bucket string, notes []domain.Note, existin
 	var body strings.Builder
 	_, _ = fmt.Fprintf(&body, "# %s\n", hubTitle)
 	_, _ = fmt.Fprintf(&body, "%s | [[%s]]%s\n---\n",
-		canonicalTag, d.IndexTitle, domain.NewNoteURLFromDomain(d).Emit())
+		canonicalTag, d.IndexTitle, domain.NewNoteURLForBucket(d, bucket).Emit())
 	for _, note := range sorted {
 		_, _ = fmt.Fprintf(&body, "- %s\n", domain.AtomicWikilink(d, note))
 	}

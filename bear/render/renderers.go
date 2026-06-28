@@ -87,7 +87,7 @@ func DefaultRenderHub3Tier(
 	var body strings.Builder
 	_, _ = fmt.Fprintf(&body, "# %s\n", name)
 	_, _ = fmt.Fprintf(&body, "%s | [[%s]]%s\n---\n",
-		d.CanonicalTag, d.IndexTitle, domain.NewNoteURLFromDomain(d).Emit())
+		d.CanonicalTag, d.IndexTitle, domain.NewNoteURLForBucket(d, name).Emit())
 	_, _ = fmt.Fprintf(&body, "## %s (%d)\n", d.HubH2Prefix, len(sorted))
 	domain.RenderNoteList(&body, d, bySection[""])
 	for _, top := range topKeys {
