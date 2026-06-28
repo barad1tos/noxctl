@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -199,7 +200,8 @@ func IsApplyPending(lockPath string) bool {
 	if err != nil {
 		return false
 	}
-	if time.Since(info.ModTime()) > applyPendingTTL {
+	if age := time.Since(info.ModTime()); age > applyPendingTTL {
+		log.Printf("apply-pending sentinel stale (age %s); removed, proceeding", age.Round(time.Second))
 		_ = os.Remove(sentinel)
 		return false
 	}
