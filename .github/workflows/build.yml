@@ -156,6 +156,7 @@ jobs:
         # gotestsum forwards args after `--` to `go test` unchanged.
         # --rerun-fails=0: disable auto-rerun so Codecov sees true flakiness.
         # --junitfile-testsuite-name=relative: shorter package paths in UI.
+        # -p=1: isolate the cold-start performance budget from package contention.
         run: |
           mkdir -p test-results coverage-e2e
           NOXCTL_E2E_COVERDIR="$PWD/coverage-e2e" gotestsum \
@@ -163,7 +164,7 @@ jobs:
             --junitfile-testsuite-name relative \
             --format pkgname \
             --rerun-fails=0 \
-            -- -count=1 -race -coverpkg=./... \
+            -- -p=1 -count=1 -race -coverpkg=./... \
                -coverprofile=coverage.out -covermode=atomic \
                ./...
           go tool covdata textfmt -i=coverage-e2e -o=coverage-e2e.out
