@@ -3,14 +3,13 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore: &skip-paths
+    paths-ignore:
       - '**/*.md'
       - 'LICENSE'
       - '.gitignore'
       - '.pre-commit-config.yaml'
   pull_request:
     branches: [main]
-    paths-ignore: *skip-paths
   workflow_dispatch:
 
 permissions:
