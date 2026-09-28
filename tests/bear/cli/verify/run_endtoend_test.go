@@ -261,8 +261,10 @@ func TestRun_OperatorRequestsJSON_OutputIsParseable(t *testing.T) {
 // pass-through sentinels (no exit-code 2 dispatch).
 func TestRun_OperatorRequestsBadOutputFormat_ReturnsValidationError(t *testing.T) {
 	catalog := writeMinimalCatalog(t)
+	logPath := writeDaemonLog(t, []string{"2026/05/18 10:00:00 regen-watchd starting"})
 	_, err := runVerify(t, verify.Options{
 		ConfigPath: catalog,
+		LogPath:    logPath,
 		Output:     "yaml",
 	})
 	if err == nil {
@@ -337,10 +339,12 @@ func TestRun_NilStdout_DefaultsApplied(t *testing.T) {
 		}
 	}()
 	catalog := writeMinimalCatalog(t)
+	logPath := writeDaemonLog(t, []string{"2026/05/18 10:00:00 regen-watchd starting"})
 	// Don't use runVerify helper here — it always sets stdout/stderr.
 	// Run directly with nil to exercise the default-injection path.
 	_ = verify.Run(ctxWithBenignBackend(t), verify.Options{
 		ConfigPath: catalog,
+		LogPath:    logPath,
 		Output:     "text",
 		// Stdout & Stderr deliberately omitted — must default to
 		// os.Stdout / os.Stderr without panic.
