@@ -25,7 +25,6 @@ func SQLiteNoteChangeToken(dbPath string, _ os.FileInfo) (string, error) {
 	output, err := exec.Command(
 		"sqlite3",
 		"-batch",
-		"-bail",
 		"-readonly",
 		"-separator", sqliteFieldSeparator,
 		"-newline", sqliteRowSeparator,
