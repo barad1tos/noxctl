@@ -85,18 +85,16 @@ func runDaemon(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf(errFmtNoxctlDaemon, bearDBErr)
 	}
 	opts := engine.DaemonOpts{
-		ApplyOpts: engine.ApplyOpts{
-			Domains:            domains,
-			Pins:               pins,
-			StatePath:          dc.StatePath,
-			LockPath:           dc.LockPath,
-			Features:           cliutil.ResolveFeatures(cat, dc),
-			AuditEnabled:       dc.AuditEnabled,
-			BearcliConcurrency: dc.BearcliConcurrency,
-			Stderr:             os.Stderr,
-			DailyDefaultTag:    dailyDefaultTagFromCatalog(cat),
-			PromotionRules:     promotionRulesFromCatalog(cat),
-		},
+		Domains:               domains,
+		Pins:                  pins,
+		StatePath:             dc.StatePath,
+		LockPath:              dc.LockPath,
+		Features:              cliutil.ResolveFeatures(cat, dc),
+		AuditEnabled:          dc.AuditEnabled,
+		BearcliConcurrency:    dc.BearcliConcurrency,
+		Stderr:                os.Stderr,
+		DailyDefaultTag:       dailyDefaultTagFromCatalog(cat),
+		PromotionRules:        promotionRulesFromCatalog(cat),
 		BearDBDir:             bearDBDir,
 		DebouncePause:         dc.DebouncePause,
 		MaxBurstWindow:        dc.MaxBurstWindow,

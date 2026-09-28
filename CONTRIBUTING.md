@@ -7,7 +7,7 @@ By participating, you agree to uphold the [Code of Conduct](.github/CODE_OF_COND
 ## Getting started
 
 1. Fork the repository and clone it locally.
-2. Make sure you have **Go ≥ 1.26** installed (`go version`).
+2. Make sure you have **Go ≥ 1.27** installed (`go version`).
 3. Install the local hooks once:
    ```bash
    pre-commit install

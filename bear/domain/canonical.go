@@ -103,7 +103,7 @@ func (s *atomicParseState) consumeLeadingBlank(trimmed string, p *AtomicParts) b
 // switch documents that order matters (H1 before header before blank-skip).
 func (d *Domain) parseAtomicContent(content, author string) AtomicParts {
 	authorH2Marker := "## " + author
-	family := strings.SplitN(d.Tag, "/", 2)[0]
+	family, _, _ := strings.Cut(d.Tag, "/")
 	var parts AtomicParts
 	state := atomicParseState{stripAuthor: d.StripLegacyAuthorH2}
 	for line := range strings.SplitSeq(content, "\n") {

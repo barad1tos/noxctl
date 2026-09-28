@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: '1.26.2'
+  GO_VERSION: '1.27.1'
 
 jobs:
   # ── Tier 1: Fast file-level checks (no toolchain, seconds) ──
@@ -127,9 +127,8 @@ jobs:
           cache: true
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          # v2.12.2 is built with Go 1.26.2 — earlier 2.0.x was built
-          # with Go 1.24 and refused to lint a Go-1.26-targeted repo.
-          version: v2.12.2
+          # Keep the linter's build toolchain at least as new as go.mod.
+          version: v2.14.0
           args: --timeout=5m
 
   # ── Tier 3: Unit + integration tests (parallel with lint) ──
