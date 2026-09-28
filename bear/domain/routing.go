@@ -469,7 +469,7 @@ func (d *Domain) computeTagOverrides(notes []Note) (overrides map[string]string,
 	if d.CanonicalTagFor == nil {
 		return nil, 0
 	}
-	family := strings.SplitN(d.Tag, "/", 2)[0]
+	family, _, _ := strings.Cut(d.Tag, "/")
 	prefix := family + "/"
 	for _, note := range notes {
 		if !hasFamilyMembership(note.Tags, family) {

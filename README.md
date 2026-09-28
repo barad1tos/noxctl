@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="docs/screenshots/repo_facade.svg" alt="noxctl — declarative Bear notes for the terminal" width="100%" />
-</p>
+<img src="docs/screenshots/repo_facade.svg" alt="noxctl — declarative Bear notes for the terminal" width="100%" />
 
 # noxctl
 
@@ -60,8 +58,8 @@ For each managed tag, noxctl writes two things to Bear:
 
 Atoms keep their human-authored body; noxctl only owns the canonical line at the top and the master/hub layout. Here is one `#library/books` tag in Bear, before and after a first `noxctl apply`:
 
-| Before                                                                                                    | After                                                                                                                                         |
-|-----------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
+| Before                                                                                                    | After                                                                                                                                          |
+|-----------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
 | ![Bear filtered to #nox-demo/books before apply: five atom notes, no master](docs/screenshots/before.png) | ![Bear filtered to #nox-demo/books after apply: master ✱ Books plus five atoms, canonical tag-line chips on each](docs/screenshots/after.png) |
 
 (Demo vault is at `examples/demo-vault/` — `setup.sh` populates it under `#nox-demo/books` and the paired `noxctl.toml` manages exactly that tag.)
@@ -132,7 +130,7 @@ noxctl has two entry paths that share the same install and the same `validate �
 **Before you start.**
 
 - You need macOS with [Bear](https://bear.app/) installed. noxctl talks to Bear through Bear's bundled `bearcli`.
-- You need Go 1.26 or newer:
+- You need Go 1.27 or newer:
   ```bash
   go version
   ```
@@ -224,13 +222,13 @@ Bear ships a built-in backup in **File → Backup Database…** — recommended 
 
 **How those map to a blueprint:**
 
-| Observed shape                                  | Recommendation                                            |
-|-------------------------------------------------|-----------------------------------------------------------|
-| No usable bucket signal                         | `flat-list` (high confidence when small, medium when large) |
-| Top-level tag, few atoms per bucket             | `grouped-vertical` (alternative: `hub-routed-with-subtag`)  |
-| Top-level tag, many atoms per bucket            | `hub-routed-with-subtag` (alternative: `grouped-vertical`)  |
-| Nested tag, strong author signal or many buckets| `hub-routed`                                              |
-| Nested tag, a small declared bucket set         | `grouped-vertical`                                        |
+| Observed shape                                   | Recommendation                                              |
+|--------------------------------------------------|-------------------------------------------------------------|
+| No usable bucket signal                          | `flat-list` (high confidence when small, medium when large) |
+| Top-level tag, few atoms per bucket              | `grouped-vertical` (alternative: `hub-routed-with-subtag`)  |
+| Top-level tag, many atoms per bucket             | `hub-routed-with-subtag` (alternative: `grouped-vertical`)  |
+| Nested tag, strong author signal or many buckets | `hub-routed`                                                |
+| Nested tag, a small declared bucket set          | `grouped-vertical`                                          |
 
 This follows the *Choosing a blueprint* decision tree, with one extra shortcut the eyeball version omits: on a nested tag, a high distinct-bucket count alone is enough for `hub-routed` (even without an author signal), so the master stays a scannable list of hubs.
 
@@ -345,10 +343,10 @@ Exit-code shape:
 
 noxctl has two operating modes. Start with the one-shot mode until you trust the plan output on your own vault.
 
-| Mode | What it does | When to use it | Persistence |
-|------|--------------|----------------|-------------|
-| `validate → plan → apply` | Runs once, shows a diff, then applies it only when you ask | First runs, careful changes, manual control | Exits after the command finishes |
-| `daemon` | Runs continuously and reconciles managed structures when Bear changes | Mature configs you want kept in sync automatically | Lives only while the process is running unless you install a LaunchAgent |
+| Mode                      | What it does                                                          | When to use it                                     | Persistence                                                              |
+|---------------------------|-----------------------------------------------------------------------|----------------------------------------------------|--------------------------------------------------------------------------|
+| `validate → plan → apply` | Runs once, shows a diff, then applies it only when you ask            | First runs, careful changes, manual control        | Exits after the command finishes                                         |
+| `daemon`                  | Runs continuously and reconciles managed structures when Bear changes | Mature configs you want kept in sync automatically | Lives only while the process is running unless you install a LaunchAgent |
 
 Run the daemon manually when testing continuous reconciliation:
 
@@ -411,15 +409,15 @@ launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.barad1tos.noxctl.plist
 
 noxctl is useful when Bear is still the place you want to write, but manual structure maintenance has become the annoying part.
 
-| You gain | You trade away | Why it matters |
-|----------|----------------|----------------|
-| Generated index/hub notes | Some generated structure is now tool-owned | Edit your content freely, but do not hand-tune generated masters/hubs and expect those edits to survive regeneration |
-| Reviewable `plan` output before writes | You need to understand the plan before applying it | Safer than silent automation, but still requires attention |
-| Readiness and verification gates | A few extra commands before the first write | `doctor` catches local setup issues before mutation; `verify` confirms the vault and daemon are clean afterward |
-| Consistent structure across many tags | A config file becomes part of your note system | Your organization rules live in `noxctl.toml`, not only in your head |
-| Optional live reconciliation | A long-running process may be running on your Mac | Great for stable configs, but start manually before installing a LaunchAgent |
-| Obsidian-like organization depth inside Bear | macOS + Bear + terminal are required | This is for Bear power users on macOS, not a cross-platform no-code workflow |
-| Faster cleanup of drift | Bad config can produce bad structure quickly | Always back up before first use and inspect `plan` output |
+| You gain                                     | You trade away                                     | Why it matters                                                                                                       |
+|----------------------------------------------|----------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
+| Generated index/hub notes                    | Some generated structure is now tool-owned         | Edit your content freely, but do not hand-tune generated masters/hubs and expect those edits to survive regeneration |
+| Reviewable `plan` output before writes       | You need to understand the plan before applying it | Safer than silent automation, but still requires attention                                                           |
+| Readiness and verification gates             | A few extra commands before the first write        | `doctor` catches local setup issues before mutation; `verify` confirms the vault and daemon are clean afterward      |
+| Consistent structure across many tags        | A config file becomes part of your note system     | Your organization rules live in `noxctl.toml`, not only in your head                                                 |
+| Optional live reconciliation                 | A long-running process may be running on your Mac  | Great for stable configs, but start manually before installing a LaunchAgent                                         |
+| Obsidian-like organization depth inside Bear | macOS + Bear + terminal are required               | This is for Bear power users on macOS, not a cross-platform no-code workflow                                         |
+| Faster cleanup of drift                      | Bad config can produce bad structure quickly       | Always back up before first use and inspect `plan` output                                                            |
 
 A good first test is one low-risk tag with a small number of notes. Import it, review the generated config, run `plan`, read the diff, back up Bear, and only then run `apply`.
 
@@ -439,13 +437,13 @@ Five rendering blueprints, each fitting a distinct tag shape. Walk the decision 
 <details>
 <summary><b>Full comparison table & structure diagram</b></summary>
 
-| Blueprint                | When to use                                                     | Required fields beyond the basics | Bucket source                            | Output shape                                      |
-|--------------------------|-----------------------------------------------------------------|-----------------------------------|------------------------------------------|---------------------------------------------------|
-| `flat-list`              | inbox / capture tags, no grouping                               | none                              | n/a                                      | one master with bullet list of every atom         |
-| `grouped-vertical`       | bucketed collection in one master, operator-declared buckets    | `buckets`, `unknown_bucket`       | operator-declared (sub-tag or canonical 3rd segment, auto by tag depth) | one master with `## Bucket (N)` H2 per bucket     |
-| `hub-routed`             | author / source grouping where bucket names live in atom bodies | `unknown_bucket`, `hub_h2_prefix` | atom body H2 (author/source), stamped into the canonical line | Tier-2: master lists hubs, each hub lists atoms   |
-| `hub-routed-with-subtag` | hub-style layout but bucket names are sub-tags                  | `buckets`, `unknown_bucket`       | atom sub-tag `#tag/bucket`               | Tier-2: master lists hubs, each hub lists atoms   |
-| `umbrella`               | aggregate multiple existing domains under one master            | `children`, `default_child`       | n/a                                      | master lists every child domain                   |
+| Blueprint                | When to use                                                     | Required fields beyond the basics | Bucket source                                                           | Output shape                                    |
+|--------------------------|-----------------------------------------------------------------|-----------------------------------|-------------------------------------------------------------------------|-------------------------------------------------|
+| `flat-list`              | inbox / capture tags, no grouping                               | none                              | n/a                                                                     | one master with bullet list of every atom       |
+| `grouped-vertical`       | bucketed collection in one master, operator-declared buckets    | `buckets`, `unknown_bucket`       | operator-declared (sub-tag or canonical 3rd segment, auto by tag depth) | one master with `## Bucket (N)` H2 per bucket   |
+| `hub-routed`             | author / source grouping where bucket names live in atom bodies | `unknown_bucket`, `hub_h2_prefix` | atom body H2 (author/source), stamped into the canonical line           | Tier-2: master lists hubs, each hub lists atoms |
+| `hub-routed-with-subtag` | hub-style layout but bucket names are sub-tags                  | `buckets`, `unknown_bucket`       | atom sub-tag `#tag/bucket`                                              | Tier-2: master lists hubs, each hub lists atoms |
+| `umbrella`               | aggregate multiple existing domains under one master            | `children`, `default_child`       | n/a                                                                     | master lists every child domain                 |
 
 Required fields beyond the basics — every blueprint also needs `tag`, `index_title`, `blueprint`. See `examples/<blueprint>.toml` for a copy-pasteable starter per blueprint.
 
@@ -521,7 +519,7 @@ See `examples/minimal.toml` for a tested starter and `examples/personal.toml` fo
 ## Status & scope
 
 - **Platform:** macOS only. Bear is macOS-only; the watcher uses FSEvents via `fsnotify`'s Darwin backend; the CLI bridge is `bearcli` at `/Applications/Bear.app/Contents/MacOS/bearcli`.
-- **Runtime:** Go ≥ 1.26. Direct dependencies are intentionally small: TOML parsing, Cobra CLI wiring, fsnotify for the daemon watcher, and a small set of Go `x/*` support packages. Adding a runtime dependency is deliberate and requires justification.
+- **Runtime:** Go ≥ 1.27. Direct dependencies are intentionally small: TOML parsing, Cobra CLI wiring, fsnotify for the daemon watcher, and a small set of Go `x/*` support packages. Adding a runtime dependency is deliberate and requires justification.
 - **Heritage:** descended from `regen-watchd`, a personal FSEvents daemon that managed a 28-domain Bear corpus; the closed catalog of five blueprints covers every shape that production used.
 - **Acceptance test:** byte-equivalent vault output against the legacy daemon for the maintainer's 28-domain corpus.
 - **License:** MIT.

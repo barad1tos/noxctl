@@ -80,14 +80,12 @@ func newTestDaemonOpts(t *testing.T) engine.DaemonOpts {
 	t.Helper()
 	dir := t.TempDir()
 	return engine.DaemonOpts{
-		ApplyOpts: engine.ApplyOpts{
-			Domains:   nil,
-			Pins:      nil,
-			StatePath: filepath.Join(dir, "state.json"),
-			LockPath:  filepath.Join(dir, ".lock"),
-			Features:  engine.Features{}, // all false — no bearcli traffic
-			Stderr:    os.Stderr,
-		},
+		Domains:          nil,
+		Pins:             nil,
+		StatePath:        filepath.Join(dir, "state.json"),
+		LockPath:         filepath.Join(dir, ".lock"),
+		Features:         engine.Features{}, // all false — no bearcli traffic
+		Stderr:           os.Stderr,
 		BearDBDir:        dir,
 		DebouncePause:    50 * time.Millisecond,
 		MaxBurstWindow:   500 * time.Millisecond,

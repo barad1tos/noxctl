@@ -34,7 +34,7 @@ type loadDaemonCase[V any] struct {
 //
 // Closure-capture safety: `c` is captured by the `t.Run` closure, which
 // would alias to the last iteration on Go < 1.22. The module pins
-// `go 1.26.2` in go.mod, so per-iteration scoping is guaranteed by the
+// `go 1.27` in go.mod, so per-iteration scoping is guaranteed by the
 // language spec and no defensive `c := c` shadow is needed.
 func runLoadDaemonCases[V any](
 	t *testing.T,
